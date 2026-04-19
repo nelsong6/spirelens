@@ -17,5 +17,10 @@ public partial class MainFile : Node
         Harmony harmony = new(ModId);
 
         harmony.PatchAll();
+
+        // Wire up game lifecycle subscriptions (run start, combat setup/end).
+        // These drive the pending-combat -> committed-run promotion; see RunTracker
+        // for the contract.
+        RunTracker.InitializeHooks();
     }
 }

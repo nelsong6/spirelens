@@ -1,48 +1,147 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Rooms;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace CardStats.CardStatsCode;
 
 /// <summary>
-/// Holds the current run's stats in memory. All mutations funnel through here
-/// to keep aggregation + event-log logic in one place.
+/// Tracks the current run's stats in memory and commits them to disk at
+/// combat boundaries.
 ///
-/// Thread safety: the combat history callbacks all fire on the game thread,
-/// but we defensively lock anyway in case a future patch adds async sources.
+/// Key rule (per Nelson): nothing is written to the permanent run file until
+/// a combat *finishes*. During combat, card plays and damage events accumulate
+/// in <see cref="_pendingCombat"/> only. On <c>CombatEnded</c> we promote the
+/// pending buffer into the run's committed aggregates + event log and save.
+/// On run start the previous run (if any) is finalized first.
 ///
-/// MVP scope (M1, issue #5):
-/// - Tracks card plays (count)
-/// - Tracks damage attributed to cards (BlockedDamage / UnblockedDamage / OverkillDamage / WasTargetKilled)
-/// - Does NOT track block/energy/draw closure yet (M2/M3)
+/// Thread safety: game events all fire on the main thread. We still lock
+/// defensively since file I/O is on a background task.
 ///
-/// Run boundary detection is also pending (issue forthcoming) — for M1 we use
-/// a single in-memory run that starts when the mod loads and writes every event
-/// under that run_id. "Per actual run" boundaries come later.
+/// Milestone scope:
+///   M1 (this file):     card plays + attack damage attribution
+///   M2 (future):        block attribution (per issue #1 heuristic)
+///   M3 (future):        energy / draw closure
 /// </summary>
 public static class RunTracker
 {
     private static readonly object _lock = new();
-    private static RunData _current = NewRun();
-
-    /// <summary>Exposed for diagnostics / future UI reads. Do not mutate from outside.</summary>
-    public static RunData Current { get { lock (_lock) return _current; } }
-
-    private static RunData NewRun()
-    {
-        string now = DateTime.UtcNow.ToString("o");
-        return new RunData
-        {
-            RunId = Guid.NewGuid().ToString("N"),
-            StartedAt = now,
-            UpdatedAt = now,
-        };
-    }
+    private static RunData? _currentRun;
+    private static PendingCombat? _pendingCombat;
 
     /// <summary>
-    /// Called from the CombatHistory.Add postfix with a fully-constructed entry.
-    /// Returns fast for entry types we don't care about yet (so we can enable
-    /// more types incrementally as later milestones need them).
+    /// Wire up game event subscriptions. Called once from <see cref="MainFile.Initialize"/>.
+    /// Safe to call before CombatManager/RunManager singletons receive their first state —
+    /// we subscribe to events, not read state eagerly.
+    /// </summary>
+    public static void InitializeHooks()
+    {
+        RunManager.Instance.RunStarted += OnRunStarted;
+        CombatManager.Instance.CombatSetUp += OnCombatSetUp;
+        CombatManager.Instance.CombatEnded += OnCombatEnded;
+        MainFile.Logger.Info("CardStats hooks wired (RunStarted, CombatSetUp, CombatEnded).");
+    }
+
+    /// <summary>Exposed read-only for diagnostics and (future) UI reads.</summary>
+    public static RunData? Current
+    {
+        get { lock (_lock) return _currentRun; }
+    }
+
+    // -------- Lifecycle callbacks --------
+
+    private static void OnRunStarted(RunState runState)
+    {
+        lock (_lock)
+        {
+            // If a previous run was in progress (mod reload, unusual path), finalize it first.
+            if (_currentRun != null)
+            {
+                _currentRun.EndedAt = Now();
+                RunStorage.SaveAsync(_currentRun);
+            }
+
+            string now = Now();
+            _currentRun = new RunData
+            {
+                RunId = Guid.NewGuid().ToString("N"),
+                StartedAt = now,
+                UpdatedAt = now,
+                Character = runState.Players.FirstOrDefault()?.Character?.Id.Entry,
+                Ascension = runState.AscensionLevel,
+                FloorReached = runState.TotalFloor,
+            };
+            _pendingCombat = null;
+
+            MainFile.Logger.Info($"RunStarted: {_currentRun.RunId} character={_currentRun.Character} ascension={_currentRun.Ascension}");
+            RunStorage.SaveAsync(_currentRun);
+        }
+    }
+
+    private static void OnCombatSetUp(CombatState state)
+    {
+        lock (_lock)
+        {
+            // Fresh pending buffer for this combat. Anything accumulated from a prior
+            // combat that didn't get a CombatEnded (shouldn't happen but defensive) is dropped.
+            _pendingCombat = new PendingCombat();
+        }
+    }
+
+    private static void OnCombatEnded(CombatRoom room)
+    {
+        lock (_lock)
+        {
+            if (_pendingCombat == null) return;  // nothing to commit
+
+            // Lazy run creation: if events came in before RunStarted ever fired
+            // (e.g. mod loaded mid-run), create a minimal run record now so we
+            // don't drop the combat's data.
+            _currentRun ??= new RunData
+            {
+                RunId = Guid.NewGuid().ToString("N"),
+                StartedAt = Now(),
+                UpdatedAt = Now(),
+            };
+
+            // Promote pending buffer into the run's committed state.
+            foreach (var (cardId, combatAgg) in _pendingCombat.CombatAggregates)
+            {
+                var runAgg = GetOrCreateAggregate(_currentRun, cardId);
+                runAgg.Plays += combatAgg.Plays;
+                runAgg.TotalIntended += combatAgg.TotalIntended;
+                runAgg.TotalBlocked += combatAgg.TotalBlocked;
+                runAgg.TotalOverkill += combatAgg.TotalOverkill;
+                runAgg.TotalEffective += combatAgg.TotalEffective;
+                runAgg.Kills += combatAgg.Kills;
+            }
+            _currentRun.Events.AddRange(_pendingCombat.CombatEvents);
+
+            // Refresh run-level metadata from the current game state (floor may have advanced).
+            var runState = RunManager.Instance.State;
+            if (runState != null)
+            {
+                _currentRun.FloorReached = runState.TotalFloor;
+                _currentRun.Ascension ??= runState.AscensionLevel;
+                _currentRun.Character ??= runState.Players.FirstOrDefault()?.Character?.Id.Entry;
+            }
+            _currentRun.UpdatedAt = Now();
+
+            _pendingCombat = null;
+            RunStorage.SaveAsync(_currentRun);
+        }
+    }
+
+    // -------- Event observation (from CombatHistory.Add postfix) --------
+
+    /// <summary>
+    /// Route a freshly-added CombatHistoryEntry into the pending combat buffer.
+    /// Only attack-relevant entries are consumed in M1; others will be handled
+    /// by later milestones.
     /// </summary>
     public static void Observe(object entry)
     {
@@ -51,12 +150,11 @@ public static class RunTracker
             switch (entry)
             {
                 case CardPlayFinishedEntry cpf:
-                    OnCardPlayFinished(cpf.CardPlay);
+                    RecordCardPlay(cpf.CardPlay);
                     break;
                 case DamageReceivedEntry dre when dre.CardSource != null:
-                    OnDamageFromCard(dre);
+                    RecordDamageFromCard(dre);
                     break;
-                // Other entry types ignored for M1; handled in later milestones.
             }
         }
         catch (Exception e)
@@ -66,32 +164,28 @@ public static class RunTracker
         }
     }
 
-    private static void OnCardPlayFinished(CardPlay cardPlay)
+    private static void RecordCardPlay(CardPlay cardPlay)
     {
         string cardId = cardPlay.Card.Id.Entry;
 
         lock (_lock)
         {
-            var agg = GetOrCreate(cardId);
-            agg.Plays++;
+            // Defensive: if CombatSetUp never fired (unusual), allocate lazily.
+            _pendingCombat ??= new PendingCombat();
 
-            _current.Events.Add(new CardEvent
+            GetOrCreateAggregate(_pendingCombat, cardId).Plays++;
+            _pendingCombat.CombatEvents.Add(new CardEvent
             {
-                T = DateTime.UtcNow.ToString("o"),
+                T = Now(),
                 Type = "card_played",
                 CardId = cardId,
                 Target = cardPlay.Target?.Monster?.Id.Entry,
             });
-
-            Touch();
         }
-
-        RunStorage.SaveAsync(_current);
     }
 
-    private static void OnDamageFromCard(DamageReceivedEntry entry)
+    private static void RecordDamageFromCard(DamageReceivedEntry entry)
     {
-        // CardSource is non-null per the caller's filter.
         string cardId = entry.CardSource!.Id.Entry;
         var result = entry.Result;
 
@@ -102,16 +196,18 @@ public static class RunTracker
 
         lock (_lock)
         {
-            var agg = GetOrCreate(cardId);
+            _pendingCombat ??= new PendingCombat();
+
+            var agg = GetOrCreateAggregate(_pendingCombat, cardId);
             agg.TotalIntended += intended;
             agg.TotalBlocked += result.BlockedDamage;
             agg.TotalOverkill += result.OverkillDamage;
             agg.TotalEffective += effective;
             if (result.WasTargetKilled) agg.Kills++;
 
-            _current.Events.Add(new CardEvent
+            _pendingCombat.CombatEvents.Add(new CardEvent
             {
-                T = DateTime.UtcNow.ToString("o"),
+                T = Now(),
                 Type = "damage_received",
                 CardId = cardId,
                 Receiver = entry.Receiver.IsPlayer
@@ -122,22 +218,40 @@ public static class RunTracker
                 Overkill = result.OverkillDamage,
                 Killed = result.WasTargetKilled,
             });
-
-            Touch();
         }
-
-        RunStorage.SaveAsync(_current);
     }
 
-    private static CardAggregate GetOrCreate(string cardId)
+    // -------- Helpers --------
+
+    private static CardAggregate GetOrCreateAggregate(PendingCombat pending, string cardId)
     {
-        if (!_current.Aggregates.TryGetValue(cardId, out var agg))
+        if (!pending.CombatAggregates.TryGetValue(cardId, out var agg))
         {
             agg = new CardAggregate();
-            _current.Aggregates[cardId] = agg;
+            pending.CombatAggregates[cardId] = agg;
         }
         return agg;
     }
 
-    private static void Touch() => _current.UpdatedAt = DateTime.UtcNow.ToString("o");
+    private static CardAggregate GetOrCreateAggregate(RunData run, string cardId)
+    {
+        if (!run.Aggregates.TryGetValue(cardId, out var agg))
+        {
+            agg = new CardAggregate();
+            run.Aggregates[cardId] = agg;
+        }
+        return agg;
+    }
+
+    private static string Now() => DateTime.UtcNow.ToString("o");
+}
+
+/// <summary>
+/// Holds per-combat stats and events while a combat is in progress.
+/// Discarded if the combat doesn't finish cleanly; promoted into the run on CombatEnded.
+/// </summary>
+internal class PendingCombat
+{
+    public Dictionary<string, CardAggregate> CombatAggregates { get; } = new();
+    public List<CardEvent> CombatEvents { get; } = new();
 }
