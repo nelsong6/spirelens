@@ -1,7 +1,7 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Runs;
 
-namespace CardUtilityStats.CardUtilityStatsCode.Patches;
+namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
 /// Universal run-end hook. Supersedes the earlier attempt on

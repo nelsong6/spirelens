@@ -7,7 +7,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 
-namespace CardUtilityStats.CardUtilityStatsCode;
+namespace CardUtilityStats.Core;
 
 /// <summary>
 /// Tracks the current run's stats in memory and commits them to disk at
@@ -34,16 +34,30 @@ public static class RunTracker
     private static PendingCombat? _pendingCombat;
 
     /// <summary>
-    /// Wire up game event subscriptions. Called once from <see cref="MainFile.Initialize"/>.
-    /// Safe to call before CombatManager/RunManager singletons receive their first state —
-    /// we subscribe to events, not read state eagerly.
+    /// Wire up game event subscriptions. Called by <see cref="CoreMain.Initialize"/>
+    /// on first load and each hot-reload. Safe to call before CombatManager/RunManager
+    /// singletons receive their first state — we subscribe to events, not read state eagerly.
     /// </summary>
     public static void InitializeHooks()
     {
         RunManager.Instance.RunStarted += OnRunStarted;
         CombatManager.Instance.CombatSetUp += OnCombatSetUp;
         CombatManager.Instance.CombatEnded += OnCombatEnded;
-        MainFile.Logger.Info("CardUtilityStats hooks wired (RunStarted, CombatSetUp, CombatEnded).");
+        CoreMain.Logger.Info("CardUtilityStats hooks wired (RunStarted, CombatSetUp, CombatEnded).");
+    }
+
+    /// <summary>
+    /// Unsubscribe from the game's events before the assembly unloads.
+    /// Essential for hot-reload — otherwise RunManager and CombatManager
+    /// hold delegate references back into this (old) assembly, preventing
+    /// ALC collection and leaking the assembly on every reload.
+    /// </summary>
+    public static void TeardownHooks()
+    {
+        RunManager.Instance.RunStarted -= OnRunStarted;
+        CombatManager.Instance.CombatSetUp -= OnCombatSetUp;
+        CombatManager.Instance.CombatEnded -= OnCombatEnded;
+        CoreMain.Logger.Info("CardUtilityStats hooks unwired.");
     }
 
     /// <summary>Exposed read-only for diagnostics and (future) UI reads.</summary>
@@ -81,7 +95,7 @@ public static class RunTracker
             };
             _pendingCombat = null;
 
-            MainFile.Logger.Info($"RunStarted: {_currentRun.RunId} character={_currentRun.Character} ascension={_currentRun.Ascension} game_start_time={_currentRun.GameStartTime}");
+            CoreMain.Logger.Info($"RunStarted: {_currentRun.RunId} character={_currentRun.Character} ascension={_currentRun.Ascension} game_start_time={_currentRun.GameStartTime}");
             RunStorage.SaveAsync(_currentRun);
         }
     }
@@ -114,7 +128,7 @@ public static class RunTracker
                 _currentRun.FloorReached = runState.TotalFloor;
             }
 
-            MainFile.Logger.Info($"RunEnded: {_currentRun.RunId} outcome={outcome} floor={_currentRun.FloorReached}");
+            CoreMain.Logger.Info($"RunEnded: {_currentRun.RunId} outcome={outcome} floor={_currentRun.FloorReached}");
             RunStorage.SaveAsync(_currentRun);
 
             // Clear state so the next OnRunStarted sees a clean slate.
@@ -201,7 +215,7 @@ public static class RunTracker
         catch (Exception e)
         {
             // Never let tracker exceptions escape into the game loop.
-            MainFile.Logger.Error($"RunTracker.Observe failed: {e}");
+            CoreMain.Logger.Error($"RunTracker.Observe failed: {e}");
         }
     }
 

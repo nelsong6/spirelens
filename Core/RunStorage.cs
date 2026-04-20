@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Godot;
 
-namespace CardUtilityStats.CardUtilityStatsCode;
+namespace CardUtilityStats.Core;
 
 /// <summary>
 /// Persists RunData to JSON on disk. Files land in Godot's user:// directory
@@ -45,7 +45,7 @@ public static class RunStorage
             }
             catch (Exception e)
             {
-                MainFile.Logger.Error($"RunStorage.SaveAsync failed: {e}");
+                CoreMain.Logger.Error($"RunStorage.SaveAsync failed: {e}");
             }
         });
     }

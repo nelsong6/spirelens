@@ -1,7 +1,7 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat.History;
 
-namespace CardUtilityStats.CardUtilityStatsCode.Patches;
+namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
 /// Single master hook into the combat history dispatch.

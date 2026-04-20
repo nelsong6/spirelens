@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk" InitialTargets="CheckDependencyPaths">
+    <!--
+        Hot-reloaded Core assembly. Loaded at runtime by the Loader into a
+        collectible AssemblyLoadContext, so changes land with an F5 reload
+        instead of a game restart.
+
+        This is plain Microsoft.NET.Sdk (not Godot.NET.Sdk) because we don't
+        need Godot's source generators or scene tooling here — just C# code
+        referencing GodotSharp for the Godot API. Matches STS2MCP's pattern.
+    -->
+    <Import Project="..\Sts2PathDiscovery.props"/>
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>true</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <AssemblyName>CardUtilityStats.Core</AssemblyName>
+        <RootNamespace>CardUtilityStats.Core</RootNamespace>
+        <NoWarn>$(NoWarn);MSB3270</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup Condition="Exists('$(Sts2DataDir)')" >
+        <Reference Include="0Harmony">
+            <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="sts2">
+            <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="GodotSharp">
+            <HintPath>$(Sts2DataDir)/GodotSharp.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+    </ItemGroup>
+
+    <!-- Publicize private/protected members of the game assembly so we can read internals without reflection. -->
+    <ItemGroup Condition="True">
+        <Publicize Include="sts2" IncludeVirtualMembers="false" IncludeCompilerGeneratedMembers="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="*" PrivateAssets="All"/>
+        <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="All"/>
+    </ItemGroup>
+
+    <!-- Only compile files in this directory and subdirectories; ignore the rest of the repo. -->
+    <ItemGroup>
+        <Compile Remove="..\**\*.cs" />
+        <Compile Include="**\*.cs" />
+        <!-- Don't include the asset image from the Loader's asset folder. -->
+        <None Remove="**\*.png" />
+    </ItemGroup>
+
+    <Target Name="CheckDependencyPaths">
+        <Error
+                Text=" Slay the Spire 2 data not found at path '$(Sts2DataDir)'"
+                Condition="'$(Sts2DataDir)' == '' or !Exists('$(Sts2DataDir)')" />
+    </Target>
+
+    <!-- Deploy the Core DLL alongside the Loader's DLL in the mods folder.
+         The Loader reads "CardUtilityStats.Core.dll" from its own directory
+         and loads it into a collectible ALC. -->
+    <Target Name="CopyCoreToModsFolderOnBuild" AfterTargets="PostBuildEvent">
+        <Message Text="Copying Core .dll to mods folder." Importance="high" />
+        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)CardUtilityStats/" />
+    </Target>
+</Project>

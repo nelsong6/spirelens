@@ -6,7 +6,7 @@ using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.InspectScreens;
 
-namespace CardUtilityStats.CardUtilityStatsCode.Patches;
+namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
 /// M4 phase 1: inject a sibling "View Stats" tickbox next to the game's
@@ -34,6 +34,29 @@ public static class ViewStatsInjectorPatch
     // Track the most recently injected tickbox so phase 2 can read its state.
     public static NTickbox? LastInjectedTickbox { get; private set; }
 
+    // Track the cloned container so Shutdown can QueueFree() it on hot-reload.
+    // Otherwise the injected checkbox stays on screen after unload, referencing
+    // a dead assembly and potentially causing exceptions when clicked.
+    private static Node? _injectedClone;
+
+    /// <summary>
+    /// Called by CoreMain.Shutdown before unloading. QueueFrees the injected
+    /// clone node so it's removed from the scene tree; Godot will clean up
+    /// the underlying resources next frame. After this, the user won't see
+    /// our checkbox until they reopen the deck view (which triggers the
+    /// re-loaded patch on the next ConnectSignals).
+    /// </summary>
+    public static void TeardownInjectedUI()
+    {
+        if (_injectedClone != null && Godot.GodotObject.IsInstanceValid(_injectedClone))
+        {
+            _injectedClone.QueueFree();
+            CoreMain.Logger.Info("ViewStatsInjector: cloned container queued for removal");
+        }
+        _injectedClone = null;
+        LastInjectedTickbox = null;
+    }
+
     [HarmonyPostfix]
     public static void Postfix(NCardsViewScreen __instance)
     {
@@ -44,7 +67,7 @@ public static class ViewStatsInjectorPatch
         if (__instance is not NDeckViewScreen) return;
 
         try { Inject(__instance); }
-        catch (Exception e) { MainFile.Logger.Error($"ViewStatsInjector failed: {e}"); }
+        catch (Exception e) { CoreMain.Logger.Error($"ViewStatsInjector failed: {e}"); }
     }
 
     private static void Inject(NCardsViewScreen screen)
@@ -52,7 +75,7 @@ public static class ViewStatsInjectorPatch
         var viewUpgradesContainer = screen.GetNodeOrNull("ViewUpgrades");
         if (viewUpgradesContainer == null)
         {
-            MainFile.Logger.Warn("ViewStatsInjector: ViewUpgrades container not found — scene structure may have changed.");
+            CoreMain.Logger.Warn("ViewStatsInjector: ViewUpgrades container not found — scene structure may have changed.");
             return;
         }
 
@@ -73,7 +96,7 @@ public static class ViewStatsInjectorPatch
         }
         else
         {
-            MainFile.Logger.Warn("ViewStatsInjector: inner tickbox not found in clone");
+            CoreMain.Logger.Warn("ViewStatsInjector: inner tickbox not found in clone");
         }
 
         // Update the label text. MegaLabel.SetTextAutoSize takes a raw string.
@@ -85,12 +108,15 @@ public static class ViewStatsInjectorPatch
         }
         else
         {
-            MainFile.Logger.Warn("ViewStatsInjector: label not found in clone");
+            CoreMain.Logger.Warn("ViewStatsInjector: label not found in clone");
         }
 
         // Insert into the same parent as the original (the DeckViewScreen).
         var parent = viewUpgradesContainer.GetParent();
         parent.AddChild(clone);
+
+        // Track for Shutdown (hot-reload cleanup).
+        _injectedClone = clone;
 
         // Rewire the clone's visuals to point at its OWN subtree.
         //
@@ -119,7 +145,7 @@ public static class ViewStatsInjectorPatch
             }
             else
             {
-                MainFile.Logger.Warn("ViewStatsInjector: clone's TickboxVisuals not found — cannot rewire");
+                CoreMain.Logger.Warn("ViewStatsInjector: clone's TickboxVisuals not found — cannot rewire");
             }
         }
 
@@ -131,14 +157,14 @@ public static class ViewStatsInjectorPatch
             control.Position = origControl.Position + new Vector2(0, -60);
         }
 
-        MainFile.Logger.Info($"ViewStatsInjector: injected — tickbox={innerTickbox != null} label={label != null}");
+        CoreMain.Logger.Info($"ViewStatsInjector: injected — tickbox={innerTickbox != null} label={label != null}");
     }
 
     private static void OnStatsToggled(NTickbox tickbox)
     {
         // Phase 1: just log. Phase 2 will flip a display-mode flag and trigger
         // a card-text refresh so tooltips show our attribution stats.
-        MainFile.Logger.Info($"ViewStats toggled: IsTicked={tickbox.IsTicked}");
+        CoreMain.Logger.Info($"ViewStats toggled: IsTicked={tickbox.IsTicked}");
     }
 
     /// <summary>

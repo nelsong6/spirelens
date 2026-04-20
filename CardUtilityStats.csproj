@@ -41,14 +41,20 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Loader-only compile scope. Core is a separate csproj and builds its own DLL.
+             If we don't explicitly exclude Core/, the default glob in Godot.NET.Sdk
+             will sweep it in and we'd get duplicate type definitions. -->
+        <Compile Remove="Core/**" />
         <Compile Remove="CardUtilityStats/**" />
         <Compile Remove="materials/**" />
         <Compile Remove="shaders/**" />
         <Compile Remove="images/**" />
+        <EmbeddedResource Remove="Core/**" />
         <EmbeddedResource Remove="CardUtilityStats/**" />
         <EmbeddedResource Remove="materials/**" />
         <EmbeddedResource Remove="shaders/**" />
         <EmbeddedResource Remove="images/**" />
+        <None Remove="Core/**" />
     </ItemGroup>
 
     <ItemGroup>

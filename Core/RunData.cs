@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace CardUtilityStats.CardUtilityStatsCode;
+namespace CardUtilityStats.Core;
 
 /// <summary>
 /// Serialized shape of one run's stats. Written to disk as JSON.
