@@ -71,7 +71,7 @@ public static class RunTracker
                 RunId = Guid.NewGuid().ToString("N"),
                 StartedAt = now,
                 UpdatedAt = now,
-                Character = runState.Players.FirstOrDefault()?.Character?.Id.Entry,
+                Character = runState.Players.FirstOrDefault()?.Character?.Id.ToString(),
                 Ascension = runState.AscensionLevel,
                 FloorReached = runState.TotalFloor,
                 // Publicizer gives us the private _startTime field. This is the
@@ -131,7 +131,7 @@ public static class RunTracker
             {
                 _currentRun.FloorReached = runState.TotalFloor;
                 _currentRun.Ascension ??= runState.AscensionLevel;
-                _currentRun.Character ??= runState.Players.FirstOrDefault()?.Character?.Id.Entry;
+                _currentRun.Character ??= runState.Players.FirstOrDefault()?.Character?.Id.ToString();
             }
             _currentRun.UpdatedAt = Now();
 
@@ -170,7 +170,7 @@ public static class RunTracker
 
     private static void RecordCardPlay(CardPlay cardPlay)
     {
-        string cardId = cardPlay.Card.Id.Entry;
+        string cardId = cardPlay.Card.Id.ToString();
 
         lock (_lock)
         {
@@ -183,14 +183,14 @@ public static class RunTracker
                 T = Now(),
                 Type = "card_played",
                 CardId = cardId,
-                Target = cardPlay.Target?.Monster?.Id.Entry,
+                Target = cardPlay.Target?.Monster?.Id.ToString(),
             });
         }
     }
 
     private static void RecordDamageFromCard(DamageReceivedEntry entry)
     {
-        string cardId = entry.CardSource!.Id.Entry;
+        string cardId = entry.CardSource!.Id.ToString();
         var result = entry.Result;
 
         // Intended: total damage attempted, before block absorption.
@@ -215,8 +215,8 @@ public static class RunTracker
                 Type = "damage_received",
                 CardId = cardId,
                 Receiver = entry.Receiver.IsPlayer
-                    ? entry.Receiver.Player?.Character?.Id.Entry
-                    : entry.Receiver.Monster?.Id.Entry,
+                    ? entry.Receiver.Player?.Character?.Id.ToString()
+                    : entry.Receiver.Monster?.Id.ToString(),
                 Blocked = result.BlockedDamage,
                 Unblocked = result.UnblockedDamage,
                 Overkill = result.OverkillDamage,
