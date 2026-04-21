@@ -23,6 +23,8 @@ namespace CardUtilityStats.Core.Patches;
 [HarmonyPatch(typeof(NCardHolder), "CreateHoverTips")]
 public static class CardHoverShowPatch
 {
+    private const string SovereignBladeMetaNote = "Reflects All Sovereign Blade Usage";
+
     [HarmonyPostfix]
     public static void Postfix(NCardHolder __instance)
     {
@@ -117,9 +119,13 @@ public static class CardHoverShowPatch
     {
         var run = RunTracker.Current;
         var sb = new StringBuilder();
+        bool isSovereignBladeMetaCard = RunTracker.IsSovereignBladeDeckViewCard(cardModel);
 
         // The card identity now lives in the gold title slot for both compact
         // and full views, so repeating it again in the body just adds noise.
+
+        if (isSovereignBladeMetaCard)
+            sb.Append($"[color=#b5b5b5]{SovereignBladeMetaNote}[/color]\n");
 
         // Merges committed run + current pending combat so mid-combat plays
         // show up immediately (don't wait for CombatEnded). If we have no

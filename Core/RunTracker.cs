@@ -32,6 +32,9 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public static class RunTracker
 {
+    private const string SovereignBladeDefinitionId = "CARD.SOVEREIGN_BLADE";
+    private const string SovereignBladeForgedEventType = "sovereign_blade_forged";
+
     private static readonly object _lock = new();
     private static RunData? _currentRun;
     private static PendingCombat? _pendingCombat;
@@ -43,6 +46,8 @@ public static class RunTracker
     private static int _pendingEffectSourceHistoryCount;
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
+    private static bool _sovereignBladeAvailableThisRun;
+    private static CardModel? _sovereignBladeDeckViewCard;
 
     // Per-instance identity. Every physical card in the player's deck gets
     // a stable number the first time we observe it — NOT just when it's
@@ -124,6 +129,9 @@ public static class RunTracker
     {
         lock (_lock)
         {
+            if (IsSovereignBladeDeckViewCardLocked(card))
+                return GetSovereignBladeDeckViewAggregateLocked();
+
             // Non-assigning: if the card isn't tracked (preview/template
             // not yet a real deck member), return null so the tooltip
             // shows the empty-aggregate layout without creating a spurious
@@ -176,6 +184,84 @@ public static class RunTracker
             var key = Canonical(card);
             return _instanceNumbers.TryGetValue(key, out var existing) ? existing : 0;
         }
+    }
+
+    public static bool IsSovereignBladeDeckViewCard(CardModel card)
+    {
+        if (card == null) return false;
+        lock (_lock) return IsSovereignBladeDeckViewCardLocked(card);
+    }
+
+    private static bool IsSovereignBladeDeckViewCardLocked(CardModel card)
+    {
+        return _sovereignBladeDeckViewCard != null
+            && ReferenceEquals(Canonical(card), _sovereignBladeDeckViewCard);
+    }
+
+    private static CardAggregate? GetSovereignBladeDeckViewAggregateLocked()
+    {
+        CardAggregate? pooled = null;
+
+        if (_currentRun != null)
+            pooled = CardAggregatePooler.PoolByDefinition(_currentRun.Aggregates, SovereignBladeDefinitionId);
+
+        if (_pendingCombat != null)
+        {
+            var pending = CardAggregatePooler.PoolByDefinition(
+                _pendingCombat.CombatAggregates,
+                SovereignBladeDefinitionId);
+            if (pending != null)
+            {
+                pooled ??= new CardAggregate();
+                CardAggregatePooler.MergeInto(pooled, pending);
+            }
+        }
+
+        return pooled;
+    }
+
+    private static bool HasSovereignBladeDataLocked()
+    {
+        if (_currentRun?.Events.Any(e => e.Type == SovereignBladeForgedEventType) == true)
+            return true;
+
+        if (_pendingCombat?.CombatEvents.Any(e => e.Type == SovereignBladeForgedEventType) == true)
+            return true;
+
+        if (_currentRun?.Aggregates.Keys.Any(key =>
+                CardAggregatePooler.IsAggregateForDefinition(key, SovereignBladeDefinitionId)) == true)
+            return true;
+
+        if (_pendingCombat?.CombatAggregates.Keys.Any(key =>
+                CardAggregatePooler.IsAggregateForDefinition(key, SovereignBladeDefinitionId)) == true)
+            return true;
+
+        return false;
+    }
+
+    private static void RefreshSovereignBladeAvailabilityLocked()
+    {
+        _sovereignBladeAvailableThisRun = HasSovereignBladeDataLocked();
+        if (!_sovereignBladeAvailableThisRun)
+            _sovereignBladeDeckViewCard = null;
+    }
+
+    private static CardModel? GetSovereignBladeDeckViewCardLocked()
+    {
+        if (!_sovereignBladeAvailableThisRun) return null;
+        if (_sovereignBladeDeckViewCard != null) return _sovereignBladeDeckViewCard;
+
+        try
+        {
+            var modelId = ModelId.Deserialize(SovereignBladeDefinitionId);
+            _sovereignBladeDeckViewCard = ModelDb.GetById<CardModel>(modelId).ToMutable();
+        }
+        catch (Exception e)
+        {
+            CoreMain.LogDebug($"GetSovereignBladeDeckViewCardLocked failed: {e.Message}");
+        }
+
+        return _sovereignBladeDeckViewCard;
     }
 
     /// <summary>
@@ -414,6 +500,7 @@ public static class RunTracker
                 _pendingCombat = null;
                 _instanceNumbers.Clear();
                 _defCounters.Clear();
+                _sovereignBladeDeckViewCard = null;
 
                 // Restore monotonic counters first so any lazy-assign after
                 // this picks up the next unused number (not a conflict).
@@ -506,6 +593,8 @@ public static class RunTracker
                     $"game_start_time={gameStartTime} aggregates={_currentRun.Aggregates?.Count ?? 0} " +
                     $"reconstructed_removed={reconstructedRemoved} " +
                     $"restored_numbers={restored} unmatched_in_deck={unmatched}");
+
+                RefreshSovereignBladeAvailabilityLocked();
             }
             catch (Exception e)
             {
@@ -533,6 +622,8 @@ public static class RunTracker
             _instanceNumbers.Clear();
             _defCounters.Clear();
             ResetCombatContextState();
+            _sovereignBladeAvailableThisRun = false;
+            _sovereignBladeDeckViewCard = null;
 
             string now = Now();
             _currentRun = new RunData
@@ -597,6 +688,8 @@ public static class RunTracker
             _currentRun = null;
             _pendingCombat = null;
             ResetCombatContextState();
+            _sovereignBladeAvailableThisRun = false;
+            _sovereignBladeDeckViewCard = null;
         }
     }
 
@@ -1022,16 +1115,44 @@ public static class RunTracker
     {
         lock (_lock)
         {
-            if (_currentRun == null) return Array.Empty<CardModel>();
-            var result = new List<CardModel>();
-            foreach (var kv in _instanceNumbers)
+            return GetRemovedCardsLocked();
+        }
+    }
+
+    private static List<CardModel> GetRemovedCardsLocked()
+    {
+        if (_currentRun == null) return new List<CardModel>();
+
+        var result = new List<CardModel>();
+        foreach (var kv in _instanceNumbers)
+        {
+            var instanceId = $"{kv.Key.Id}#{kv.Value}";
+            if (_currentRun.Aggregates.TryGetValue(instanceId, out var agg) && agg.Removed)
             {
-                var instanceId = $"{kv.Key.Id}#{kv.Value}";
-                if (_currentRun.Aggregates.TryGetValue(instanceId, out var agg) && agg.Removed)
-                {
-                    result.Add(kv.Key);
-                }
+                result.Add(kv.Key);
             }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Additional cards to surface in the full-deck screen when ViewStats is
+    /// enabled. Today that includes removed cards plus the synthetic
+    /// deck-level Sovereign Blade once Forge has been activated this run.
+    /// </summary>
+    public static IReadOnlyList<CardModel> GetSupplementalDeckViewCards()
+    {
+        lock (_lock)
+        {
+            RefreshSovereignBladeAvailabilityLocked();
+
+            var result = GetRemovedCardsLocked();
+
+            var sovereignBlade = GetSovereignBladeDeckViewCardLocked();
+            if (sovereignBlade != null && !result.Contains(sovereignBlade))
+                result.Add(sovereignBlade);
+
             return result;
         }
     }
@@ -1205,6 +1326,35 @@ public static class RunTracker
                 _pendingEffectSourceCard = Canonical(sourceCard);
                 _pendingEffectSourceHistoryCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
             }
+        }
+    }
+
+    public static void RecordSovereignBladeForged()
+    {
+        lock (_lock)
+        {
+            _sovereignBladeAvailableThisRun = true;
+
+            _currentRun ??= new RunData
+            {
+                RunId = Guid.NewGuid().ToString("N"),
+                StartedAt = Now(),
+                UpdatedAt = Now(),
+            };
+            _pendingCombat ??= new PendingCombat();
+
+            bool alreadyRecorded =
+                _currentRun.Events.Any(e => e.Type == SovereignBladeForgedEventType) ||
+                _pendingCombat.CombatEvents.Any(e => e.Type == SovereignBladeForgedEventType);
+            if (alreadyRecorded) return;
+
+            _pendingCombat.CombatEvents.Add(new CardEvent
+            {
+                T = Now(),
+                Type = SovereignBladeForgedEventType,
+                CardId = SovereignBladeDefinitionId,
+                Floor = RunManager.Instance.State?.TotalFloor,
+            });
         }
     }
 

@@ -52,16 +52,19 @@
              If we don't explicitly exclude Core/, the default glob in Godot.NET.Sdk
              will sweep it in and we'd get duplicate type definitions. -->
         <Compile Remove="Core/**" />
+        <Compile Remove="Tests/**" />
         <Compile Remove="CardUtilityStats/**" />
         <Compile Remove="materials/**" />
         <Compile Remove="shaders/**" />
         <Compile Remove="images/**" />
         <EmbeddedResource Remove="Core/**" />
+        <EmbeddedResource Remove="Tests/**" />
         <EmbeddedResource Remove="CardUtilityStats/**" />
         <EmbeddedResource Remove="materials/**" />
         <EmbeddedResource Remove="shaders/**" />
         <EmbeddedResource Remove="images/**" />
         <None Remove="Core/**" />
+        <None Remove="Tests/**" />
     </ItemGroup>
 
     <ItemGroup>
@@ -78,7 +81,7 @@
                 Condition="'$(Sts2DataDir)' == '' or !Exists('$(Sts2DataDir)')" />
     </Target>
 
-    <Target Name="CopyToModsFolderOnBuild" AfterTargets="PostBuildEvent">
+    <Target Name="CopyToModsFolderOnBuild" AfterTargets="PostBuildEvent" Condition="'$(SkipModsDeploy)' != 'true'">
         <Message Text="Copying .dll, manifest, and dependencies to mods folder." Importance="high" />
         <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
         <Copy SourceFiles="$(AssemblyName).json" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
@@ -91,7 +94,7 @@
         <Copy SourceFiles="@(LoaderRuntimeDeps)" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
     </Target>
 
-    <Target Name="CopyQuickPck" AfterTargets="PackPck" Condition="Exists('$(PckPackerOutputPath)') And '$(PckPackerSkipped)' != 'true'">
+    <Target Name="CopyQuickPck" AfterTargets="PackPck" Condition="Exists('$(PckPackerOutputPath)') And '$(PckPackerSkipped)' != 'true' And '$(SkipModsDeploy)' != 'true'">
         <Message Text="Copying quick .pck to mods folder." Importance="high"/>
         <Copy SourceFiles="$(PckPackerOutputPath)"
               DestinationFolder="$(ModsPath)/$(MSBuildProjectName)" />
