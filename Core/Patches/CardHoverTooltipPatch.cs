@@ -227,8 +227,9 @@ public static class CardHoverShowPatch
             Row3(sb, "Played/Drawn", $"{agg.Plays}/{agg.TimesDrawn}", $"{playRate:F0}%");
         }
 
-        AppendAppliedEffects(sb, agg, compact: false);
-        AppendArtifactBlockedSummary(sb, agg);
+        bool hasDedicatedPoison = AppendDedicatedPoisonStats(sb, agg, compact: false);
+        AppendAppliedEffects(sb, agg, compact: false, excludePoison: hasDedicatedPoison);
+        AppendArtifactBlockedSummary(sb, agg, excludePoison: hasDedicatedPoison);
 
         // Energy-gain rows — cards like Adrenaline / Concentrate / energy
         // pot-style effects need a direct "what did this card give me?"
@@ -387,8 +388,9 @@ public static class CardHoverShowPatch
         if (agg.TotalBlockGained > 0)
             Row3(sb, "Block gained", agg.TotalBlockGained.ToString(), "");
 
-        AppendAppliedEffects(sb, agg, compact: true);
-        AppendArtifactBlockedSummary(sb, agg);
+        bool hasDedicatedPoison = AppendDedicatedPoisonStats(sb, agg, compact: true);
+        AppendAppliedEffects(sb, agg, compact: true, excludePoison: hasDedicatedPoison);
+        AppendArtifactBlockedSummary(sb, agg, excludePoison: hasDedicatedPoison);
 
         if (agg.Kills > 0)
             Row3(sb, "Kills", agg.Kills.ToString(), "");
@@ -467,12 +469,76 @@ public static class CardHoverShowPatch
         sb.Append("[/table]\n");
     }
 
-    private static void AppendAppliedEffects(StringBuilder sb, CardAggregate agg, bool compact)
+    private static bool AppendDedicatedPoisonStats(StringBuilder sb, CardAggregate agg, bool compact)
+    {
+        var poison = GetPoisonSummary(agg);
+        if (poison == null) return false;
+
+        if (compact)
+        {
+            var extra = poison.Value.TimesApplied > 0
+                ? poison.Value.TimesApplied > 1 ? $"{poison.Value.TimesApplied}x" : "1x"
+                : "";
+            Row3(sb, "Poison applied", FormatDecimal(poison.Value.TotalAmountApplied), extra);
+            return true;
+        }
+
+        decimal avgPoison = agg.Plays > 0 ? poison.Value.TotalAmountApplied / agg.Plays : 0m;
+
+        sb.Append("[color=#b5b5b5]Poison applied[/color]\n");
+        Row3(sb, "Total poison", FormatDecimal(poison.Value.TotalAmountApplied), "");
+        Row3(sb, "Avg poison", FormatDecimal(avgPoison), "");
+        Row3(sb, "Applications", poison.Value.TimesApplied.ToString(), "");
+
+        if (poison.Value.TimesBlockedByArtifact > 0)
+        {
+            string extra = poison.Value.TimesBlockedByArtifact > 1
+                ? $"{poison.Value.TimesBlockedByArtifact}x"
+                : "1x";
+            Row3(sb, "Blocked by Artifact", FormatDecimal(poison.Value.TotalAmountBlockedByArtifact), extra);
+        }
+
+        return true;
+    }
+
+    private static PoisonEffectSummary? GetPoisonSummary(CardAggregate agg)
+    {
+        if (agg.AppliedEffects == null || agg.AppliedEffects.Count == 0) return null;
+
+        int timesApplied = 0;
+        decimal totalAmountApplied = 0m;
+        int timesBlockedByArtifact = 0;
+        decimal totalAmountBlockedByArtifact = 0m;
+
+        foreach (var effect in agg.AppliedEffects.Values)
+        {
+            if (!IsPoisonEffect(effect)) continue;
+
+            timesApplied += effect.TimesApplied;
+            totalAmountApplied += effect.TotalAmountApplied;
+            timesBlockedByArtifact += effect.TimesBlockedByArtifact;
+            totalAmountBlockedByArtifact += effect.TotalAmountBlockedByArtifact;
+        }
+
+        if (timesApplied <= 0 &&
+            totalAmountApplied == 0m &&
+            timesBlockedByArtifact <= 0 &&
+            totalAmountBlockedByArtifact == 0m)
+            return null;
+
+        return new PoisonEffectSummary(
+            timesApplied,
+            totalAmountApplied,
+            timesBlockedByArtifact,
+            totalAmountBlockedByArtifact);
+    }
+
+    private static void AppendAppliedEffects(StringBuilder sb, CardAggregate agg, bool compact, bool excludePoison)
     {
         if (agg.AppliedEffects == null || agg.AppliedEffects.Count == 0) return;
-        bool hasArtifactBlockedSummary = GetArtifactBlockedTotals(agg).Times > 0;
+        bool hasArtifactBlockedSummary = GetArtifactBlockedTotals(agg, excludePoison).Times > 0;
         var visibleEffects = agg.AppliedEffects.Values
-            .Where(effect => ShouldShowAppliedEffectRow(effect, hasArtifactBlockedSummary))
+            .Where(effect => ShouldShowAppliedEffectRow(effect, hasArtifactBlockedSummary, excludePoison))
             .OrderByDescending(e => e.TimesApplied)
             .ThenBy(e => e.DisplayName)
             .ToList();
@@ -495,18 +561,18 @@ public static class CardHoverShowPatch
         }
     }
 
-    private static void AppendArtifactBlockedSummary(StringBuilder sb, CardAggregate agg)
+    private static void AppendArtifactBlockedSummary(StringBuilder sb, CardAggregate agg, bool excludePoison)
     {
-        var (times, amount) = GetArtifactBlockedTotals(agg);
+        var (times, amount) = GetArtifactBlockedTotals(agg, excludePoison);
         if (times <= 0) return;
 
-        var label = GetArtifactStrippedLabel(agg);
+        var label = GetArtifactStrippedLabel(agg, excludePoison);
         var value = times.ToString();
         var extra = amount != times ? $"{FormatDecimal(amount)} amt" : "";
         Row3(sb, label, value, extra);
     }
 
-    private static (int Times, decimal Amount) GetArtifactBlockedTotals(CardAggregate agg)
+    private static (int Times, decimal Amount) GetArtifactBlockedTotals(CardAggregate agg, bool excludePoison)
     {
         if (agg.AppliedEffects == null || agg.AppliedEffects.Count == 0)
             return (0, 0m);
@@ -515,6 +581,7 @@ public static class CardHoverShowPatch
         decimal amount = 0m;
         foreach (var effect in agg.AppliedEffects.Values)
         {
+            if (excludePoison && IsPoisonEffect(effect)) continue;
             times += effect.TimesBlockedByArtifact;
             amount += effect.TotalAmountBlockedByArtifact;
         }
@@ -522,8 +589,11 @@ public static class CardHoverShowPatch
         return (times, amount);
     }
 
-    private static bool ShouldShowAppliedEffectRow(AppliedEffectAggregate effect, bool hasArtifactBlockedSummary)
+    private static bool ShouldShowAppliedEffectRow(AppliedEffectAggregate effect, bool hasArtifactBlockedSummary, bool excludePoison)
     {
+        if (excludePoison && IsPoisonEffect(effect))
+            return false;
+
         if (effect.TotalAmountApplied == 0m && effect.TimesBlockedByArtifact > 0)
             return false;
 
@@ -533,12 +603,13 @@ public static class CardHoverShowPatch
         return true;
     }
 
-    private static string GetArtifactStrippedLabel(CardAggregate agg)
+    private static string GetArtifactStrippedLabel(CardAggregate agg, bool excludePoison)
     {
         if (agg.AppliedEffects != null)
         {
             foreach (var effect in agg.AppliedEffects.Values)
             {
+                if (excludePoison && IsPoisonEffect(effect)) continue;
                 if (!IsArtifactEffect(effect) || string.IsNullOrWhiteSpace(effect.IconPath)) continue;
                 return $"[img={InlineKeywordIconSize}x{InlineKeywordIconSize}]{effect.IconPath}[/img] stripped";
             }
@@ -554,6 +625,15 @@ public static class CardHoverShowPatch
             return true;
 
         return string.Equals(effect.DisplayName, "Artifact", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPoisonEffect(AppliedEffectAggregate effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect.EffectId) &&
+            effect.EffectId.Contains("POISON", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return string.Equals(effect.DisplayName, "Poison", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FormatDecimal(decimal value)
@@ -599,6 +679,12 @@ public static class CardHoverShowPatch
         }
     }
 }
+
+internal readonly record struct PoisonEffectSummary(
+    int TimesApplied,
+    decimal TotalAmountApplied,
+    int TimesBlockedByArtifact,
+    decimal TotalAmountBlockedByArtifact);
 
 [HarmonyPatch(typeof(NCardHolder), "ClearHoverTips")]
 public static class CardHoverHidePatch
