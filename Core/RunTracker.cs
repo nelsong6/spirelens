@@ -34,6 +34,9 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public static class RunTracker
 {
+    private const string ShivDefinitionId = "CARD.SHIV";
+    private const string ShivGeneratedEventType = "shiv_generated";
+
     private static readonly object _lock = new();
     private static RunData? _currentRun;
     private static PendingCombat? _pendingCombat;
@@ -46,6 +49,8 @@ public static class RunTracker
     private static readonly List<PendingPowerChangeAttempt> _pendingPowerChangeAttempts = new();
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
+    private static bool _shivAvailableThisRun;
+    private static CardModel? _shivDeckViewCard;
 
     // Per-instance identity. Every physical card in the player's deck gets
     // a stable number the first time we observe it — NOT just when it's
@@ -127,6 +132,9 @@ public static class RunTracker
     {
         lock (_lock)
         {
+            if (IsShivDeckViewCardLocked(card))
+                return GetShivDeckViewAggregateLocked();
+
             // Non-assigning: if the card isn't tracked (preview/template
             // not yet a real deck member), return null so the tooltip
             // shows the empty-aggregate layout without creating a spurious
@@ -179,6 +187,84 @@ public static class RunTracker
             var key = Canonical(card);
             return _instanceNumbers.TryGetValue(key, out var existing) ? existing : 0;
         }
+    }
+
+    public static bool IsShivDeckViewCard(CardModel card)
+    {
+        if (card == null) return false;
+        lock (_lock) return IsShivDeckViewCardLocked(card);
+    }
+
+    private static bool IsShivDeckViewCardLocked(CardModel card)
+    {
+        return _shivDeckViewCard != null
+            && ReferenceEquals(Canonical(card), _shivDeckViewCard);
+    }
+
+    private static CardAggregate? GetShivDeckViewAggregateLocked()
+    {
+        CardAggregate? pooled = null;
+
+        if (_currentRun != null)
+            pooled = CardAggregatePooler.PoolByDefinition(_currentRun.Aggregates, ShivDefinitionId);
+
+        if (_pendingCombat != null)
+        {
+            var pending = CardAggregatePooler.PoolByDefinition(
+                _pendingCombat.CombatAggregates,
+                ShivDefinitionId);
+            if (pending != null)
+            {
+                pooled ??= new CardAggregate();
+                CardAggregatePooler.MergeInto(pooled, pending);
+            }
+        }
+
+        return pooled;
+    }
+
+    private static bool HasShivDataLocked()
+    {
+        if (_currentRun?.Events.Any(e => e.Type == ShivGeneratedEventType) == true)
+            return true;
+
+        if (_pendingCombat?.CombatEvents.Any(e => e.Type == ShivGeneratedEventType) == true)
+            return true;
+
+        if (_currentRun?.Aggregates.Keys.Any(key =>
+                CardAggregatePooler.IsAggregateForDefinition(key, ShivDefinitionId)) == true)
+            return true;
+
+        if (_pendingCombat?.CombatAggregates.Keys.Any(key =>
+                CardAggregatePooler.IsAggregateForDefinition(key, ShivDefinitionId)) == true)
+            return true;
+
+        return false;
+    }
+
+    private static void RefreshShivAvailabilityLocked()
+    {
+        _shivAvailableThisRun = HasShivDataLocked();
+        if (!_shivAvailableThisRun)
+            _shivDeckViewCard = null;
+    }
+
+    private static CardModel? GetShivDeckViewCardLocked()
+    {
+        if (!_shivAvailableThisRun) return null;
+        if (_shivDeckViewCard != null) return _shivDeckViewCard;
+
+        try
+        {
+            var modelId = ModelId.Deserialize(ShivDefinitionId);
+            _shivDeckViewCard = ModelDb.GetById<CardModel>(modelId).ToMutable();
+        }
+        catch (Exception e)
+        {
+            CoreMain.LogDebug($"GetShivDeckViewCardLocked failed: {e.Message}");
+        }
+
+        return _shivDeckViewCard;
     }
 
     /// <summary>
@@ -418,6 +504,7 @@ public static class RunTracker
                 _pendingCombat = null;
                 _instanceNumbers.Clear();
                 _defCounters.Clear();
+                _shivDeckViewCard = null;
 
                 // Restore monotonic counters first so any lazy-assign after
                 // this picks up the next unused number (not a conflict).
@@ -510,6 +597,8 @@ public static class RunTracker
                     $"game_start_time={gameStartTime} aggregates={_currentRun.Aggregates?.Count ?? 0} " +
                     $"reconstructed_removed={reconstructedRemoved} " +
                     $"restored_numbers={restored} unmatched_in_deck={unmatched}");
+
+                RefreshShivAvailabilityLocked();
             }
             catch (Exception e)
             {
@@ -537,6 +626,8 @@ public static class RunTracker
             _instanceNumbers.Clear();
             _defCounters.Clear();
             ResetCombatContextState();
+            _shivAvailableThisRun = false;
+            _shivDeckViewCard = null;
 
             string now = Now();
             _currentRun = new RunData
@@ -601,6 +692,8 @@ public static class RunTracker
             _currentRun = null;
             _pendingCombat = null;
             ResetCombatContextState();
+            _shivAvailableThisRun = false;
+            _shivDeckViewCard = null;
         }
     }
 
@@ -1026,16 +1119,44 @@ public static class RunTracker
     {
         lock (_lock)
         {
-            if (_currentRun == null) return Array.Empty<CardModel>();
-            var result = new List<CardModel>();
-            foreach (var kv in _instanceNumbers)
+            return GetRemovedCardsLocked();
+        }
+    }
+
+    private static List<CardModel> GetRemovedCardsLocked()
+    {
+        if (_currentRun == null) return new List<CardModel>();
+
+        var result = new List<CardModel>();
+        foreach (var kv in _instanceNumbers)
+        {
+            var instanceId = $"{kv.Key.Id}#{kv.Value}";
+            if (_currentRun.Aggregates.TryGetValue(instanceId, out var agg) && agg.Removed)
             {
-                var instanceId = $"{kv.Key.Id}#{kv.Value}";
-                if (_currentRun.Aggregates.TryGetValue(instanceId, out var agg) && agg.Removed)
-                {
-                    result.Add(kv.Key);
-                }
+                result.Add(kv.Key);
             }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Additional cards to surface in the full-deck screen when ViewStats is
+    /// enabled. Today that includes removed cards plus the synthetic
+    /// deck-level Shiv once the run has generated one.
+    /// </summary>
+    public static IReadOnlyList<CardModel> GetSupplementalDeckViewCards()
+    {
+        lock (_lock)
+        {
+            RefreshShivAvailabilityLocked();
+
+            var result = GetRemovedCardsLocked();
+
+            var shiv = GetShivDeckViewCardLocked();
+            if (shiv != null && !result.Contains(shiv))
+                result.Add(shiv);
+
             return result;
         }
     }
@@ -1209,6 +1330,40 @@ public static class RunTracker
                 _pendingEffectSourceCard = Canonical(sourceCard);
                 _pendingEffectSourceHistoryCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
             }
+        }
+    }
+
+    public static void RecordShivGenerated(CardModel? card)
+    {
+        if (card == null) return;
+
+        lock (_lock)
+        {
+            if (!string.Equals(Canonical(card).Id.ToString(), ShivDefinitionId, StringComparison.Ordinal))
+                return;
+
+            _shivAvailableThisRun = true;
+
+            _currentRun ??= new RunData
+            {
+                RunId = Guid.NewGuid().ToString("N"),
+                StartedAt = Now(),
+                UpdatedAt = Now(),
+            };
+            _pendingCombat ??= new PendingCombat();
+
+            bool alreadyRecorded =
+                _currentRun.Events.Any(e => e.Type == ShivGeneratedEventType) ||
+                _pendingCombat.CombatEvents.Any(e => e.Type == ShivGeneratedEventType);
+            if (alreadyRecorded) return;
+
+            _pendingCombat.CombatEvents.Add(new CardEvent
+            {
+                T = Now(),
+                Type = ShivGeneratedEventType,
+                CardId = ShivDefinitionId,
+                Floor = RunManager.Instance.State?.TotalFloor,
+            });
         }
     }
 

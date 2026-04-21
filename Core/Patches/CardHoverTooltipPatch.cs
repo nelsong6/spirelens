@@ -24,6 +24,7 @@ namespace CardUtilityStats.Core.Patches;
 public static class CardHoverShowPatch
 {
     private const int InlineKeywordIconSize = 16;
+    private const string ShivMetaNote = "Reflects All Shiv Usage";
 
     [HarmonyPostfix]
     public static void Postfix(NCardHolder __instance)
@@ -119,9 +120,15 @@ public static class CardHoverShowPatch
     {
         var run = RunTracker.Current;
         var sb = new StringBuilder();
+        bool isSupplementalMetaCard = RunTracker.IsShivDeckViewCard(cardModel);
 
         // The card identity now lives in the gold title slot for both compact
         // and full views, so repeating it again in the body just adds noise.
+        // Supplemental meta cards (pooled Shiv today; Sovereign Blade later)
+        // get a red explanatory banner instead of the generic ephemeral
+        // "not present in deck" note.
+        if (isSupplementalMetaCard)
+            sb.Append($"[color=#e04c4c][b]{ShivMetaNote}[/b][/color]\n");
 
         // Merges committed run + current pending combat so mid-combat plays
         // show up immediately (don't wait for CombatEnded). If we have no
@@ -198,11 +205,13 @@ public static class CardHoverShowPatch
             // Distinguish "was removed from deck" from "never entered deck"
             // (combat-generated ephemerals like Souls/Shivs). Removed gets
             // a red bold banner since it's an important run decision to
-            // flag at a glance; ephemerals get the subdued "not present"
-            // note since it's expected and less attention-worthy.
+            // flag at a glance. Supplemental deck-view meta cards already
+            // emitted their own explanatory red banner above, so we suppress
+            // the generic "not present" line for them. Other ephemerals keep
+            // the subdued grey note.
             if (agg.Removed)
                 sb.Append("[color=#e04c4c][b]Card Removed[/b][/color]\n");
-            else
+            else if (!isSupplementalMetaCard)
                 sb.Append("[color=#b5b5b5]Card not present in deck[/color]\n");
         }
 

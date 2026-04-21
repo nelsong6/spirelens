@@ -7,10 +7,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens;
 namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
-/// Extend the deck-view display with removed cards when our ViewStats
+/// Extend the deck-view display with supplemental cards when our ViewStats
 /// checkbox is ticked. Harmony prefix on <c>NDeckViewScreen.DisplayCards</c>
 /// mutates the screen's private <c>_cards</c> list (via Publicizer access)
-/// to append removed-card refs before the grid renders them.
+/// to append removed-card refs plus the synthetic deck-level Shiv before the
+/// grid renders them.
 ///
 /// Why prefix not postfix: the grid's <c>SetCards</c> call uses <c>_cards</c>
 /// directly as its source. Mutating before the body runs is simpler than
@@ -20,7 +21,8 @@ namespace CardUtilityStats.Core.Patches;
 /// <c>CardModel.RemoveFromState</c> only sets <c>HasBeenRemovedFromState</c>
 /// (a flag) — it doesn't free the object. The grid renders them normally;
 /// the hover tooltip fires via the existing <c>NCardHolder.CreateHoverTips</c>
-/// patch and shows our stats including the "Removed floor X" lineage line.
+/// patch and shows our stats including the "Removed floor X" lineage line
+/// or the existing "Card not present in deck" banner for Shiv.
 ///
 /// Gate: only appends if the ViewStats checkbox is currently ticked. If the
 /// tickbox isn't injected yet (deck view never opened this session), behaves
@@ -40,7 +42,7 @@ public static class DeckViewInjectRemovedPatch
             // untick events also call DisplayCards, and without the reset
             // the previously-appended removed-card refs stayed in the list.
             // Resetting here guarantees clean state every render: the list
-            // reflects the current deck plus (if ticked) our removed refs.
+            // reflects the current deck plus (if ticked) our supplemental refs.
             //
             // Safe to reset: the grid's sort logic reads _sortingPriority
             // (a separate field on the screen), not the order of _cards.
@@ -49,16 +51,20 @@ public static class DeckViewInjectRemovedPatch
             var tickbox = ViewStatsInjectorPatch.LastInjectedTickbox;
             if (tickbox == null || !tickbox.IsTicked) return;
 
-            var removed = RunTracker.GetRemovedCards();
-            if (removed.Count == 0) return;
+            var supplemental = RunTracker.GetSupplementalDeckViewCards();
+            if (supplemental.Count == 0) return;
 
-            foreach (var card in removed)
+            int appended = 0;
+            foreach (var card in supplemental)
             {
                 if (card != null && !__instance._cards.Contains(card))
+                {
                     __instance._cards.Add(card);
+                    appended++;
+                }
             }
 
-            CoreMain.LogDebug($"DeckViewInject: appended {removed.Count} removed cards to deck view");
+            CoreMain.LogDebug($"DeckViewInject: appended {appended} supplemental cards to deck view");
         }
         catch (Exception e)
         {
