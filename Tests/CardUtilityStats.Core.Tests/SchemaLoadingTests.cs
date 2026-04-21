@@ -119,19 +119,34 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV8Fixture()
+    public void HistoricalLoad_AcceptsLegacyResumableV8Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v8-per-instance-regent-stars-run.json"));
 
         Assert.NotNull(loaded);
         Assert.Equal(8, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
+        Assert.Equal(2, loaded.Data.Events[1].StarsSpent);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsCurrentV9Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v9-per-instance-blocked-draw-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
         Assert.False(loaded.IsLegacy);
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Null(loaded.CompatibilityNote);
-        Assert.Equal(2, loaded.Data.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
-        Assert.Equal(2, loaded.Data.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
-        Assert.Equal(2, loaded.Data.Events[1].StarsSpent);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawBlocked);
+        Assert.Equal(1, loaded.Data.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawn);
+        Assert.Equal(0, loaded.Data.Aggregates["CARD.POMMEL_STRIKE#1"].TotalStarsGenerated);
     }
 
     [Fact]
@@ -218,7 +233,7 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV8Fixture()
+    public void ResumableLoad_AcceptsLegacyResumableV8Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v8-per-instance-regent-stars-run.json"));
 
@@ -227,6 +242,18 @@ public class SchemaLoadingTests
         Assert.Equal(2, resumed.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
         Assert.Equal(2, resumed.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
         Assert.Equal(1, resumed.Aggregates["CARD.VENERATE#1"].TimesDrawn);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsCurrentV9Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v9-per-instance-blocked-draw-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(2, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawBlocked);
+        Assert.Equal(1, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawn);
+        Assert.Equal(0, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TotalStarsSpent);
     }
 
     [Fact]

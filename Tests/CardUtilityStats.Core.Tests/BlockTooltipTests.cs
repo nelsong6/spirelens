@@ -69,6 +69,15 @@ public class BlockTooltipTests
     }
 
     [Fact]
+    public void GetDrawStatLabel_UsesDrawCardsNextTurnPowerIconForBlockedRows()
+    {
+        var label = (string)(GetDrawStatLabelMethod.Invoke(null, new object?[] { "draws blocked" })
+            ?? throw new InvalidOperationException("GetDrawStatLabel returned null."));
+
+        Assert.Equal("[img=16x16]res://images/atlases/power_atlas.sprites/draw_cards_next_turn_power.tres[/img] draws blocked", label);
+    }
+
+    [Fact]
     public void GetEnergyStatLabel_UsesEnergyPotionIcon()
     {
         var label = (string)(GetEnergyStatLabelMethod.Invoke(null, new object?[] { "gained" })

@@ -1667,6 +1667,35 @@ public static class RunTracker
         }
     }
 
+    public static void RecordBlockedDrawAttempt(Player player, bool fromHandDraw, AbstractModel? modifier)
+    {
+        lock (_lock)
+        {
+            if (fromHandDraw) return;
+
+            _pendingCombat ??= new PendingCombat();
+
+            try
+            {
+                var sourceCard = _pendingDrawSourceCard ?? FindLikelyDrawSourceCard(player);
+                if (sourceCard == null)
+                {
+                    CoreMain.LogDebug(
+                        $"Blocked draw unattributed modifier={modifier?.GetType().Name ?? "null"}");
+                    return;
+                }
+
+                var sourceId = GetOrAssignInstanceId(sourceCard);
+                var sourceAgg = GetOrCreateAggregate(_pendingCombat, sourceId);
+                sourceAgg.TimesCardsDrawBlocked++;
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordBlockedDrawAttempt failed: {e.Message}");
+            }
+        }
+    }
+
     private static void RecordPowerReceived(PowerReceivedEntry entry)
     {
         lock (_lock)
@@ -2093,6 +2122,7 @@ public static class RunTracker
             TimesExhausted = source.TimesExhausted,
             TotalHpLost = source.TotalHpLost,
             TimesCardsDrawn = source.TimesCardsDrawn,
+            TimesCardsDrawBlocked = source.TimesCardsDrawBlocked,
             FloorAdded = source.FloorAdded,
             InitialUpgradeLevel = source.InitialUpgradeLevel,
             Removed = source.Removed,
@@ -2126,6 +2156,7 @@ public static class RunTracker
         target.TimesExhausted += source.TimesExhausted;
         target.TotalHpLost += source.TotalHpLost;
         target.TimesCardsDrawn += source.TimesCardsDrawn;
+        target.TimesCardsDrawBlocked += source.TimesCardsDrawBlocked;
         MergeAppliedEffectsInto(target.AppliedEffects, source.AppliedEffects);
     }
 
