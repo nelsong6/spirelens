@@ -105,10 +105,10 @@ public class CardAggregate
     public int Plays { get; set; }
 
     // M1: Attack attribution. Null/zero for non-attack cards.
-    public int TotalIntended { get; set; }   // damage the card tried to deal (pre-block, pre-overkill)
+    public int TotalIntended { get; set; }   // damage the card tried to deal (pre-block, including overkill)
     public int TotalBlocked { get; set; }    // damage absorbed by target block
     public int TotalOverkill { get; set; }   // damage past target HP (wasted)
-    public int TotalEffective { get; set; }  // damage that actually moved HP (intended - blocked - overkill)
+    public int TotalEffective { get; set; }  // damage that actually moved HP (observed unblocked damage)
     public int Kills { get; set; }           // times the card landed a killing blow
 
     // M3a: Energy spent. Sum of CardPlay.Resources.EnergySpent across every

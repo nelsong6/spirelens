@@ -37,7 +37,10 @@ namespace CardUtilityStats.Core;
 public static class RunTracker
 {
     private const string ShivDefinitionId = "CARD.SHIV";
+    private const string SovereignBladeLegacyDefinitionToken = "SOVEREIGN_BLADE";
+    private const string SovereignBladeLegacyDefinitionId = "CARD.SOVEREIGN_BLADE";
     private const string ShivGeneratedEventType = "shiv_generated";
+    private const string SovereignBladeForgedEventType = "sovereign_blade_forged";
 
     private static readonly object _lock = new();
     private static RunData? _currentRun;
@@ -54,6 +57,9 @@ public static class RunTracker
     private static bool _shivAvailableThisRun;
     private static CardModel? _shivDeckViewCard;
     private const decimal PoisonOwnershipEpsilon = 0.0001m;
+    private static bool _sovereignBladeAvailableThisRun;
+    private static CardModel? _sovereignBladeDeckViewCard;
+    private static string? _sovereignBladeDefinitionIdThisRun;
 
     // Per-instance identity. Every physical card in the player's deck gets
     // a stable number the first time we observe it — NOT just when it's
@@ -137,6 +143,8 @@ public static class RunTracker
         {
             if (IsShivDeckViewCardLocked(card))
                 return GetShivDeckViewAggregateLocked();
+            if (IsSovereignBladeDeckViewCardLocked(card))
+                return GetSovereignBladeDeckViewAggregateLocked();
 
             // Non-assigning: if the card isn't tracked (preview/template
             // not yet a real deck member), return null so the tooltip
@@ -226,6 +234,43 @@ public static class RunTracker
         return pooled;
     }
 
+    public static bool IsSovereignBladeDeckViewCard(CardModel card)
+    {
+        if (card == null) return false;
+        lock (_lock) return IsSovereignBladeDeckViewCardLocked(card);
+    }
+
+    private static bool IsSovereignBladeDeckViewCardLocked(CardModel card)
+    {
+        return _sovereignBladeDeckViewCard != null
+            && ReferenceEquals(Canonical(card), _sovereignBladeDeckViewCard);
+    }
+
+    private static CardAggregate? GetSovereignBladeDeckViewAggregateLocked()
+    {
+        var definitionId = GetSovereignBladeDefinitionIdLocked();
+        if (string.IsNullOrWhiteSpace(definitionId)) return null;
+
+        CardAggregate? pooled = null;
+
+        if (_currentRun != null)
+            pooled = CardAggregatePooler.PoolByDefinition(_currentRun.Aggregates, definitionId);
+
+        if (_pendingCombat != null)
+        {
+            var pending = CardAggregatePooler.PoolByDefinition(
+                _pendingCombat.CombatAggregates,
+                definitionId);
+            if (pending != null)
+            {
+                pooled ??= new CardAggregate();
+                CardAggregatePooler.MergeInto(pooled, pending);
+            }
+        }
+
+        return pooled;
+    }
+
     private static bool HasShivDataLocked()
     {
         if (_currentRun?.Events.Any(e => e.Type == ShivGeneratedEventType) == true)
@@ -245,11 +290,44 @@ public static class RunTracker
         return false;
     }
 
+    private static bool HasSovereignBladeDataLocked()
+    {
+        if (_currentRun?.Events.Any(e => e.Type == SovereignBladeForgedEventType) == true)
+            return true;
+
+        if (_pendingCombat?.CombatEvents.Any(e => e.Type == SovereignBladeForgedEventType) == true)
+            return true;
+
+        var definitionId = GetSovereignBladeDefinitionIdLocked();
+        if (!string.IsNullOrWhiteSpace(definitionId))
+        {
+            if (_currentRun?.Aggregates.Keys.Any(key =>
+                    CardAggregatePooler.IsAggregateForDefinition(key, definitionId)) == true)
+                return true;
+
+            if (_pendingCombat?.CombatAggregates.Keys.Any(key =>
+                    CardAggregatePooler.IsAggregateForDefinition(key, definitionId)) == true)
+                return true;
+        }
+
+        return false;
+    }
+
     private static void RefreshShivAvailabilityLocked()
     {
         _shivAvailableThisRun = HasShivDataLocked();
         if (!_shivAvailableThisRun)
             _shivDeckViewCard = null;
+    }
+
+    private static void RefreshSovereignBladeAvailabilityLocked()
+    {
+        _sovereignBladeAvailableThisRun = HasSovereignBladeDataLocked();
+        if (!_sovereignBladeAvailableThisRun)
+        {
+            _sovereignBladeDeckViewCard = null;
+            _sovereignBladeDefinitionIdThisRun = null;
+        }
     }
 
     private static CardModel? GetShivDeckViewCardLocked()
@@ -268,6 +346,99 @@ public static class RunTracker
         }
 
         return _shivDeckViewCard;
+    }
+
+    private static CardModel? GetSovereignBladeDeckViewCardLocked()
+    {
+        if (!_sovereignBladeAvailableThisRun) return null;
+        if (_sovereignBladeDeckViewCard != null) return _sovereignBladeDeckViewCard;
+
+        try
+        {
+            var definitionId = GetSovereignBladeDefinitionIdLocked();
+            if (string.IsNullOrWhiteSpace(definitionId)) return null;
+
+            var modelId = ModelId.Deserialize(definitionId);
+            _sovereignBladeDeckViewCard = ModelDb.GetById<CardModel>(modelId).ToMutable();
+        }
+        catch (Exception e)
+        {
+            CoreMain.LogDebug($"GetSovereignBladeDeckViewCardLocked failed: {e.Message}");
+        }
+
+        return _sovereignBladeDeckViewCard;
+    }
+
+    private static string? GetSovereignBladeDefinitionIdLocked()
+    {
+        if (!string.IsNullOrWhiteSpace(_sovereignBladeDefinitionIdThisRun))
+            return _sovereignBladeDefinitionIdThisRun;
+
+        if (_sovereignBladeDeckViewCard != null)
+        {
+            _sovereignBladeDefinitionIdThisRun = _sovereignBladeDeckViewCard.Id.ToString();
+            return _sovereignBladeDefinitionIdThisRun;
+        }
+
+        string? eventCardId = _pendingCombat?.CombatEvents
+            .LastOrDefault(e => e.Type == SovereignBladeForgedEventType && !string.IsNullOrWhiteSpace(e.CardId))
+            ?.CardId;
+        eventCardId ??= _currentRun?.Events
+            .LastOrDefault(e => e.Type == SovereignBladeForgedEventType && !string.IsNullOrWhiteSpace(e.CardId))
+            ?.CardId;
+
+        if (!string.IsNullOrWhiteSpace(eventCardId))
+            _sovereignBladeDefinitionIdThisRun = eventCardId;
+
+        if (!string.IsNullOrWhiteSpace(_sovereignBladeDefinitionIdThisRun))
+            return _sovereignBladeDefinitionIdThisRun;
+
+        _sovereignBladeDefinitionIdThisRun =
+            TryInferSovereignBladeDefinitionIdFromAggregateKeys(_pendingCombat?.CombatAggregates.Keys)
+            ?? TryInferSovereignBladeDefinitionIdFromAggregateKeys(_currentRun?.Aggregates.Keys);
+
+        if (!string.IsNullOrWhiteSpace(_sovereignBladeDefinitionIdThisRun))
+            return _sovereignBladeDefinitionIdThisRun;
+
+        try
+        {
+            _sovereignBladeDefinitionIdThisRun =
+                ModelDb.GetId(typeof(MegaCrit.Sts2.Core.Models.Cards.SovereignBlade)).ToString();
+        }
+        catch (Exception e)
+        {
+            CoreMain.LogDebug($"GetSovereignBladeDefinitionIdLocked fallback failed: {e.Message}");
+        }
+
+        _sovereignBladeDefinitionIdThisRun ??= SovereignBladeLegacyDefinitionId;
+        return _sovereignBladeDefinitionIdThisRun;
+    }
+
+    internal static string? TryInferSovereignBladeDefinitionIdFromAggregateKeys(IEnumerable<string>? aggregateKeys)
+    {
+        if (aggregateKeys == null) return null;
+
+        foreach (var aggregateKey in aggregateKeys)
+        {
+            if (string.IsNullOrWhiteSpace(aggregateKey)) continue;
+
+            int separatorIndex = aggregateKey.LastIndexOf('#');
+            if (separatorIndex <= 0) continue;
+
+            string definitionId = aggregateKey[..separatorIndex];
+            if (!definitionId.Contains(SovereignBladeLegacyDefinitionToken, StringComparison.Ordinal))
+                continue;
+
+            return definitionId;
+        }
+
+        return null;
+    }
+
+    private static bool IsSovereignBladeCard(CardModel card)
+    {
+        return card is MegaCrit.Sts2.Core.Models.Cards.SovereignBlade
+            || string.Equals(card.GetType().Name, "SovereignBlade", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -504,10 +675,13 @@ public static class RunTracker
                 }
 
                 _currentRun = saved;
+                bool repairedDamageAggregates = RepairOffensiveDamageAggregatesFromEvents(_currentRun);
                 _pendingCombat = null;
                 _instanceNumbers.Clear();
                 _defCounters.Clear();
                 _shivDeckViewCard = null;
+                _sovereignBladeDeckViewCard = null;
+                _sovereignBladeDefinitionIdThisRun = null;
 
                 // Restore monotonic counters first so any lazy-assign after
                 // this picks up the next unused number (not a conflict).
@@ -602,6 +776,14 @@ public static class RunTracker
                     $"restored_numbers={restored} unmatched_in_deck={unmatched}");
 
                 RefreshShivAvailabilityLocked();
+                RefreshSovereignBladeAvailabilityLocked();
+
+                if (repairedDamageAggregates)
+                {
+                    CoreMain.Logger.Info(
+                        $"TryResumeActiveRun: repaired offensive damage aggregates for run_id={_currentRun.RunId}");
+                    SaveCurrentRun();
+                }
             }
             catch (Exception e)
             {
@@ -631,6 +813,9 @@ public static class RunTracker
             ResetCombatContextState();
             _shivAvailableThisRun = false;
             _shivDeckViewCard = null;
+            _sovereignBladeAvailableThisRun = false;
+            _sovereignBladeDeckViewCard = null;
+            _sovereignBladeDefinitionIdThisRun = null;
 
             string now = Now();
             _currentRun = new RunData
@@ -697,6 +882,9 @@ public static class RunTracker
             ResetCombatContextState();
             _shivAvailableThisRun = false;
             _shivDeckViewCard = null;
+            _sovereignBladeAvailableThisRun = false;
+            _sovereignBladeDeckViewCard = null;
+            _sovereignBladeDefinitionIdThisRun = null;
         }
     }
 
@@ -1193,20 +1381,26 @@ public static class RunTracker
 
     /// <summary>
     /// Additional cards to surface in the full-deck screen when ViewStats is
-    /// enabled. Today that includes removed cards plus the synthetic
-    /// deck-level Shiv once the run has generated one.
+    /// enabled. Today that includes removed cards plus pooled synthetic
+    /// deck-level meta cards for Shiv and Sovereign Blade once the run has
+    /// generated them.
     /// </summary>
     public static IReadOnlyList<CardModel> GetSupplementalDeckViewCards()
     {
         lock (_lock)
         {
             RefreshShivAvailabilityLocked();
+            RefreshSovereignBladeAvailabilityLocked();
 
             var result = GetRemovedCardsLocked();
 
             var shiv = GetShivDeckViewCardLocked();
             if (shiv != null && !result.Contains(shiv))
                 result.Add(shiv);
+
+            var sovereignBlade = GetSovereignBladeDeckViewCardLocked();
+            if (sovereignBlade != null && !result.Contains(sovereignBlade))
+                result.Add(sovereignBlade);
 
             return result;
         }
@@ -1437,6 +1631,87 @@ public static class RunTracker
             {
                 CoreMain.LogDebug($"NotePoisonTickStarting failed: {e.Message}");
             }
+        }
+    }
+
+    public static void RecordSovereignBladeGenerated(CardModel? card)
+    {
+        if (card == null) return;
+        if (!IsSovereignBladeCard(card)) return;
+
+        lock (_lock)
+        {
+            var canonical = Canonical(card);
+            var definitionId = canonical.Id.ToString();
+
+            _sovereignBladeAvailableThisRun = true;
+            _sovereignBladeDefinitionIdThisRun = definitionId;
+
+            try
+            {
+                _sovereignBladeDeckViewCard = canonical.ToMutable();
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordSovereignBladeGenerated clone failed: {e.Message}");
+            }
+
+            _currentRun ??= new RunData
+            {
+                RunId = Guid.NewGuid().ToString("N"),
+                StartedAt = Now(),
+                UpdatedAt = Now(),
+            };
+            _pendingCombat ??= new PendingCombat();
+
+            var existingEvent = _pendingCombat.CombatEvents
+                .LastOrDefault(e => e.Type == SovereignBladeForgedEventType);
+            existingEvent ??= _currentRun.Events
+                .LastOrDefault(e => e.Type == SovereignBladeForgedEventType);
+
+            if (existingEvent != null)
+            {
+                existingEvent.CardId = definitionId;
+                existingEvent.Floor ??= RunManager.Instance.State?.TotalFloor;
+                return;
+            }
+
+            _pendingCombat.CombatEvents.Add(new CardEvent
+            {
+                T = Now(),
+                Type = SovereignBladeForgedEventType,
+                CardId = definitionId,
+                Floor = RunManager.Instance.State?.TotalFloor,
+            });
+        }
+    }
+
+    public static void RecordSovereignBladeForged()
+    {
+        lock (_lock)
+        {
+            _sovereignBladeAvailableThisRun = true;
+
+            _currentRun ??= new RunData
+            {
+                RunId = Guid.NewGuid().ToString("N"),
+                StartedAt = Now(),
+                UpdatedAt = Now(),
+            };
+            _pendingCombat ??= new PendingCombat();
+
+            bool alreadyRecorded =
+                _currentRun.Events.Any(e => e.Type == SovereignBladeForgedEventType) ||
+                _pendingCombat.CombatEvents.Any(e => e.Type == SovereignBladeForgedEventType);
+            if (alreadyRecorded) return;
+
+            _pendingCombat.CombatEvents.Add(new CardEvent
+            {
+                T = Now(),
+                Type = SovereignBladeForgedEventType,
+                CardId = _sovereignBladeDefinitionIdThisRun ?? "",
+                Floor = RunManager.Instance.State?.TotalFloor,
+            });
         }
     }
 
@@ -2050,12 +2325,14 @@ public static class RunTracker
             else
             {
                 // Enemy damage — offensive stats.
-                int intended = result.BlockedDamage + result.UnblockedDamage;
-                int effective = result.UnblockedDamage - result.OverkillDamage;
-                agg.TotalIntended += intended;
+                var damageTotals = ComputeEnemyDamageTotals(
+                    result.BlockedDamage,
+                    result.UnblockedDamage,
+                    result.OverkillDamage);
+                agg.TotalIntended += damageTotals.IntendedDamage;
                 agg.TotalBlocked += result.BlockedDamage;
                 agg.TotalOverkill += result.OverkillDamage;
-                agg.TotalEffective += effective;
+                agg.TotalEffective += damageTotals.EffectiveDamage;
                 if (result.WasTargetKilled) agg.Kills++;
             }
 
@@ -2073,6 +2350,89 @@ public static class RunTracker
                 Killed = result.WasTargetKilled,
             });
         }
+    }
+
+    internal static (int IntendedDamage, int EffectiveDamage) ComputeEnemyDamageTotals(
+        int blockedDamage,
+        int unblockedDamage,
+        int overkillDamage)
+    {
+        // DamageReceivedEntry reports lethal hits as:
+        //   unblocked = HP actually lost
+        //   overkill = attempted damage beyond lethal
+        // So intended damage needs all three components, while "effective"
+        // damage is simply the HP that really came off the target.
+        int intendedDamage = blockedDamage + unblockedDamage + overkillDamage;
+        int effectiveDamage = unblockedDamage;
+        return (intendedDamage, effectiveDamage);
+    }
+
+    internal static bool RepairOffensiveDamageAggregatesFromEvents(RunData run)
+    {
+        var rebuilt = new Dictionary<string, (int Intended, int Blocked, int Overkill, int Effective, int Kills)>();
+
+        foreach (var cardEvent in run.Events)
+        {
+            if (!string.Equals(cardEvent.Type, "damage_received", StringComparison.Ordinal)) continue;
+            if (string.IsNullOrWhiteSpace(cardEvent.CardId)) continue;
+            if (string.IsNullOrWhiteSpace(cardEvent.Receiver)) continue;
+            if (!cardEvent.Receiver.StartsWith("MONSTER.", StringComparison.Ordinal)) continue;
+
+            rebuilt.TryGetValue(cardEvent.CardId, out var totals);
+
+            int blockedDamage = cardEvent.Blocked ?? 0;
+            int unblockedDamage = cardEvent.Unblocked ?? 0;
+            int overkillDamage = cardEvent.Overkill ?? 0;
+            var damageTotals = ComputeEnemyDamageTotals(blockedDamage, unblockedDamage, overkillDamage);
+
+            totals.Intended += damageTotals.IntendedDamage;
+            totals.Blocked += blockedDamage;
+            totals.Overkill += overkillDamage;
+            totals.Effective += damageTotals.EffectiveDamage;
+            if (cardEvent.Killed == true) totals.Kills++;
+
+            rebuilt[cardEvent.CardId] = totals;
+        }
+
+        bool changed = false;
+        foreach (var aggregate in run.Aggregates.Values)
+        {
+            if (aggregate.TotalIntended != 0) changed = true;
+            if (aggregate.TotalBlocked != 0) changed = true;
+            if (aggregate.TotalOverkill != 0) changed = true;
+            if (aggregate.TotalEffective != 0) changed = true;
+            if (aggregate.Kills != 0) changed = true;
+
+            aggregate.TotalIntended = 0;
+            aggregate.TotalBlocked = 0;
+            aggregate.TotalOverkill = 0;
+            aggregate.TotalEffective = 0;
+            aggregate.Kills = 0;
+        }
+
+        foreach (var (cardId, totals) in rebuilt)
+        {
+            if (!run.Aggregates.TryGetValue(cardId, out var aggregate))
+            {
+                aggregate = new CardAggregate();
+                run.Aggregates[cardId] = aggregate;
+                changed = true;
+            }
+
+            if (aggregate.TotalIntended != totals.Intended) changed = true;
+            if (aggregate.TotalBlocked != totals.Blocked) changed = true;
+            if (aggregate.TotalOverkill != totals.Overkill) changed = true;
+            if (aggregate.TotalEffective != totals.Effective) changed = true;
+            if (aggregate.Kills != totals.Kills) changed = true;
+
+            aggregate.TotalIntended = totals.Intended;
+            aggregate.TotalBlocked = totals.Blocked;
+            aggregate.TotalOverkill = totals.Overkill;
+            aggregate.TotalEffective = totals.Effective;
+            aggregate.Kills = totals.Kills;
+        }
+
+        return changed;
     }
 
     // -------- Helpers --------

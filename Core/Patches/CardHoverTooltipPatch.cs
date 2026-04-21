@@ -29,6 +29,7 @@ public static class CardHoverShowPatch
     private const string DrawCardsNextTurnPowerIconPath = "res://images/atlases/power_atlas.sprites/draw_cards_next_turn_power.tres";
     private const string EnergyPotionIconPath = "res://images/atlases/potion_atlas.sprites/energy_potion.tres";
     private const string StarIconPath = "res://images/packed/sprite_fonts/star_icon.png";
+    private const string SovereignBladeMetaNote = "Reflects All Sovereign Blade Usage";
 
     [HarmonyPostfix]
     public static void Postfix(NCardHolder __instance)
@@ -124,15 +125,19 @@ public static class CardHoverShowPatch
     {
         var run = RunTracker.Current;
         var sb = new StringBuilder();
-        bool isSupplementalMetaCard = RunTracker.IsShivDeckViewCard(cardModel);
+        bool isShivMetaCard = RunTracker.IsShivDeckViewCard(cardModel);
+        bool isSovereignBladeMetaCard = RunTracker.IsSovereignBladeDeckViewCard(cardModel);
+        bool isSupplementalMetaCard = isShivMetaCard || isSovereignBladeMetaCard;
 
         // The card identity now lives in the gold title slot for both compact
         // and full views, so repeating it again in the body just adds noise.
-        // Supplemental meta cards (pooled Shiv today; Sovereign Blade later)
+        // Supplemental meta cards (pooled Shiv / Sovereign Blade)
         // get a red explanatory banner instead of the generic ephemeral
         // "not present in deck" note.
-        if (isSupplementalMetaCard)
+        if (isShivMetaCard)
             sb.Append($"[color=#e04c4c][b]{ShivMetaNote}[/b][/color]\n");
+        else if (isSovereignBladeMetaCard)
+            sb.Append($"[color=#e04c4c][b]{SovereignBladeMetaNote}[/b][/color]\n");
 
         // Merges committed run + current pending combat so mid-combat plays
         // show up immediately (don't wait for CombatEnded). If we have no
