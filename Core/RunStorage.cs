@@ -49,4 +49,46 @@ public static class RunStorage
             }
         });
     }
+
+    /// <summary>
+    /// Scan the runs/ directory for a JSON file whose <c>GameStartTime</c>
+    /// matches the supplied value. Used by <see cref="RunTracker.TryResumeActiveRun"/>
+    /// on hot reload: the game's <c>RunManager._startTime</c> is stable
+    /// across our Core assembly reload, so we match on that to find the
+    /// run file we were writing to before the reload.
+    ///
+    /// Returns null if no match or if the directory doesn't exist yet.
+    /// Malformed / unreadable files are skipped, not fatal.
+    /// </summary>
+    public static RunData? FindByGameStartTime(long gameStartTime)
+    {
+        try
+        {
+            if (!Directory.Exists(RunsDir)) return null;
+
+            // Sort newest-first so if multiple files match (shouldn't happen
+            // but defensive), we pick the most recent.
+            var files = Directory.GetFiles(RunsDir, "*.json");
+            Array.Sort(files, (a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
+
+            foreach (var path in files)
+            {
+                try
+                {
+                    var json = File.ReadAllText(path);
+                    var data = JsonSerializer.Deserialize<RunData>(json, Options);
+                    if (data?.GameStartTime == gameStartTime) return data;
+                }
+                catch (Exception e)
+                {
+                    CoreMain.LogDebug($"FindByGameStartTime: skipping unreadable {Path.GetFileName(path)}: {e.Message}");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            CoreMain.Logger.Error($"FindByGameStartTime failed: {e}");
+        }
+        return null;
+    }
 }

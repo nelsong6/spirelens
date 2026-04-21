@@ -41,6 +41,21 @@ public static class CoreMain
     // Uses the game's own logger so output lands in godot.log alongside other mod logging.
     public static Logger Logger { get; } = new(ModId, LogType.Generic);
 
+    /// <summary>
+    /// Our own debug gate — when true, per-event and per-hook logs write out;
+    /// when false, only structural milestones (Initialize/Shutdown/RunStarted/
+    /// CombatEnded etc.) do. Toggled by the CUS_DEBUG environment variable
+    /// at Initialize time. NOT using MegaCrit's GlobalLogLevel because that's
+    /// process-wide — flipping it would make every other mod spam too.
+    /// </summary>
+    public static bool DebugLogging { get; private set; }
+
+    /// <summary>Gated debug-level log; no-op when DebugLogging is off.</summary>
+    public static void LogDebug(string msg)
+    {
+        if (DebugLogging) Logger.Info(msg);
+    }
+
     private static Harmony? _harmony;
 
     /// <summary>
@@ -50,12 +65,50 @@ public static class CoreMain
     /// </summary>
     public static void Initialize()
     {
-        Logger.Info($"Core.Initialize starting (harmony_id={_harmonyId})");
+        // Read debug gate from env var. Any non-empty truthy value enables;
+        // default (unset / "0" / "false") stays quiet. Read in Initialize so
+        // a dev can flip it between hot-reloads by changing their shell env
+        // before relaunching — though in practice once set it usually stays.
+        var envDebug = System.Environment.GetEnvironmentVariable("CUS_DEBUG");
+        DebugLogging = !string.IsNullOrEmpty(envDebug)
+            && envDebug != "0"
+            && !envDebug.Equals("false", StringComparison.OrdinalIgnoreCase);
+
+        Logger.Info($"Core.Initialize starting (harmony_id={_harmonyId}, debug={DebugLogging})");
 
         _harmony = new Harmony(_harmonyId);
         _harmony.PatchAll();
 
+        // Diagnostic: enumerate every Harmony-patched method so we can
+        // confirm from the log whether a given hook (especially
+        // CombatHistory.Add) actually got installed. Hot-reload cycles
+        // have historically had cases where a patch failed silently;
+        // the logged list gives us a grep target.
+        var patched = Harmony.GetAllPatchedMethods().ToList();
+        Logger.Info($"[CUS-diag] Harmony patched methods ({patched.Count} total):");
+        foreach (var m in patched)
+            Logger.Info($"[CUS-diag]   {m.DeclaringType?.FullName}.{m.Name}");
+
         RunTracker.InitializeHooks();
+
+        // Resume an active run across hot reload. Our static state (current
+        // run ref, instance-number map, per-def counters) lives on this Core
+        // assembly and is therefore wiped every reload — but the game's
+        // RunManager persists, and we've been writing a JSON snapshot to
+        // disk on every save. This looks up that file by the game's own
+        // _startTime identifier and rebuilds our in-memory state so stats
+        // attribution continues seamlessly instead of "No data this run"
+        // appearing after every F5.
+        //
+        // No-op if we're not mid-run (main menu, between runs) — RunStarted
+        // will handle fresh setup when the next run begins.
+        RunTracker.TryResumeActiveRun();
+
+        // Re-inject the ViewStats checkbox if the deck view is currently
+        // open — Shutdown just freed the injected clone, so without this
+        // the user would see the checkbox disappear until they close and
+        // reopen the deck view.
+        Patches.ViewStatsInjectorPatch.ReinjectIntoActiveDeckView();
 
         // Visible confirmation on screen so hot reload has immediate feedback.
         // Kept in Core (not Loader) so toast text/style can be tweaked and
@@ -88,6 +141,9 @@ public static class CoreMain
         // later cleanup. A half-cleaned state is better than a no-cleaned state.
         try { ViewStatsInjectorPatch.TeardownInjectedUI(); }
         catch (Exception e) { Logger.Error($"Shutdown: UI teardown failed: {e}"); }
+
+        try { StatsTooltip.Destroy(); }
+        catch (Exception e) { Logger.Error($"Shutdown: StatsTooltip teardown failed: {e}"); }
 
         try { RunTracker.TeardownHooks(); }
         catch (Exception e) { Logger.Error($"Shutdown: TeardownHooks failed: {e}"); }

@@ -34,17 +34,89 @@ public static class ViewStatsInjectorPatch
     // Track the most recently injected tickbox so phase 2 can read its state.
     public static NTickbox? LastInjectedTickbox { get; private set; }
 
+    // Track the active deck-view screen so the toggle handler can trigger
+    // a live re-render (via DisplayCards) when the user flips the checkbox.
+    // Without this, toggling the checkbox wouldn't show/hide removed cards
+    // until the user closed and reopened the deck view.
+    public static NDeckViewScreen? LastInjectedDeckView { get; private set; }
+
     // Track the cloned container so Shutdown can QueueFree() it on hot-reload.
     // Otherwise the injected checkbox stays on screen after unload, referencing
     // a dead assembly and potentially causing exceptions when clicked.
     private static Node? _injectedClone;
+
+    // Persist the user's checkbox choice across deck-view open/close cycles
+    // AND across Core hot reloads. Each time the deck view re-opens or Core
+    // reloads, we reset this from the on-disk prefs file. Each toggle writes
+    // the new state back. Cheap disk I/O (single-bool JSON file), worth it
+    // so F5 doesn't keep flipping the checkbox off.
+    private static bool _persistedTicked;
+    private static bool _prefsLoaded;
+
+    /// <summary>
+    /// Load the checkbox state from disk on first use. Called lazily from
+    /// Inject so it happens before the first deck view opens and also
+    /// after hot reload (since the static flag resets).
+    /// </summary>
+    private static void EnsurePrefsLoaded()
+    {
+        if (_prefsLoaded) return;
+        _prefsLoaded = true;
+        try
+        {
+            var prefs = PrefsStorage.Load();
+            _persistedTicked = prefs.ViewStatsTicked;
+        }
+        catch (Exception e)
+        {
+            CoreMain.Logger.Error($"ViewStatsInjector: loading prefs failed: {e}");
+        }
+    }
+
+    /// <summary>
+    /// On hot-reload Initialize, scan the scene tree for an active
+    /// NDeckViewScreen and re-inject into it. Without this, if the user
+    /// was viewing the deck at reload time, their Shutdown-freed checkbox
+    /// wouldn't come back until they closed and reopened the screen (the
+    /// ConnectSignals hook only fires on screen open, not on live screens).
+    /// </summary>
+    public static void ReinjectIntoActiveDeckView()
+    {
+        try
+        {
+            var tree = Godot.Engine.GetMainLoop() as Godot.SceneTree;
+            if (tree == null) return;
+            var deckView = FindDeckViewRecursive(tree.Root);
+            if (deckView == null) return;
+
+            CoreMain.Logger.Info("ViewStatsInjector: re-injecting into already-open deck view after hot reload");
+            LastInjectedDeckView = deckView;
+            Inject(deckView);
+        }
+        catch (Exception e)
+        {
+            CoreMain.Logger.Error($"ReinjectIntoActiveDeckView failed: {e}");
+        }
+    }
+
+    private static NDeckViewScreen? FindDeckViewRecursive(Node node)
+    {
+        if (node is NDeckViewScreen dv) return dv;
+        for (int i = 0; i < node.GetChildCount(); i++)
+        {
+            var found = FindDeckViewRecursive(node.GetChild(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
 
     /// <summary>
     /// Called by CoreMain.Shutdown before unloading. QueueFrees the injected
     /// clone node so it's removed from the scene tree; Godot will clean up
     /// the underlying resources next frame. After this, the user won't see
     /// our checkbox until they reopen the deck view (which triggers the
-    /// re-loaded patch on the next ConnectSignals).
+    /// re-loaded patch on the next ConnectSignals) — UNLESS the deck view
+    /// is still open and Initialize's ReinjectIntoActiveDeckView catches it.
     /// </summary>
     public static void TeardownInjectedUI()
     {
@@ -64,7 +136,11 @@ public static class ViewStatsInjectorPatch
         // subclasses (compendium, card selection dialogs) aren't in scope until
         // we validate semantics per-screen — e.g. Compendium stats would need
         // lifetime aggregation (#2).
-        if (__instance is not NDeckViewScreen) return;
+        if (__instance is not NDeckViewScreen deckView) return;
+
+        // Remember the active deck view so OnStatsToggled can trigger a
+        // live re-render (show/hide removed cards instantly on toggle).
+        LastInjectedDeckView = deckView;
 
         try { Inject(__instance); }
         catch (Exception e) { CoreMain.Logger.Error($"ViewStatsInjector failed: {e}"); }
@@ -72,6 +148,8 @@ public static class ViewStatsInjectorPatch
 
     private static void Inject(NCardsViewScreen screen)
     {
+        EnsurePrefsLoaded();
+
         var viewUpgradesContainer = screen.GetNodeOrNull("ViewUpgrades");
         if (viewUpgradesContainer == null)
         {
@@ -104,7 +182,8 @@ public static class ViewStatsInjectorPatch
         if (label != null)
         {
             label.Name = "ViewStatsLabel";
-            label.SetTextAutoSize("View Stats");  // TODO(i18n): pull from localization once we have keys
+            label.SetTextAutoSize("Card Utility");  // mirrors the tooltip header; references our mod name
+            // TODO(i18n): pull from localization once we have keys
         }
         else
         {
@@ -154,10 +233,13 @@ public static class ViewStatsInjectorPatch
                 innerTickbox._hsv = cloneVisuals.Material as ShaderMaterial;
                 innerTickbox._baseScale = cloneVisuals.Scale;
 
-                // Initial render: force the clone to show unticked state explicitly.
-                if (innerTickbox._tickedImage != null) innerTickbox._tickedImage.Visible = false;
-                if (innerTickbox._notTickedImage != null) innerTickbox._notTickedImage.Visible = true;
-                innerTickbox.IsTicked = false;
+                // Initial render: restore the user's last choice. The tickbox
+                // clone always constructs unticked, but the player expects
+                // their "I want stats on" preference to survive closing and
+                // re-opening the deck view within the same session.
+                if (innerTickbox._tickedImage != null) innerTickbox._tickedImage.Visible = _persistedTicked;
+                if (innerTickbox._notTickedImage != null) innerTickbox._notTickedImage.Visible = !_persistedTicked;
+                innerTickbox.IsTicked = _persistedTicked;
             }
             else
             {
@@ -178,9 +260,27 @@ public static class ViewStatsInjectorPatch
 
     private static void OnStatsToggled(NTickbox tickbox)
     {
-        // Phase 1: just log. Phase 2 will flip a display-mode flag and trigger
-        // a card-text refresh so tooltips show our attribution stats.
+        // Capture user intent so the next deck-view open reflects this state
+        // rather than reverting to unticked. The Postfix re-injects on each
+        // ConnectSignals, and without this the user would have to re-tick
+        // every time they close and reopen the deck view.
+        _persistedTicked = tickbox.IsTicked;
+        // Persist to disk so F5 / game restart reloads with the same state.
+        PrefsStorage.Save(new Prefs { ViewStatsTicked = _persistedTicked });
         CoreMain.Logger.Info($"ViewStats toggled: IsTicked={tickbox.IsTicked}");
+
+        // Live re-render so removed cards appear/disappear the moment the
+        // user flips the checkbox. DisplayCards reads our prefix-appended
+        // _cards list, so it automatically picks up the current tick state.
+        try
+        {
+            if (LastInjectedDeckView != null && Godot.GodotObject.IsInstanceValid(LastInjectedDeckView))
+                LastInjectedDeckView.DisplayCards();
+        }
+        catch (Exception e)
+        {
+            CoreMain.Logger.Error($"DisplayCards re-render failed: {e.Message}");
+        }
     }
 
     /// <summary>

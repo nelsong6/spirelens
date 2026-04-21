@@ -10,7 +10,11 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public class RunData
 {
-    public int SchemaVersion { get; set; } = 1;
+    // v1: aggregates keyed by card definition id (pooled across instances)
+    // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
+    //     each physical card in the deck gets its own entry. Pooled view
+    //     tracked as feature request in issue #11.
+    public int SchemaVersion { get; set; } = 2;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
     public string UpdatedAt { get; set; } = "";
@@ -38,6 +42,40 @@ public class RunData
 
     /// <summary>Full per-event log for later deep analysis. One entry per card play + one entry per damage-received-from-card.</summary>
     public List<CardEvent> Events { get; set; } = new();
+
+    /// <summary>
+    /// Snapshot of per-instance number assignments, serialized so that hot
+    /// reload mid-run can resume with the same numbers instead of losing
+    /// the CardModel-ref → number mapping (which only lives in memory on
+    /// the soon-to-be-orphaned Core assembly).
+    ///
+    /// Format: <c>{def_id → [number, number, ...]}</c> where the list is
+    /// ordered by each card's current deck-rank among cards of the same
+    /// def_id. Example: if the deck has 4 Strikes with instance numbers
+    /// #1, #2, #4, #5 (because #3 was Smith'd), this stores
+    /// <c>{"STRIKE": [1, 2, 4, 5]}</c>.
+    ///
+    /// On resume: walk the live deck, compute each card's
+    /// (def_id, rank-among-same-def), look up the number, repopulate
+    /// <c>RunTracker._instanceNumbers</c>. Removal-safe because rank is
+    /// relative to the CURRENT deck composition.
+    /// </summary>
+    public Dictionary<string, List<int>> InstanceNumbersByDef { get; set; } = new();
+
+    /// <summary>
+    /// Snapshot of the monotonic per-def counters. Preserves the invariant
+    /// that numbers never get reused across hot reload — if the saved state
+    /// had Strike #1..#5 and #3 was removed, <c>DefCounters["STRIKE"] == 5</c>,
+    /// so the next added Strike becomes #6 (not a recycled #3).
+    /// </summary>
+    public Dictionary<string, int> DefCounters { get; set; } = new();
+
+    // (Intentionally no PendingCombat field — pending-combat persistence
+    // was explored and rejected. Rule-of-use: F5 between combats, not
+    // during. Rest/shop/event/reward rooms are all safe because
+    // _pendingCombat is null outside of active combat. See git history
+    // on 2026-04-20 for the full PendingCombatSnapshot approach if we
+    // ever decide to re-enable mid-combat persistence.)
 }
 
 /// <summary>Aggregated per-card attribution stats for this run.</summary>
@@ -52,8 +90,100 @@ public class CardAggregate
     public int TotalEffective { get; set; }  // damage that actually moved HP (intended - blocked - overkill)
     public int Kills { get; set; }           // times the card landed a killing blow
 
+    // M3a: Energy spent. Sum of CardPlay.Resources.EnergySpent across every
+    // play of this card instance. Uses EnergySpent (actual energy paid) not
+    // EnergyValue (listed cost) so cost modifiers like Mummified Hand show
+    // up correctly — a Strike played from Hand at 0 cost counts 0 here.
+    // Average is derived on the display side via TotalEnergySpent / Plays.
+    public int TotalEnergySpent { get; set; }
+
+    // M2a: Block gained (INTENDED side only — how much block this card
+    // contributed over the run, summed across plays). Sourced from the
+    // game's BlockGainedEntry which carries a direct CardPlay attribution,
+    // so no heuristic needed on the add side. The ABSORBED side (how much
+    // of the gained block actually absorbed damage before expiring at
+    // turn end) is the hard attribution problem parked for later (M2b).
+    public int TotalBlockGained { get; set; }
+
+    // M3c: Draw count. Every time this card instance gets drawn — at
+    // turn start or via card-effect draw ("draw 2 cards"). Shows up-
+    // stream of plays: you can't play a card without drawing it first,
+    // so TimesDrawn >= Plays always. Useful for efficiency signals like
+    // "drew 10 times, played 4" (you've been stuck with dead draws).
+    public int TimesDrawn { get; set; }
+
+    // M3e: Discarded count. Every time this card goes to the discard
+    // pile — end-of-turn (still in hand), mid-combat discard effects,
+    // etc. Meaningful signal when high relative to plays ("I keep
+    // discarding this without playing it").
+    public int TimesDiscarded { get; set; }
+
+    // M3f: Pile-top placement counts. Tracks when THIS card gets placed
+    // on top of the draw pile from specific sources. Useful for cards
+    // that manipulate draw order (Shining Strike's self-retain after
+    // play, Finisher effects putting attacks back on top, etc.).
+    //   FromHand: card was in hand, got moved to top of draw (retain-style)
+    //   FromDiscard: card was in discard pile, got moved to top of draw
+    //     ("from graveyard" in player parlance)
+    public int TimesPlacedOnTopFromHand { get; set; }
+    public int TimesPlacedOnTopFromDiscard { get; set; }
+
+    // M3g: Exhaust attribution. When THIS card's play caused OTHER cards
+    // to be exhausted. Covers Havoc (exhausts the auto-played card), Fiend
+    // Fire (exhausts the hand), Second Wind (exhausts non-attacks), etc.
+    // Self-exhaust (card exhausts itself after play) is NOT counted here
+    // — different signal, different meaning.
+    public int TimesExhaustedOtherCards { get; set; }
+
+    // M3h: Player HP loss from playing this card. Tracks Ironclad-style
+    // self-damage (Hemokinesis, Offering, Combust tick, etc.). Uses the
+    // damage's UnblockedDamage, which is POST-reduction — so Tungsten Rod
+    // / buffer effects naturally show up as less HP loss. That's the
+    // truth of "what did this card actually cost me", not what its
+    // listed damage says.
+    public int TotalHpLost { get; set; }
+
+    // M3i: Draw attribution. When THIS card's play causes OTHER cards to
+    // be drawn. Signal for draw-enabler cards (Prepared, Coolheaded,
+    // Acrobatics etc. depending on the character). Excludes turn-start
+    // auto-draw via the game's FromHandDraw flag.
+    public int TimesCardsDrawn { get; set; }
+
+    // M3d: Per-instance lineage (when the card entered the deck and at
+    // what upgrade level). Lets us distinguish between "card arrived
+    // upgraded" (bought from a shop pre-upgraded, event reward, etc.) and
+    // "card upgraded during the run" (rest site / Armaments etc.).
+    //
+    //   FloorAdded:         CardModel.FloorAddedToDeck snapshot at first
+    //                       observation. Null = starting deck (the game
+    //                       leaves this null for the initial 5).
+    //   InitialUpgradeLevel: CurrentUpgradeLevel at first observation.
+    //                       If > 0, the card arrived already upgraded.
+    //
+    // Subsequent upgrades are recorded in the Events log as "card_upgraded"
+    // entries with Floor + UpgradeLevel, so the tooltip can render a full
+    // lineage like "Arrived: floor 3, +1" followed by "Upgraded: floor 6 → +2".
+    public int? FloorAdded { get; set; }
+    public int InitialUpgradeLevel { get; set; }
+
+    // M5a: Removal tracking. When a card is removed from the deck (Smith,
+    // event, curse-dispose, etc.), we mark the aggregate rather than
+    // delete it — so the user can browse "what did I remove this run and
+    // how was it performing?" via the deck-view injection.
+    //   Removed: true once the card left the permanent deck
+    //   RemovedAtFloor: floor the removal happened on
+    //   RemovedSnapshot: the card's full serializable state at removal —
+    //     upgrade level, enchantment, props, etc. Used on resume to
+    //     reconstruct a CardModel ref matching the removed card's state
+    //     (via CardModel.FromSerializable) so the deck-view injection
+    //     renders it correctly post-reload.
+    public bool Removed { get; set; }
+    public int? RemovedAtFloor { get; set; }
+    public MegaCrit.Sts2.Core.Saves.Runs.SerializableCard? RemovedSnapshot { get; set; }
+
     // M2: Block attribution (see issue #1 for heuristic). Null until M2.
-    // M3: Utility closure (energy/draw). Null until M3.
+    // M3b: Block-related closure (block added / absorbed). Null until M2/M3b.
+    // M3c: Draw count attribution. Null until M3c.
 }
 
 /// <summary>
@@ -68,6 +198,14 @@ public class CardEvent
 
     // card_played fields
     public string? Target { get; set; }          // if the card targeted an enemy, their entity id (e.g. "KIN_PRIEST_0")
+    public int? EnergySpent { get; set; }        // actual energy paid for this play (accounts for cost modifiers)
+
+    // card_upgraded fields (and general-purpose: Floor also stamped on
+    // other event types when useful). UpgradeLevel is the NEW level AFTER
+    // the upgrade (post-increment); Floor is RunManager.State.TotalFloor
+    // at the moment the upgrade fired.
+    public int? Floor { get; set; }
+    public int? UpgradeLevel { get; set; }
 
     // damage_received fields (only populated when Type == "damage_received" with a CardSource)
     public string? Receiver { get; set; }
