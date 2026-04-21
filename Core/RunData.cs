@@ -10,7 +10,7 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 8;
 
     // v1: aggregates keyed by card definition id (pooled across instances)
     // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
@@ -26,6 +26,13 @@ public class RunData
     //     files remain resumable with the new fields defaulting to 0.
     // v6: add per-effect Artifact-blocked debuff counters. Also additive;
     //     older v5 files remain resumable with the new fields defaulting to 0.
+    // v7: add per-effect downstream damage / overkill counters so effect-
+    //     oriented tooltips (starting with Poison) can report observed
+    //     outcomes instead of only application totals. Also additive; older
+    //     v6 files remain resumable with the new fields defaulting to 0.
+    // v8: add Regent star-resource spend / gain tracking alongside the
+    //     existing energy fields. Also additive; older v7 files remain
+    //     resumable with the new fields defaulting to 0.
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
@@ -115,6 +122,11 @@ public class CardAggregate
     // clamping / prevention, not the raw text on the card, so "gain 1" under
     // a no-energy-gain effect correctly records 0.
     public int TotalEnergyGenerated { get; set; }
+
+    // M3k: Regent star spend / generation mirrors the energy fields above,
+    // but for the character's separate star resource.
+    public int TotalStarsSpent { get; set; }
+    public int TotalStarsGenerated { get; set; }
 
     // M2a: Block gained (how much block this card contributed over the run,
     // summed across plays). M2b extends this with absorbed/wasted splits
@@ -229,6 +241,8 @@ public class AppliedEffectAggregate
     public decimal TotalAmountApplied { get; set; }
     public int TimesBlockedByArtifact { get; set; }
     public decimal TotalAmountBlockedByArtifact { get; set; }
+    public decimal TotalTriggeredEffectiveDamage { get; set; }
+    public decimal TotalTriggeredOverkill { get; set; }
 }
 
 /// <summary>
@@ -245,6 +259,8 @@ public class CardEvent
     public string? Target { get; set; }          // if the card targeted an enemy, their entity id (e.g. "KIN_PRIEST_0")
     public int? EnergySpent { get; set; }        // actual energy paid for this play (accounts for cost modifiers)
     public int? EnergyGained { get; set; }       // actual energy added to the pool while this card was resolving
+    public int? StarsSpent { get; set; }         // actual stars paid for this play
+    public int? StarsGained { get; set; }        // actual stars added while this card was resolving
 
     // card_upgraded fields (and general-purpose: Floor also stamped on
     // other event types when useful). UpgradeLevel is the NEW level AFTER

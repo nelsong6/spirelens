@@ -24,6 +24,10 @@ namespace CardUtilityStats.Core.Patches;
 public static class CardHoverShowPatch
 {
     private const int InlineKeywordIconSize = 16;
+    private const string BlockIconPath = "res://images/ui/combat/block.png";
+    private const string DrawCardsNextTurnPowerIconPath = "res://images/atlases/power_atlas.sprites/draw_cards_next_turn_power.tres";
+    private const string EnergyPotionIconPath = "res://images/atlases/potion_atlas.sprites/energy_potion.tres";
+    private const string StarIconPath = "res://images/packed/sprite_fonts/star_icon.png";
 
     [HarmonyPostfix]
     public static void Postfix(NCardHolder __instance)
@@ -218,7 +222,7 @@ public static class CardHoverShowPatch
         if (isUnplayable)
         {
             // For unplayable cards, just show Drawn. Played is always 0.
-            Row3(sb, "Drawn", agg.TimesDrawn.ToString(), "");
+            Row3(sb, GetDrawStatLabel("drawn"), agg.TimesDrawn.ToString(), "");
         }
         else
         {
@@ -237,8 +241,15 @@ public static class CardHoverShowPatch
         if (agg.TotalEnergyGenerated > 0)
         {
             float avgGenerated = agg.Plays > 0 ? (float)agg.TotalEnergyGenerated / agg.Plays : 0f;
-            Row3(sb, "Energy gained", agg.TotalEnergyGenerated.ToString(), "");
-            Row3(sb, "Avg gained", $"{avgGenerated:F1}", "");
+            Row3(sb, GetEnergyStatLabel("gained"), agg.TotalEnergyGenerated.ToString(), "");
+            Row3(sb, GetEnergyStatLabel("avg gained"), $"{avgGenerated:F1}", "");
+        }
+
+        if (agg.TotalStarsGenerated > 0)
+        {
+            float avgGenerated = agg.Plays > 0 ? (float)agg.TotalStarsGenerated / agg.Plays : 0f;
+            Row3(sb, GetStarStatLabel("gained"), agg.TotalStarsGenerated.ToString(), "");
+            Row3(sb, GetStarStatLabel("avg gained"), $"{avgGenerated:F1}", "");
         }
 
         // Energy-spent rows — only rendered when the card's cost is actually
@@ -248,8 +259,15 @@ public static class CardHoverShowPatch
         if (IsEnergyInteresting(cardModel, agg))
         {
             float avgEnergy = agg.Plays > 0 ? (float)agg.TotalEnergySpent / agg.Plays : 0f;
-            Row3(sb, "Total energy spent", agg.TotalEnergySpent.ToString(), "");
-            Row3(sb, "Avg energy", $"{avgEnergy:F1}", "");
+            Row3(sb, GetEnergyStatLabel("total spent"), agg.TotalEnergySpent.ToString(), "");
+            Row3(sb, GetEnergyStatLabel("avg cost"), $"{avgEnergy:F1}", "");
+        }
+
+        if (IsStarInteresting(cardModel, agg))
+        {
+            float avgStars = agg.Plays > 0 ? (float)agg.TotalStarsSpent / agg.Plays : 0f;
+            Row3(sb, GetStarStatLabel("total spent"), agg.TotalStarsSpent.ToString(), "");
+            Row3(sb, GetStarStatLabel("avg cost"), $"{avgStars:F1}", "");
         }
 
         // Damage section rules:
@@ -299,9 +317,9 @@ public static class CardHoverShowPatch
             float avgBlock = agg.Plays > 0 ? (float)agg.TotalBlockGained / agg.Plays : 0f;
             float absorbedPct = 100f * agg.TotalBlockEffective / agg.TotalBlockGained;
             float wastedPct = 100f * agg.TotalBlockWasted / agg.TotalBlockGained;
-            RowDual(sb, "Block gained", agg.TotalBlockGained.ToString(), "Avg block", $"{avgBlock:F1}");
-            Row3(sb, "Absorbed", agg.TotalBlockEffective.ToString(), $"{absorbedPct:F0}%");
-            Row3(sb, "Wasted", agg.TotalBlockWasted.ToString(), $"{wastedPct:F0}%");
+            RowDual(sb, GetBlockStatLabel("gained"), agg.TotalBlockGained.ToString(), GetBlockStatLabel("avg"), $"{avgBlock:F1}");
+            Row3(sb, GetBlockStatLabel("absorbed"), agg.TotalBlockEffective.ToString(), $"{absorbedPct:F0}%");
+            Row3(sb, GetBlockStatLabel("wasted"), agg.TotalBlockWasted.ToString(), $"{wastedPct:F0}%");
         }
 
         // Discarded count — shown only when > 0 because for most cards
@@ -333,7 +351,7 @@ public static class CardHoverShowPatch
         // Draw attribution — cards drawn as a result of playing THIS card.
         // Counts only card-effect draws (not turn-start auto-draw).
         if (agg.TimesCardsDrawn > 0)
-            Row3(sb, "Cards drawn", agg.TimesCardsDrawn.ToString(), "");
+            Row3(sb, GetDrawStatLabel("cards drawn"), agg.TimesCardsDrawn.ToString(), "");
 
         // HP lost from playing this card — Ironclad self-damage cards.
         // POST-reduction value, so Tungsten Rod / buffer interactions
@@ -371,7 +389,7 @@ public static class CardHoverShowPatch
 
         if (isUnplayable)
         {
-            Row3(sb, "Drawn", agg.TimesDrawn.ToString(), "");
+            Row3(sb, GetDrawStatLabel("drawn"), agg.TimesDrawn.ToString(), "");
         }
         else
         {
@@ -383,10 +401,13 @@ public static class CardHoverShowPatch
             Row3(sb, "Total damage", agg.TotalEffective.ToString(), "");
 
         if (agg.TotalEnergyGenerated > 0)
-            Row3(sb, "Energy gained", agg.TotalEnergyGenerated.ToString(), "");
+            Row3(sb, GetEnergyStatLabel("gained"), agg.TotalEnergyGenerated.ToString(), "");
+
+        if (agg.TotalStarsGenerated > 0)
+            Row3(sb, GetStarStatLabel("gained"), agg.TotalStarsGenerated.ToString(), "");
 
         if (agg.TotalBlockGained > 0)
-            Row3(sb, "Block gained", agg.TotalBlockGained.ToString(), "");
+            Row3(sb, GetBlockStatLabel("gained"), agg.TotalBlockGained.ToString(), "");
 
         bool hasDedicatedPoison = AppendDedicatedPoisonStats(sb, agg, compact: true);
         AppendAppliedEffects(sb, agg, compact: true, excludePoison: hasDedicatedPoison);
@@ -476,26 +497,38 @@ public static class CardHoverShowPatch
 
         if (compact)
         {
+            if (poison.Value.TimesApplied <= 0 && poison.Value.TotalAmountApplied == 0m)
+                return false;
+
             var extra = poison.Value.TimesApplied > 0
                 ? poison.Value.TimesApplied > 1 ? $"{poison.Value.TimesApplied}x" : "1x"
                 : "";
-            Row3(sb, "Poison applied", FormatDecimal(poison.Value.TotalAmountApplied), extra);
+            Row3(sb, GetPoisonStatLabel(poison.Value, "applied"), FormatDecimal(poison.Value.TotalAmountApplied), extra);
             return true;
         }
 
         decimal avgPoison = agg.Plays > 0 ? poison.Value.TotalAmountApplied / agg.Plays : 0m;
 
-        sb.Append("[color=#b5b5b5]Poison applied[/color]\n");
-        Row3(sb, "Total poison", FormatDecimal(poison.Value.TotalAmountApplied), "");
-        Row3(sb, "Avg poison", FormatDecimal(avgPoison), "");
-        Row3(sb, "Applications", poison.Value.TimesApplied.ToString(), "");
+        Row3(sb, GetPoisonStatLabel(poison.Value, "total"), FormatDecimal(poison.Value.TotalAmountApplied), "");
+        Row3(sb, GetPoisonStatLabel(poison.Value, "avg"), FormatDecimal(avgPoison), "");
+        Row3(sb, GetPoisonStatLabel(poison.Value, "applications"), poison.Value.TimesApplied.ToString(), "");
+
+        if (poison.Value.TotalTriggeredEffectiveDamage > 0m || poison.Value.TotalTriggeredOverkill > 0m)
+        {
+            decimal avgPoisonDamage = agg.Plays > 0 ? poison.Value.TotalTriggeredEffectiveDamage / agg.Plays : 0m;
+            Row3(sb, GetPoisonStatLabel(poison.Value, "damage"), FormatDecimal(poison.Value.TotalTriggeredEffectiveDamage), "");
+            Row3(sb, GetPoisonStatLabel(poison.Value, "avg dmg"), FormatDecimal(avgPoisonDamage), "");
+
+            if (poison.Value.TotalTriggeredOverkill > 0m)
+                Row3(sb, GetPoisonStatLabel(poison.Value, "overkill"), FormatDecimal(poison.Value.TotalTriggeredOverkill), "");
+        }
 
         if (poison.Value.TimesBlockedByArtifact > 0)
         {
             string extra = poison.Value.TimesBlockedByArtifact > 1
                 ? $"{poison.Value.TimesBlockedByArtifact}x"
                 : "1x";
-            Row3(sb, "Blocked by Artifact", FormatDecimal(poison.Value.TotalAmountBlockedByArtifact), extra);
+            Row3(sb, GetPoisonStatLabel(poison.Value, "blocked by Artifact"), FormatDecimal(poison.Value.TotalAmountBlockedByArtifact), extra);
         }
 
         return true;
@@ -509,6 +542,9 @@ public static class CardHoverShowPatch
         decimal totalAmountApplied = 0m;
         int timesBlockedByArtifact = 0;
         decimal totalAmountBlockedByArtifact = 0m;
+        decimal totalTriggeredEffectiveDamage = 0m;
+        decimal totalTriggeredOverkill = 0m;
+        string? iconPath = null;
 
         foreach (var effect in agg.AppliedEffects.Values)
         {
@@ -518,19 +554,72 @@ public static class CardHoverShowPatch
             totalAmountApplied += effect.TotalAmountApplied;
             timesBlockedByArtifact += effect.TimesBlockedByArtifact;
             totalAmountBlockedByArtifact += effect.TotalAmountBlockedByArtifact;
+            totalTriggeredEffectiveDamage += effect.TotalTriggeredEffectiveDamage;
+            totalTriggeredOverkill += effect.TotalTriggeredOverkill;
+            if (string.IsNullOrWhiteSpace(iconPath) && !string.IsNullOrWhiteSpace(effect.IconPath))
+                iconPath = effect.IconPath;
         }
 
         if (timesApplied <= 0 &&
             totalAmountApplied == 0m &&
             timesBlockedByArtifact <= 0 &&
-            totalAmountBlockedByArtifact == 0m)
+            totalAmountBlockedByArtifact == 0m &&
+            totalTriggeredEffectiveDamage == 0m &&
+            totalTriggeredOverkill == 0m)
             return null;
 
         return new PoisonEffectSummary(
             timesApplied,
             totalAmountApplied,
             timesBlockedByArtifact,
-            totalAmountBlockedByArtifact);
+            totalAmountBlockedByArtifact,
+            totalTriggeredEffectiveDamage,
+            totalTriggeredOverkill,
+            iconPath);
+    }
+
+    private static string GetPoisonStatLabel(PoisonEffectSummary poison, string suffix)
+    {
+        if (!string.IsNullOrWhiteSpace(poison.IconPath))
+            return GetInlineIconStatLabel(poison.IconPath, suffix);
+
+        return $"Poison {suffix}";
+    }
+
+    private static string GetBlockStatLabel(string suffix)
+    {
+        return GetInlineIconStatLabel(BlockIconPath, suffix);
+    }
+
+    private static string GetDrawStatLabel(string suffix)
+    {
+        return GetInlineIconStatLabel(DrawCardsNextTurnPowerIconPath, suffix);
+    }
+
+    private static string GetEnergyStatLabel(string suffix)
+    {
+        return GetInlineIconStatLabel(EnergyPotionIconPath, suffix);
+    }
+
+    private static string GetStarStatLabel(string suffix)
+    {
+        return GetInlineIconStatLabel(StarIconPath, suffix);
+    }
+
+    private static string GetInlineIconStatLabel(string iconPath, string suffix)
+    {
+        var normalizedPath = NormalizeResourcePath(iconPath);
+        return $"[img={InlineKeywordIconSize}x{InlineKeywordIconSize}]{normalizedPath}[/img] {suffix}";
+    }
+
+    private static string NormalizeResourcePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        return path.StartsWith("res://", StringComparison.Ordinal)
+            ? path
+            : $"res://{path.TrimStart('/')}";
     }
 
     private static void AppendAppliedEffects(StringBuilder sb, CardAggregate agg, bool compact, bool excludePoison)
@@ -553,7 +642,7 @@ public static class CardHoverShowPatch
         {
             if (compact && shown >= 2) break;
 
-            var label = string.IsNullOrWhiteSpace(effect.DisplayName) ? effect.EffectId : effect.DisplayName;
+            var label = GetAppliedEffectLabel(effect);
             var value = FormatDecimal(effect.TotalAmountApplied);
             var extra = effect.TimesApplied > 1 ? $"{effect.TimesApplied}x" : "1x";
             Row3(sb, label, value, extra);
@@ -636,6 +725,72 @@ public static class CardHoverShowPatch
         return string.Equals(effect.DisplayName, "Poison", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string GetAppliedEffectLabel(AppliedEffectAggregate effect)
+    {
+        var label = string.IsNullOrWhiteSpace(effect.DisplayName) ? effect.EffectId : effect.DisplayName;
+        if (IsEnergyEffect(effect))
+            return GetEnergyEffectLabel(label);
+        if (IsStarEffect(effect))
+            return GetStarEffectLabel(label);
+
+        return label;
+    }
+
+    private static bool IsEnergyEffect(AppliedEffectAggregate effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect.EffectId) &&
+            effect.EffectId.Contains("ENERGY", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !string.IsNullOrWhiteSpace(effect.DisplayName) &&
+               effect.DisplayName.Contains("Energy", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetEnergyEffectLabel(string label)
+    {
+        const string energyPrefix = "Energy ";
+        if (label.StartsWith(energyPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = label.Substring(energyPrefix.Length).Trim();
+            if (!string.IsNullOrWhiteSpace(suffix))
+                return GetInlineIconStatLabel(EnergyPotionIconPath, suffix);
+        }
+
+        return GetInlineIconStatLabel(EnergyPotionIconPath, label);
+    }
+
+    private static bool IsStarEffect(AppliedEffectAggregate effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect.EffectId) &&
+            effect.EffectId.Contains("STAR", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !string.IsNullOrWhiteSpace(effect.DisplayName) &&
+               effect.DisplayName.StartsWith("Star", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetStarEffectLabel(string label)
+    {
+        const string pluralPrefix = "Stars ";
+        const string singularPrefix = "Star ";
+
+        if (label.StartsWith(pluralPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = label.Substring(pluralPrefix.Length).Trim();
+            if (!string.IsNullOrWhiteSpace(suffix))
+                return GetInlineIconStatLabel(StarIconPath, suffix);
+        }
+
+        if (label.StartsWith(singularPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = label.Substring(singularPrefix.Length).Trim();
+            if (!string.IsNullOrWhiteSpace(suffix))
+                return GetInlineIconStatLabel(StarIconPath, suffix);
+        }
+
+        return GetInlineIconStatLabel(StarIconPath, label);
+    }
+
     private static string FormatDecimal(decimal value)
     {
         return decimal.Truncate(value) == value
@@ -678,13 +833,34 @@ public static class CardHoverShowPatch
             return false;
         }
     }
+
+    private static bool IsStarInteresting(
+        MegaCrit.Sts2.Core.Models.CardModel card, CardAggregate agg)
+    {
+        try
+        {
+            if (agg.Plays <= 0 || agg.TotalStarsSpent <= 0) return false;
+            if (card.HasStarCostX) return true;
+
+            int expectedPerPlay = Math.Max(0, card.GetStarCostWithModifiers());
+            return agg.TotalStarsSpent != expectedPerPlay * agg.Plays;
+        }
+        catch (Exception e)
+        {
+            CoreMain.LogDebug($"IsStarInteresting failed: {e.Message}");
+            return false;
+        }
+    }
 }
 
 internal readonly record struct PoisonEffectSummary(
     int TimesApplied,
     decimal TotalAmountApplied,
     int TimesBlockedByArtifact,
-    decimal TotalAmountBlockedByArtifact);
+    decimal TotalAmountBlockedByArtifact,
+    decimal TotalTriggeredEffectiveDamage,
+    decimal TotalTriggeredOverkill,
+    string? IconPath);
 
 [HarmonyPatch(typeof(NCardHolder), "ClearHoverTips")]
 public static class CardHoverHidePatch

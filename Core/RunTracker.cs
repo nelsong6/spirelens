@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -27,10 +28,11 @@ namespace CardUtilityStats.Core;
 /// Thread safety: game events all fire on the main thread. We still lock
 /// defensively since file I/O is on a background task.
 ///
-/// Milestone scope:
-///   M1 (this file):     card plays + attack damage attribution
-///   M2 (future):        block attribution (per issue #1 heuristic)
-///   M3 (future):        energy / draw closure
+/// Current scope:
+///   - per-instance card identity and run persistence
+///   - combat-boundary aggregation into committed run data
+///   - attack, block, energy, draw, exhaust, and effect attribution
+///   - case-specific downstream attribution such as poison tick damage
 /// </summary>
 public static class RunTracker
 {
@@ -46,6 +48,7 @@ public static class RunTracker
     private static readonly List<PendingPowerChangeAttempt> _pendingPowerChangeAttempts = new();
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
+    private const decimal PoisonOwnershipEpsilon = 0.0001m;
 
     // Per-instance identity. Every physical card in the player's deck gets
     // a stable number the first time we observe it — NOT just when it's
@@ -734,6 +737,10 @@ public static class RunTracker
                         CoreMain.LogDebug($"  -> RecordDamage from '{dre.CardSource.Title}' intended={dre.Result.BlockedDamage + dre.Result.UnblockedDamage} canonicalHash={Canonical(dre.CardSource).GetHashCode()}");
                         RecordDamageFromCard(dre);
                     }
+                    else if (!dre.Receiver.IsPlayer && TryRecordPoisonTickDamage(dre))
+                    {
+                        break;
+                    }
                     else
                     {
                         if (!dre.Receiver.IsPlayer)
@@ -789,6 +796,7 @@ public static class RunTracker
             // cost, but that's less useful for "how much does this card
             // actually cost me on average" analysis.
             agg.TotalEnergySpent += cardPlay.Resources.EnergySpent;
+            agg.TotalStarsSpent += cardPlay.Resources.StarsSpent;
 
             _pendingCombat.CombatEvents.Add(new CardEvent
             {
@@ -797,6 +805,7 @@ public static class RunTracker
                 CardId = instanceId,
                 Target = cardPlay.Target?.Monster?.Id.ToString(),
                 EnergySpent = cardPlay.Resources.EnergySpent,
+                StarsSpent = cardPlay.Resources.StarsSpent,
             });
         }
     }
@@ -874,6 +883,48 @@ public static class RunTracker
             catch (Exception e)
             {
                 CoreMain.LogDebug($"RecordEnergyGained failed: {e.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Record stars added to the player's pool while a card is currently
+    /// resolving. Mirrors <see cref="RecordEnergyGained"/> but targets
+    /// Regent's separate star resource.
+    /// </summary>
+    public static void RecordStarsGained(MegaCrit.Sts2.Core.Entities.Players.PlayerCombatState combatState, int amount)
+    {
+        if (amount <= 0) return;
+
+        lock (_lock)
+        {
+            try
+            {
+                var causingPlay = FindCurrentlyResolvingCardPlay();
+                if (causingPlay?.Card == null) return;
+
+                var sourceCard = causingPlay.Card;
+                var targetPlayer = combatState._player;
+                if (targetPlayer != null && sourceCard.Owner != null
+                    && !ReferenceEquals(sourceCard.Owner, targetPlayer))
+                    return;
+
+                _pendingCombat ??= new PendingCombat();
+                var instanceId = GetOrAssignInstanceId(sourceCard);
+                var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
+                agg.TotalStarsGenerated += amount;
+
+                _pendingCombat.CombatEvents.Add(new CardEvent
+                {
+                    T = Now(),
+                    Type = "stars_gained",
+                    CardId = instanceId,
+                    StarsGained = amount,
+                });
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordStarsGained failed: {e.Message}");
             }
         }
     }
@@ -1212,6 +1263,28 @@ public static class RunTracker
         }
     }
 
+    public static void NotePoisonTickStarting(object poisonPower)
+    {
+        lock (_lock)
+        {
+            try
+            {
+                var target = TryResolvePoisonPowerTarget(poisonPower);
+                if (target == null || target.IsPlayer) return;
+
+                _pendingCombat ??= new PendingCombat();
+                _pendingCombat.PendingPoisonTicks[target] = new PendingPoisonTick
+                {
+                    ArmedAtHistoryCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0,
+                };
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"NotePoisonTickStarting failed: {e.Message}");
+            }
+        }
+    }
+
     public static void NotePowerAmountChangeAttempt(
         PowerModel power,
         decimal amount,
@@ -1461,12 +1534,124 @@ public static class RunTracker
                 var effect = GetOrCreateAppliedEffect(agg, entry.Power);
                 effect.TimesApplied++;
                 effect.TotalAmountApplied += entry.Amount;
+
+                if (entry.Amount > 0m && IsPoisonPower(entry.Power))
+                {
+                    var target = TryResolvePowerReceivedTarget(entry);
+                    if (target != null && !target.IsPlayer)
+                        AddPoisonOwnershipLocked(target, instanceId, entry.Power, entry.Amount);
+                }
             }
             catch (Exception e)
             {
                 CoreMain.LogDebug($"RecordPowerReceived failed: {e.Message}");
             }
         }
+    }
+
+    private static bool TryRecordPoisonTickDamage(DamageReceivedEntry entry)
+    {
+        lock (_lock)
+        {
+            if (_pendingCombat == null) return false;
+            if (!_pendingCombat.PoisonOwnershipByTarget.TryGetValue(entry.Receiver, out var ownership)
+                || ownership.Count == 0)
+                return false;
+
+            decimal totalAttempted = entry.Result.BlockedDamage + entry.Result.UnblockedDamage;
+            if (totalAttempted <= 0m) return false;
+
+            bool armedTick = false;
+            if (_pendingCombat.PendingPoisonTicks.Remove(entry.Receiver, out var pendingTick))
+            {
+                int historyCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
+                armedTick = historyCount >= pendingTick.ArmedAtHistoryCount;
+            }
+
+            decimal trackedTotal = ownership.Values.Sum(share => Math.Max(0m, share.Amount));
+            if (trackedTotal <= 0m) return false;
+
+            bool fallbackAmountMatch = AreClose(trackedTotal, totalAttempted);
+            bool fallbackDealerMatch = entry.Dealer == null;
+            if (!armedTick && !(fallbackDealerMatch && fallbackAmountMatch))
+            {
+                if (entry.Result.WasTargetKilled)
+                    _pendingCombat.PoisonOwnershipByTarget.Remove(entry.Receiver);
+                return false;
+            }
+
+            if (trackedTotal > totalAttempted)
+            {
+                decimal normalize = totalAttempted / trackedTotal;
+                foreach (var share in ownership.Values)
+                    share.Amount *= normalize;
+            }
+
+            decimal effectiveDamage = Math.Max(0m, entry.Result.UnblockedDamage - entry.Result.OverkillDamage);
+            decimal overkillDamage = Math.Max(0m, entry.Result.OverkillDamage);
+
+            foreach (var share in ownership.Values.ToList())
+            {
+                if (share.Amount <= PoisonOwnershipEpsilon)
+                {
+                    ownership.Remove(share.Key);
+                    continue;
+                }
+
+                decimal fraction = share.Amount / totalAttempted;
+                var agg = GetOrCreateAggregate(_pendingCombat, share.CardInstanceId);
+                var effect = GetOrCreateAppliedEffect(agg, share.EffectId, share.DisplayName, share.IconPath);
+                effect.TotalTriggeredEffectiveDamage += effectiveDamage * fraction;
+                effect.TotalTriggeredOverkill += overkillDamage * fraction;
+            }
+
+            if (entry.Result.WasTargetKilled || totalAttempted <= 1m)
+            {
+                _pendingCombat.PoisonOwnershipByTarget.Remove(entry.Receiver);
+                return true;
+            }
+
+            decimal decay = (totalAttempted - 1m) / totalAttempted;
+            foreach (var key in ownership.Keys.ToList())
+            {
+                ownership[key].Amount *= decay;
+                if (ownership[key].Amount <= PoisonOwnershipEpsilon)
+                    ownership.Remove(key);
+            }
+
+            if (ownership.Count == 0)
+                _pendingCombat.PoisonOwnershipByTarget.Remove(entry.Receiver);
+
+            return true;
+        }
+    }
+
+    private static void AddPoisonOwnershipLocked(Creature target, string instanceId, PowerModel power, decimal amount)
+    {
+        if (_pendingCombat == null || target.IsPlayer || amount <= 0m) return;
+
+        if (!_pendingCombat.PoisonOwnershipByTarget.TryGetValue(target, out var ownership))
+        {
+            ownership = new Dictionary<PoisonOwnershipKey, PoisonOwnershipShare>();
+            _pendingCombat.PoisonOwnershipByTarget[target] = ownership;
+        }
+
+        string effectId = power.Id.ToString();
+        var key = new PoisonOwnershipKey(instanceId, effectId);
+        if (!ownership.TryGetValue(key, out var share))
+        {
+            share = new PoisonOwnershipShare
+            {
+                Key = key,
+                CardInstanceId = instanceId,
+                EffectId = effectId,
+                DisplayName = GetPowerDisplayName(power),
+                IconPath = GetPowerIconPath(power),
+            };
+            ownership[key] = share;
+        }
+
+        share.Amount += amount;
     }
 
     private static void RecordBlockGainedEntry(BlockGainedEntry entry)
@@ -1740,6 +1925,8 @@ public static class RunTracker
             Kills = source.Kills,
             TotalEnergySpent = source.TotalEnergySpent,
             TotalEnergyGenerated = source.TotalEnergyGenerated,
+            TotalStarsSpent = source.TotalStarsSpent,
+            TotalStarsGenerated = source.TotalStarsGenerated,
             TotalBlockGained = source.TotalBlockGained,
             TotalBlockEffective = source.TotalBlockEffective,
             TotalBlockWasted = source.TotalBlockWasted,
@@ -1771,6 +1958,8 @@ public static class RunTracker
         target.Kills += source.Kills;
         target.TotalEnergySpent += source.TotalEnergySpent;
         target.TotalEnergyGenerated += source.TotalEnergyGenerated;
+        target.TotalStarsSpent += source.TotalStarsSpent;
+        target.TotalStarsGenerated += source.TotalStarsGenerated;
         target.TotalBlockGained += source.TotalBlockGained;
         target.TotalBlockEffective += source.TotalBlockEffective;
         target.TotalBlockWasted += source.TotalBlockWasted;
@@ -1806,6 +1995,8 @@ public static class RunTracker
             effect.TotalAmountApplied += kv.Value.TotalAmountApplied;
             effect.TimesBlockedByArtifact += kv.Value.TimesBlockedByArtifact;
             effect.TotalAmountBlockedByArtifact += kv.Value.TotalAmountBlockedByArtifact;
+            effect.TotalTriggeredEffectiveDamage += kv.Value.TotalTriggeredEffectiveDamage;
+            effect.TotalTriggeredOverkill += kv.Value.TotalTriggeredOverkill;
             if (string.IsNullOrWhiteSpace(effect.DisplayName) && !string.IsNullOrWhiteSpace(kv.Value.DisplayName))
                 effect.DisplayName = kv.Value.DisplayName;
             if (string.IsNullOrWhiteSpace(effect.IconPath) && !string.IsNullOrWhiteSpace(kv.Value.IconPath))
@@ -1816,15 +2007,31 @@ public static class RunTracker
     private static AppliedEffectAggregate GetOrCreateAppliedEffect(CardAggregate agg, PowerModel power)
     {
         var effectId = power.Id.ToString();
+        return GetOrCreateAppliedEffect(agg, effectId, GetPowerDisplayName(power), GetPowerIconPath(power));
+    }
+
+    private static AppliedEffectAggregate GetOrCreateAppliedEffect(
+        CardAggregate agg,
+        string effectId,
+        string displayName,
+        string? iconPath)
+    {
         if (!agg.AppliedEffects.TryGetValue(effectId, out var effect))
         {
             effect = new AppliedEffectAggregate
             {
                 EffectId = effectId,
-                DisplayName = GetPowerDisplayName(power),
-                IconPath = !string.IsNullOrWhiteSpace(power.IconPath) ? power.IconPath : power.PackedIconPath,
+                DisplayName = displayName,
+                IconPath = iconPath,
             };
             agg.AppliedEffects[effectId] = effect;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(effect.DisplayName) && !string.IsNullOrWhiteSpace(displayName))
+                effect.DisplayName = displayName;
+            if (string.IsNullOrWhiteSpace(effect.IconPath) && !string.IsNullOrWhiteSpace(iconPath))
+                effect.IconPath = iconPath;
         }
         return effect;
     }
@@ -1844,6 +2051,174 @@ public static class RunTracker
         }
         catch { }
         return power.Id.ToString();
+    }
+
+    private static string? GetPowerIconPath(PowerModel power)
+    {
+        return !string.IsNullOrWhiteSpace(power.IconPath) ? power.IconPath : power.PackedIconPath;
+    }
+
+    private static bool IsPoisonPower(PowerModel power)
+    {
+        var effectId = power.Id.ToString();
+        if (effectId.Contains("POISON", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (power.GetType().Name.Contains("Poison", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return string.Equals(GetPowerDisplayName(power), "Poison", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Creature? TryResolvePowerReceivedTarget(PowerReceivedEntry entry)
+    {
+        return TryResolveCreatureMember(
+            entry,
+            preferredNames: ["Target", "Receiver", "Creature", "Owner", "Holder"],
+            excludedNames: ["Applier", "Giver", "Dealer"]);
+    }
+
+    private static Creature? TryResolvePoisonPowerTarget(object poisonPower)
+    {
+        return TryResolveCreatureMember(
+            poisonPower,
+            preferredNames: ["Target", "Receiver", "Creature", "Owner", "Holder"],
+            excludedNames: []);
+    }
+
+    private static Creature? TryResolveCreatureMember(
+        object source,
+        IReadOnlyList<string> preferredNames,
+        IReadOnlyCollection<string> excludedNames)
+    {
+        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        return TryResolveCreatureMemberRecursive(source, preferredNames, excludedNames, depthRemaining: 2, visited);
+    }
+
+    private static bool TryReadCreatureMember(Type type, object source, string memberName, out Creature? creature)
+    {
+        var prop = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (prop != null && prop.CanRead && typeof(Creature).IsAssignableFrom(prop.PropertyType))
+        {
+            try
+            {
+                creature = prop.GetValue(source) as Creature;
+                if (creature != null) return true;
+            }
+            catch { }
+        }
+
+        var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (field != null && typeof(Creature).IsAssignableFrom(field.FieldType))
+        {
+            try
+            {
+                creature = field.GetValue(source) as Creature;
+                if (creature != null) return true;
+            }
+            catch { }
+        }
+
+        creature = null;
+        return false;
+    }
+
+    private static Creature? TryResolveCreatureMemberRecursive(
+        object? source,
+        IReadOnlyList<string> preferredNames,
+        IReadOnlyCollection<string> excludedNames,
+        int depthRemaining,
+        HashSet<object> visited)
+    {
+        if (source == null) return null;
+        if (source is Creature directCreature) return directCreature;
+        if (depthRemaining < 0) return null;
+        if (!visited.Add(source)) return null;
+
+        var type = source.GetType();
+        foreach (var name in preferredNames)
+        {
+            if (TryReadCreatureMember(type, source, name, out var preferredCreature))
+                return preferredCreature;
+        }
+
+        var candidates = new List<Creature>();
+        var nestedValues = new List<object>();
+
+        foreach (var prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            if (!prop.CanRead) continue;
+            if (excludedNames.Contains(prop.Name)) continue;
+
+            object? value;
+            try { value = prop.GetValue(source); }
+            catch { continue; }
+
+            if (value == null) continue;
+            if (value is Creature propCreature)
+            {
+                candidates.Add(propCreature);
+                continue;
+            }
+
+            if (!IsSimpleObject(value))
+                nestedValues.Add(value);
+        }
+
+        foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            if (excludedNames.Contains(field.Name)) continue;
+
+            object? value;
+            try { value = field.GetValue(source); }
+            catch { continue; }
+
+            if (value == null) continue;
+            if (value is Creature fieldCreature)
+            {
+                candidates.Add(fieldCreature);
+                continue;
+            }
+
+            if (!IsSimpleObject(value))
+                nestedValues.Add(value);
+        }
+
+        var distinctCandidates = candidates.Distinct().ToList();
+        if (distinctCandidates.Count == 1) return distinctCandidates[0];
+
+        if (depthRemaining == 0) return null;
+
+        foreach (var nested in nestedValues)
+        {
+            var nestedCreature = TryResolveCreatureMemberRecursive(
+                nested,
+                preferredNames,
+                excludedNames,
+                depthRemaining - 1,
+                visited);
+            if (nestedCreature != null)
+                return nestedCreature;
+        }
+
+        return null;
+    }
+
+    private static bool IsSimpleObject(object value)
+    {
+        var type = value.GetType();
+        return type.IsPrimitive
+            || type.IsEnum
+            || type == typeof(string)
+            || type == typeof(decimal)
+            || type == typeof(DateTime)
+            || type == typeof(TimeSpan)
+            || type == typeof(Guid);
+    }
+
+    private static bool AreClose(decimal left, decimal right)
+    {
+        return decimal.Abs(left - right) <= PoisonOwnershipEpsilon;
     }
 
     private static string Now() => DateTime.UtcNow.ToString("o");
@@ -1877,6 +2252,10 @@ internal class PendingCombat
     public Dictionary<string, CardAggregate> CombatAggregates { get; } = new();
     public List<CardEvent> CombatEvents { get; } = new();
     public List<BlockChunk> PlayerBlockLedger { get; } = new();
+    public Dictionary<Creature, Dictionary<PoisonOwnershipKey, PoisonOwnershipShare>> PoisonOwnershipByTarget { get; }
+        = new(ReferenceEqualityComparer.Instance);
+    public Dictionary<Creature, PendingPoisonTick> PendingPoisonTicks { get; }
+        = new(ReferenceEqualityComparer.Instance);
     public int NextBlockSequence { get; set; }
 }
 
@@ -1895,4 +2274,21 @@ internal sealed class PendingPowerChangeAttempt
     public Creature? Applier { get; init; }
     public required decimal RequestedAmount { get; init; }
     public CardModel? CardSource { get; init; }
+}
+
+internal readonly record struct PoisonOwnershipKey(string CardInstanceId, string EffectId);
+
+internal sealed class PoisonOwnershipShare
+{
+    public required PoisonOwnershipKey Key { get; init; }
+    public required string CardInstanceId { get; init; }
+    public required string EffectId { get; init; }
+    public required string DisplayName { get; init; }
+    public string? IconPath { get; init; }
+    public decimal Amount { get; set; }
+}
+
+internal sealed class PendingPoisonTick
+{
+    public int ArmedAtHistoryCount { get; init; }
 }
