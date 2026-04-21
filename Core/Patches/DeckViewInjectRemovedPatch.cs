@@ -10,8 +10,8 @@ namespace CardUtilityStats.Core.Patches;
 /// Extend the deck-view display with supplemental cards when our ViewStats
 /// checkbox is ticked. Harmony prefix on <c>NDeckViewScreen.DisplayCards</c>
 /// mutates the screen's private <c>_cards</c> list (via Publicizer access)
-/// to append removed-card refs plus the synthetic deck-level Shiv before the
-/// grid renders them.
+/// to append removed-card refs plus any synthetic pooled combat-only cards
+/// before the grid renders them.
 ///
 /// Why prefix not postfix: the grid's <c>SetCards</c> call uses <c>_cards</c>
 /// directly as its source. Mutating before the body runs is simpler than
@@ -22,7 +22,7 @@ namespace CardUtilityStats.Core.Patches;
 /// (a flag) — it doesn't free the object. The grid renders them normally;
 /// the hover tooltip fires via the existing <c>NCardHolder.CreateHoverTips</c>
 /// patch and shows our stats including the "Removed floor X" lineage line
-/// or the existing "Card not present in deck" banner for Shiv.
+/// or the supplemental pooled-card banner for combat-only cards like Shiv/Soul.
 ///
 /// Gate: only appends if the ViewStats checkbox is currently ticked. If the
 /// tickbox isn't injected yet (deck view never opened this session), behaves

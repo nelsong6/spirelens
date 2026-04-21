@@ -24,7 +24,6 @@ namespace CardUtilityStats.Core.Patches;
 public static class CardHoverShowPatch
 {
     private const int InlineKeywordIconSize = 16;
-    private const string ShivMetaNote = "Reflects All Shiv Usage";
     private const string BlockIconPath = "res://images/ui/combat/block.png";
     private const string DrawCardsNextTurnPowerIconPath = "res://images/atlases/power_atlas.sprites/draw_cards_next_turn_power.tres";
     private const string EnergyPotionIconPath = "res://images/atlases/potion_atlas.sprites/energy_potion.tres";
@@ -124,15 +123,18 @@ public static class CardHoverShowPatch
     {
         var run = RunTracker.Current;
         var sb = new StringBuilder();
-        bool isSupplementalMetaCard = RunTracker.IsShivDeckViewCard(cardModel);
+        bool isSupplementalMetaCard = RunTracker.IsSupplementalDeckViewCard(cardModel);
+        string? supplementalMetaNote = isSupplementalMetaCard
+            ? RunTracker.GetSupplementalDeckViewNote(cardModel)
+            : null;
 
         // The card identity now lives in the gold title slot for both compact
         // and full views, so repeating it again in the body just adds noise.
-        // Supplemental meta cards (pooled Shiv today; Sovereign Blade later)
-        // get a red explanatory banner instead of the generic ephemeral
-        // "not present in deck" note.
-        if (isSupplementalMetaCard)
-            sb.Append($"[color=#e04c4c][b]{ShivMetaNote}[/b][/color]\n");
+        // Supplemental meta cards (pooled Shiv/Soul summaries today) get a
+        // red explanatory banner instead of the generic ephemeral "not
+        // present in deck" note.
+        if (!string.IsNullOrWhiteSpace(supplementalMetaNote))
+            sb.Append($"[color=#e04c4c][b]{supplementalMetaNote}[/b][/color]\n");
 
         // Merges committed run + current pending combat so mid-combat plays
         // show up immediately (don't wait for CombatEnded). If we have no
