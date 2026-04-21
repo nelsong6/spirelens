@@ -361,6 +361,8 @@ public static class CardHoverShowPatch
         // Counts only card-effect draws (not turn-start auto-draw).
         if (agg.TimesCardsDrawn > 0)
             Row3(sb, GetDrawStatLabel("cards drawn"), agg.TimesCardsDrawn.ToString(), "");
+        if (agg.TimesCardsDrawBlocked > 0)
+            Row3(sb, GetDrawStatLabel("draws blocked"), agg.TimesCardsDrawBlocked.ToString(), "");
 
         // HP lost from playing this card — Ironclad self-damage cards.
         // POST-reduction value, so Tungsten Rod / buffer interactions

@@ -1,0 +1,102 @@
+{
+  "schema_version": 9,
+  "run_id": "fixture-v9-per-instance-blocked-draw",
+  "started_at": "2026-04-20T12:20:00Z",
+  "updated_at": "2026-04-20T12:28:00Z",
+  "ended_at": "2026-04-20T12:31:00Z",
+  "character": "IRONCLAD",
+  "ascension": 9,
+  "floor_reached": 18,
+  "outcome": "win",
+  "game_start_time": 1713615600,
+  "aggregates": {
+    "CARD.BATTLE_TRANCE#1": {
+      "plays": 1,
+      "total_intended": 0,
+      "total_blocked": 0,
+      "total_overkill": 0,
+      "total_effective": 0,
+      "kills": 0,
+      "total_energy_spent": 0,
+      "total_energy_generated": 0,
+      "total_stars_spent": 0,
+      "total_stars_generated": 0,
+      "total_block_gained": 0,
+      "total_block_effective": 0,
+      "total_block_wasted": 0,
+      "times_drawn": 1,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 1,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 3,
+      "times_cards_draw_blocked": 0,
+      "applied_effects": {},
+      "floor_added": 1,
+      "initial_upgrade_level": 0,
+      "removed": false
+    },
+    "CARD.POMMEL_STRIKE#1": {
+      "plays": 2,
+      "total_intended": 16,
+      "total_blocked": 2,
+      "total_overkill": 0,
+      "total_effective": 14,
+      "kills": 0,
+      "total_energy_spent": 2,
+      "total_energy_generated": 0,
+      "total_stars_spent": 0,
+      "total_stars_generated": 0,
+      "total_block_gained": 0,
+      "total_block_effective": 0,
+      "total_block_wasted": 0,
+      "times_drawn": 2,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 0,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 1,
+      "times_cards_draw_blocked": 2,
+      "applied_effects": {},
+      "floor_added": 1,
+      "initial_upgrade_level": 0,
+      "removed": false
+    }
+  },
+  "events": [
+    {
+      "t": "2026-04-20T12:23:00Z",
+      "type": "card_played",
+      "card_id": "CARD.BATTLE_TRANCE#1",
+      "energy_spent": 0,
+      "stars_spent": 0,
+      "stars_gained": 0,
+      "floor": 8
+    },
+    {
+      "t": "2026-04-20T12:24:00Z",
+      "type": "card_played",
+      "card_id": "CARD.POMMEL_STRIKE#1",
+      "energy_spent": 1,
+      "stars_spent": 0,
+      "stars_gained": 0,
+      "floor": 8
+    }
+  ],
+  "instance_numbers_by_def": {
+    "CARD.BATTLE_TRANCE": [
+      1
+    ],
+    "CARD.POMMEL_STRIKE": [
+      1
+    ]
+  },
+  "def_counters": {
+    "CARD.BATTLE_TRANCE": 1,
+    "CARD.POMMEL_STRIKE": 1
+  }
+}

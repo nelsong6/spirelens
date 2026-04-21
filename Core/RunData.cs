@@ -10,7 +10,7 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 8;
+    public const int CurrentSchemaVersion = 9;
 
     // v1: aggregates keyed by card definition id (pooled across instances)
     // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
@@ -33,6 +33,8 @@ public class RunData
     // v8: add Regent star-resource spend / gain tracking alongside the
     //     existing energy fields. Also additive; older v7 files remain
     //     resumable with the new fields defaulting to 0.
+    // v9: add per-card blocked-draw attribution counts. Also additive;
+    //     older v8 files remain resumable with the new field defaulting to 0.
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
@@ -184,6 +186,13 @@ public class CardAggregate
     // Acrobatics etc. depending on the character). Excludes turn-start
     // auto-draw via the game's FromHandDraw flag.
     public int TimesCardsDrawn { get; set; }
+
+    // M3i2: Blocked draw attribution. When THIS card's play ATTEMPTS to draw
+    // cards but a draw-prevention hook vetoes the attempt (Battle Trance,
+    // future "can't draw" effects, etc.). Counts blocked cards separately
+    // from successful draws so draw cards don't silently look like they drew
+    // zero when the game explicitly prevented them.
+    public int TimesCardsDrawBlocked { get; set; }
 
     // M4a: Effect / power application summary for this specific card
     // instance. First pass tracks ONLY that the card caused a power/effect

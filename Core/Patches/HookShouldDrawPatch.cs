@@ -1,6 +1,7 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.Models;
 
 namespace CardUtilityStats.Core.Patches;
 
@@ -25,6 +26,20 @@ public static class HookShouldDrawPatch
         catch (System.Exception e)
         {
             CoreMain.Logger.Error($"HookShouldDrawPatch failed: {e.Message}");
+        }
+    }
+
+    [HarmonyPostfix]
+    public static void Postfix(Player player, bool fromHandDraw, ref AbstractModel? modifier, bool __result)
+    {
+        try
+        {
+            if (__result) return;
+            RunTracker.RecordBlockedDrawAttempt(player, fromHandDraw, modifier);
+        }
+        catch (System.Exception e)
+        {
+            CoreMain.Logger.Error($"HookShouldDrawPatch failed during postfix: {e.Message}");
         }
     }
 }
