@@ -199,6 +199,58 @@ public class PoisonTooltipTests
     }
 
     [Fact]
+    public void AppendAppliedEffects_UsesEffectIconForStrengthEffects()
+    {
+        var agg = new CardAggregate
+        {
+            AppliedEffects =
+            {
+                ["POWER.STRENGTH"] = new AppliedEffectAggregate
+                {
+                    EffectId = "POWER.STRENGTH",
+                    DisplayName = "Strength Next Turn",
+                    IconPath = "res://images/atlases/power_atlas.sprites/strength_power.tres",
+                    TimesApplied = 1,
+                    TotalAmountApplied = 2m,
+                },
+            }
+        };
+
+        var sb = new StringBuilder();
+        AppendAppliedEffects(sb, agg, compact: false, excludePoison: false);
+        var text = sb.ToString();
+
+        Assert.Contains("[img=16x16]res://images/atlases/power_atlas.sprites/strength_power.tres[/img] Next Turn", text);
+        Assert.Contains("[b]2[/b]", text);
+    }
+
+    [Fact]
+    public void AppendAppliedEffects_UsesEffectIconForDexterityEffects()
+    {
+        var agg = new CardAggregate
+        {
+            AppliedEffects =
+            {
+                ["POWER.DEXTERITY"] = new AppliedEffectAggregate
+                {
+                    EffectId = "POWER.DEXTERITY",
+                    DisplayName = "Dexterity Up",
+                    IconPath = "res://images/atlases/power_atlas.sprites/dexterity_power.tres",
+                    TimesApplied = 1,
+                    TotalAmountApplied = 2m,
+                },
+            }
+        };
+
+        var sb = new StringBuilder();
+        AppendAppliedEffects(sb, agg, compact: false, excludePoison: false);
+        var text = sb.ToString();
+
+        Assert.Contains("[img=16x16]res://images/atlases/power_atlas.sprites/dexterity_power.tres[/img] Up", text);
+        Assert.Contains("[b]2[/b]", text);
+    }
+
+    [Fact]
     public void AppendDedicatedPoisonStats_CompactViewDoesNotHidePoisonOnlyArtifactBlocks()
     {
         var agg = new CardAggregate

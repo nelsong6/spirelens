@@ -748,6 +748,10 @@ public static class CardHoverShowPatch
             return GetEnergyEffectLabel(label);
         if (IsStarEffect(effect))
             return GetStarEffectLabel(label);
+        if (IsStrengthEffect(effect))
+            return GetStrengthEffectLabel(effect, label);
+        if (IsDexterityEffect(effect))
+            return GetDexterityEffectLabel(effect, label);
 
         return label;
     }
@@ -805,6 +809,55 @@ public static class CardHoverShowPatch
         }
 
         return GetInlineIconStatLabel(StarIconPath, label);
+    }
+
+    private static bool IsStrengthEffect(AppliedEffectAggregate effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect.EffectId) &&
+            effect.EffectId.Contains("STRENGTH", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !string.IsNullOrWhiteSpace(effect.DisplayName) &&
+               effect.DisplayName.Contains("Strength", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetStrengthEffectLabel(AppliedEffectAggregate effect, string label)
+    {
+        return GetDynamicIconEffectLabel(effect.IconPath, label, "Strength");
+    }
+
+    private static bool IsDexterityEffect(AppliedEffectAggregate effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect.EffectId) &&
+            effect.EffectId.Contains("DEXTERITY", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !string.IsNullOrWhiteSpace(effect.DisplayName) &&
+               effect.DisplayName.Contains("Dexterity", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetDexterityEffectLabel(AppliedEffectAggregate effect, string label)
+    {
+        return GetDynamicIconEffectLabel(effect.IconPath, label, "Dexterity");
+    }
+
+    private static string GetDynamicIconEffectLabel(string? iconPath, string label, params string[] prefixes)
+    {
+        if (string.IsNullOrWhiteSpace(iconPath))
+            return label;
+
+        foreach (var prefix in prefixes)
+        {
+            string prefixWithSpace = $"{prefix} ";
+            if (!label.StartsWith(prefixWithSpace, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var suffix = label.Substring(prefixWithSpace.Length).Trim();
+            if (!string.IsNullOrWhiteSpace(suffix))
+                return GetInlineIconStatLabel(iconPath, suffix);
+        }
+
+        return GetInlineIconStatLabel(iconPath, label);
     }
 
     private static string FormatDecimal(decimal value)
