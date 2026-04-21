@@ -4,6 +4,7 @@ using System.Linq;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -33,6 +34,12 @@ public static class RunTracker
     private static readonly object _lock = new();
     private static RunData? _currentRun;
     private static PendingCombat? _pendingCombat;
+    private static CardPlay? _currentPlayerCardPlay;
+    private static CardPlay? _recentCompletedPlayerCardPlay;
+    private static int _recentCompletedPlayerCardPlayHistoryCount;
+    private static CardModel? _pendingDrawSourceCard;
+    private static CardModel? _pendingEffectSourceCard;
+    private static int _pendingEffectSourceHistoryCount;
 
     // Per-instance identity. Every physical card in the player's deck gets
     // a stable number the first time we observe it — NOT just when it's
@@ -510,6 +517,12 @@ public static class RunTracker
             // not a hangover from a previous run.
             _instanceNumbers.Clear();
             _defCounters.Clear();
+            _currentPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlayHistoryCount = 0;
+            _pendingDrawSourceCard = null;
+            _pendingEffectSourceCard = null;
+            _pendingEffectSourceHistoryCount = 0;
 
             string now = Now();
             _currentRun = new RunData
@@ -573,6 +586,12 @@ public static class RunTracker
             // Clear state so the next OnRunStarted sees a clean slate.
             _currentRun = null;
             _pendingCombat = null;
+            _currentPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlayHistoryCount = 0;
+            _pendingDrawSourceCard = null;
+            _pendingEffectSourceCard = null;
+            _pendingEffectSourceHistoryCount = 0;
         }
     }
 
@@ -583,6 +602,12 @@ public static class RunTracker
             // Fresh pending buffer for this combat. Anything accumulated from a prior
             // combat that didn't get a CombatEnded (shouldn't happen but defensive) is dropped.
             _pendingCombat = new PendingCombat();
+            _currentPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlayHistoryCount = 0;
+            _pendingDrawSourceCard = null;
+            _pendingEffectSourceCard = null;
+            _pendingEffectSourceHistoryCount = 0;
         }
     }
 
@@ -621,6 +646,12 @@ public static class RunTracker
             _currentRun.UpdatedAt = Now();
 
             _pendingCombat = null;
+            _currentPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlayHistoryCount = 0;
+            _pendingDrawSourceCard = null;
+            _pendingEffectSourceCard = null;
+            _pendingEffectSourceHistoryCount = 0;
             SaveCurrentRun();
         }
     }
@@ -662,12 +693,16 @@ public static class RunTracker
 
             switch (entry)
             {
+                case CardPlayStartedEntry cps when cps.CardPlay != null:
+                    NoteCardPlayStarted(cps.CardPlay);
+                    break;
                 case CardPlayFinishedEntry cpf:
                     var card = cpf.CardPlay?.Card;
                     // Log both the raw (clone) hash and canonical (deck) hash.
                     // At hover time, the deck view sees canonicalHash — matching
                     // the two is how we verify the DeckVersion-based key works.
                     CoreMain.LogDebug($"  -> RecordCardPlay '{card?.Title ?? "?"}' hash={card?.GetHashCode()} canonicalHash={(card == null ? 0 : Canonical(card).GetHashCode())}");
+                    if (cpf.CardPlay != null) NoteCardPlayFinished(cpf.CardPlay);
                     RecordCardPlay(cpf.CardPlay);
                     break;
                 case CardDrawnEntry cde:
@@ -771,6 +806,35 @@ public static class RunTracker
                 Target = cardPlay.Target?.Monster?.Id.ToString(),
                 EnergySpent = cardPlay.Resources.EnergySpent,
             });
+        }
+    }
+
+    private static void NoteCardPlayStarted(CardPlay cardPlay)
+    {
+        lock (_lock)
+        {
+            _currentPlayerCardPlay = cardPlay;
+            _recentCompletedPlayerCardPlay = null;
+            _recentCompletedPlayerCardPlayHistoryCount = 0;
+            _pendingDrawSourceCard = null;
+            _pendingEffectSourceCard = null;
+            _pendingEffectSourceHistoryCount = 0;
+        }
+    }
+
+    private static void NoteCardPlayFinished(CardPlay cardPlay)
+    {
+        lock (_lock)
+        {
+            if (_currentPlayerCardPlay?.Card != null
+                && cardPlay.Card != null
+                && ReferenceEquals(Canonical(_currentPlayerCardPlay.Card), Canonical(cardPlay.Card)))
+            {
+                _currentPlayerCardPlay = null;
+            }
+
+            _recentCompletedPlayerCardPlay = cardPlay;
+            _recentCompletedPlayerCardPlayHistoryCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
         }
     }
 
@@ -1109,6 +1173,8 @@ public static class RunTracker
     /// </summary>
     private static CardPlay? FindCurrentlyResolvingCardPlay()
     {
+        if (_currentPlayerCardPlay?.Card != null) return _currentPlayerCardPlay;
+
         var history = CombatManager.Instance?.History;
         if (history == null) return null;
         CardPlay? result = null;
@@ -1118,6 +1184,70 @@ public static class RunTracker
             if (e is CardPlayStartedEntry cps) { result = cps.CardPlay; break; }
         }
         return result;
+    }
+
+    public static void NoteDrawAttempt(Player player, bool fromHandDraw)
+    {
+        lock (_lock)
+        {
+            if (fromHandDraw)
+            {
+                _pendingDrawSourceCard = null;
+                return;
+            }
+
+            try
+            {
+                _pendingDrawSourceCard = FindLikelyDrawSourceCard(player);
+            }
+            catch (Exception e)
+            {
+                _pendingDrawSourceCard = null;
+                CoreMain.LogDebug($"NoteDrawAttempt failed: {e.Message}");
+            }
+        }
+    }
+
+    public static void NoteEffectSource(AbstractModel? source)
+    {
+        lock (_lock)
+        {
+            if (source is CardModel sourceCard)
+            {
+                _pendingEffectSourceCard = Canonical(sourceCard);
+                _pendingEffectSourceHistoryCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
+            }
+        }
+    }
+
+    private static CardModel? FindLikelyDrawSourceCard(Player targetPlayer)
+    {
+        if (_pendingEffectSourceCard != null && IsOwnedBy(_pendingEffectSourceCard, targetPlayer))
+        {
+            int historyCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
+            if (historyCount == _pendingEffectSourceHistoryCount)
+                return _pendingEffectSourceCard;
+        }
+
+        var causingPlay = FindCurrentlyResolvingCardPlay();
+        if (causingPlay?.Card != null && IsOwnedBy(causingPlay.Card, targetPlayer))
+            return Canonical(causingPlay.Card);
+
+        if (_recentCompletedPlayerCardPlay?.Card != null && IsOwnedBy(_recentCompletedPlayerCardPlay.Card, targetPlayer))
+        {
+            int historyCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
+            if (historyCount == _recentCompletedPlayerCardPlayHistoryCount)
+                return Canonical(_recentCompletedPlayerCardPlay.Card);
+        }
+
+        return null;
+    }
+
+    private static bool IsOwnedBy(CardModel card, Player targetPlayer)
+    {
+        if (targetPlayer == null) return true;
+        if (card.Owner == null) return true;
+        return ReferenceEquals(card.Owner, targetPlayer);
     }
 
     public static void RecordDrawFromCard(CardModel card, bool fromHandDraw)
@@ -1139,11 +1269,17 @@ public static class RunTracker
             {
                 try
                 {
-                    var causingPlay = FindCurrentlyResolvingCardPlay();
-                    if (causingPlay?.Card != null
-                        && !ReferenceEquals(Canonical(causingPlay.Card), Canonical(card)))
+                    var sourceCard = _pendingDrawSourceCard;
+                    if (sourceCard == null)
                     {
-                        var causerId = GetOrAssignInstanceId(causingPlay.Card);
+                        var causingPlay = FindCurrentlyResolvingCardPlay();
+                        sourceCard = causingPlay?.Card;
+                    }
+
+                    if (sourceCard != null
+                        && !ReferenceEquals(Canonical(sourceCard), Canonical(card)))
+                    {
+                        var causerId = GetOrAssignInstanceId(sourceCard);
                         var causerAgg = GetOrCreateAggregate(_pendingCombat, causerId);
                         causerAgg.TimesCardsDrawn++;
                     }
