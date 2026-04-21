@@ -1,0 +1,153 @@
+{
+  "schema_version": 7,
+  "run_id": "fixture-v7-per-instance-poison-ledger",
+  "started_at": "2026-04-20T12:05:00Z",
+  "updated_at": "2026-04-20T12:16:00Z",
+  "ended_at": "2026-04-20T12:18:30Z",
+  "character": "SILENT",
+  "ascension": 4,
+  "floor_reached": 21,
+  "outcome": "win",
+  "game_start_time": 1713614700,
+  "aggregates": {
+    "CARD.DEFEND_KIN#1": {
+      "plays": 2,
+      "total_intended": 0,
+      "total_blocked": 0,
+      "total_overkill": 0,
+      "total_effective": 0,
+      "kills": 0,
+      "total_energy_spent": 2,
+      "total_energy_generated": 0,
+      "total_block_gained": 10,
+      "total_block_effective": 6,
+      "total_block_wasted": 4,
+      "times_drawn": 2,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 0,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 0,
+      "applied_effects": {},
+      "total_poison_damage_dealt": 0,
+      "floor_added": 1,
+      "initial_upgrade_level": 0,
+      "removed": false
+    },
+    "CARD.BASH_KIN#1": {
+      "plays": 2,
+      "total_intended": 0,
+      "total_blocked": 0,
+      "total_overkill": 0,
+      "total_effective": 0,
+      "kills": 0,
+      "total_energy_spent": 2,
+      "total_energy_generated": 0,
+      "total_block_gained": 0,
+      "total_block_effective": 0,
+      "total_block_wasted": 0,
+      "times_drawn": 2,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 0,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 0,
+      "applied_effects": {
+        "POWER.WEAK": {
+          "effect_id": "POWER.WEAK",
+          "display_name": "Weak",
+          "icon_path": "res://art/powers/weak.png",
+          "times_applied": 1,
+          "total_amount_applied": 2,
+          "times_blocked_by_artifact": 1,
+          "total_amount_blocked_by_artifact": 2
+        }
+      },
+      "total_poison_damage_dealt": 0,
+      "floor_added": 1,
+      "initial_upgrade_level": 0,
+      "removed": false
+    },
+    "CARD.NOXIOUS_FUMES#1": {
+      "plays": 1,
+      "total_intended": 0,
+      "total_blocked": 0,
+      "total_overkill": 0,
+      "total_effective": 0,
+      "kills": 0,
+      "total_energy_spent": 1,
+      "total_energy_generated": 0,
+      "total_block_gained": 0,
+      "total_block_effective": 0,
+      "total_block_wasted": 0,
+      "times_drawn": 1,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 0,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 0,
+      "applied_effects": {
+        "POWER.NOXIOUS_FUMES": {
+          "effect_id": "POWER.NOXIOUS_FUMES",
+          "display_name": "Noxious Fumes",
+          "icon_path": "res://art/powers/noxious_fumes.png",
+          "times_applied": 1,
+          "total_amount_applied": 3,
+          "times_blocked_by_artifact": 0,
+          "total_amount_blocked_by_artifact": 0
+        },
+        "POWER.POISON": {
+          "effect_id": "POWER.POISON",
+          "display_name": "Poison",
+          "icon_path": "res://art/powers/poison.png",
+          "times_applied": 4,
+          "total_amount_applied": 12,
+          "times_blocked_by_artifact": 1,
+          "total_amount_blocked_by_artifact": 3
+        }
+      },
+      "total_poison_damage_dealt": 14,
+      "floor_added": 10,
+      "initial_upgrade_level": 0,
+      "removed": false
+    }
+  },
+  "events": [
+    {
+      "t": "2026-04-20T12:08:00Z",
+      "type": "card_played",
+      "card_id": "CARD.DEFEND_KIN#1",
+      "energy_spent": 1,
+      "floor": 9
+    },
+    {
+      "t": "2026-04-20T12:09:00Z",
+      "type": "card_played",
+      "card_id": "CARD.NOXIOUS_FUMES#1",
+      "energy_spent": 1,
+      "floor": 9
+    }
+  ],
+  "instance_numbers_by_def": {
+    "CARD.DEFEND_KIN": [
+      1
+    ],
+    "CARD.BASH_KIN": [
+      1
+    ],
+    "CARD.NOXIOUS_FUMES": [
+      1
+    ]
+  },
+  "def_counters": {
+    "CARD.DEFEND_KIN": 1,
+    "CARD.BASH_KIN": 1,
+    "CARD.NOXIOUS_FUMES": 1
+  }
+}

@@ -44,6 +44,8 @@ public static class RunTracker
     private static CardModel? _pendingEffectSourceCard;
     private static int _pendingEffectSourceHistoryCount;
     private static readonly List<PendingPowerChangeAttempt> _pendingPowerChangeAttempts = new();
+    private static readonly List<PendingPoisonTick> _pendingPoisonTicks = new();
+    private static readonly List<PendingNoxiousFumesApplicationWindow> _pendingNoxiousFumesApplications = new();
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
 
@@ -353,6 +355,8 @@ public static class RunTracker
         _pendingEffectSourceCard = null;
         _pendingEffectSourceHistoryCount = 0;
         _pendingPowerChangeAttempts.Clear();
+        _pendingPoisonTicks.Clear();
+        _pendingNoxiousFumesApplications.Clear();
         _pendingPlayerBlockClearAmount = 0;
         _pendingPlayerBlockClearArmed = false;
     }
@@ -736,6 +740,9 @@ public static class RunTracker
                     }
                     else
                     {
+                        if (TryRecordPoisonDamage(dre))
+                            break;
+
                         if (!dre.Receiver.IsPlayer)
                         {
                             // Diagnostic: the game emitted a DamageReceivedEntry
@@ -1212,6 +1219,42 @@ public static class RunTracker
         }
     }
 
+    public static void NotePoisonTick(PoisonPower power)
+    {
+        lock (_lock)
+        {
+            var target = GetPowerReceiverCreature(power);
+            if (target == null) return;
+
+            _pendingPoisonTicks.RemoveAll(tick => ReferenceEquals(tick.Target, target));
+            _pendingPoisonTicks.Add(new PendingPoisonTick
+            {
+                Target = target,
+                ExpectedAmount = power.Amount,
+            });
+        }
+    }
+
+    public static void NoteNoxiousFumesTick(NoxiousFumesPower power)
+    {
+        lock (_lock)
+        {
+            var owner = GetPowerReceiverCreature(power);
+            if (owner == null) return;
+
+            int recipients = CountLikelyNoxiousFumesRecipients(power, owner);
+            if (recipients <= 0) return;
+
+            _pendingNoxiousFumesApplications.RemoveAll(window => ReferenceEquals(window.Owner, owner));
+            _pendingNoxiousFumesApplications.Add(new PendingNoxiousFumesApplicationWindow
+            {
+                Owner = owner,
+                RemainingApplications = recipients,
+                AmountPerApplication = power.Amount,
+            });
+        }
+    }
+
     public static void NotePowerAmountChangeAttempt(
         PowerModel power,
         decimal amount,
@@ -1242,15 +1285,18 @@ public static class RunTracker
     {
         lock (_lock)
         {
-            var attempt = TakePendingPowerChangeAttemptLocked(canonicalPower, target, applier, requestedAmount);
-
             if (modifiedAmount != 0m) return;
             if (canonicalPower.GetTypeForAmount(requestedAmount) != PowerType.Debuff) return;
             if (!WasArtifactBlock(target, modifiers)) return;
 
+            var attempt = TakePendingPowerChangeAttemptLocked(canonicalPower, target, applier, requestedAmount);
             var sourceCard = ResolvePowerChangeSourceCardLocked(attempt, applier);
             if (sourceCard == null)
             {
+                if (IsPoisonPower(canonicalPower) &&
+                    TryRecordNoxiousFumesPoisonArtifactBlockLocked(canonicalPower, target, applier, requestedAmount))
+                    return;
+
                 CoreMain.LogDebug(
                     $"Artifact-blocked debuff unattributed power={canonicalPower.Id} amount={requestedAmount} " +
                     $"target={DescribeCreature(target)} applier={DescribeCreature(applier)}");
@@ -1259,10 +1305,7 @@ public static class RunTracker
 
             _pendingCombat ??= new PendingCombat();
             var instanceId = GetOrAssignInstanceId(sourceCard);
-            var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
-            var effect = GetOrCreateAppliedEffect(agg, canonicalPower);
-            effect.TimesBlockedByArtifact++;
-            effect.TotalAmountBlockedByArtifact += requestedAmount;
+            RecordArtifactBlockedEffectLocked(instanceId, canonicalPower, requestedAmount);
         }
     }
 
@@ -1346,6 +1389,324 @@ public static class RunTracker
         {
             return false;
         }
+    }
+
+    private static Creature? GetPowerReceiverCreature(PowerModel power)
+    {
+        try
+        {
+            return power.Owner ?? power.Target;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsPoisonPower(PowerModel power)
+    {
+        try
+        {
+            if (power is PoisonPower) return true;
+            return power.Id.ToString().Contains("POISON", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsNoxiousFumesPower(PowerModel power)
+    {
+        try
+        {
+            if (power is NoxiousFumesPower) return true;
+            return power.Id.ToString().Contains("NOXIOUS_FUMES", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static int CountLikelyNoxiousFumesRecipients(PowerModel power, Creature owner)
+    {
+        try
+        {
+            return power.CombatState
+                .GetOpponentsOf(owner)
+                .Count(creature => creature.IsAlive && creature.CanReceivePowers);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static void RecordAppliedEffectLocked(string instanceId, PowerModel power, decimal amount)
+    {
+        if (_pendingCombat == null || amount <= 0m) return;
+
+        var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
+        var effect = GetOrCreateAppliedEffect(agg, power);
+        effect.TimesApplied++;
+        effect.TotalAmountApplied += amount;
+    }
+
+    private static void RecordArtifactBlockedEffectLocked(string instanceId, PowerModel power, decimal amount)
+    {
+        if (_pendingCombat == null || amount <= 0m) return;
+
+        var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
+        var effect = GetOrCreateAppliedEffect(agg, power);
+        effect.TimesBlockedByArtifact++;
+        effect.TotalAmountBlockedByArtifact += amount;
+    }
+
+    private static void RecordPoisonApplicationLocked(string instanceId, PowerModel poisonPower, Creature target, decimal amount)
+    {
+        if (amount <= 0m) return;
+
+        _pendingCombat ??= new PendingCombat();
+        RecordAppliedEffectLocked(instanceId, poisonPower, amount);
+
+        var ledger = GetOrCreatePoisonLedgerLocked(target);
+        ledger.Chunks.Add(new PoisonChunk
+        {
+            CardInstanceId = instanceId,
+            Remaining = amount,
+            Sequence = ledger.NextSequence++,
+        });
+    }
+
+    private static void RecordNoxiousFumesContributionLocked(Creature owner, string instanceId, decimal amount)
+    {
+        if (amount <= 0m) return;
+
+        _pendingCombat ??= new PendingCombat();
+        var ledger = GetOrCreateNoxiousFumesLedgerLocked(owner);
+        ledger.Chunks.Add(new PersistentContributionChunk
+        {
+            CardInstanceId = instanceId,
+            Amount = amount,
+            Sequence = ledger.NextSequence++,
+        });
+    }
+
+    private static bool TryRecordNoxiousFumesPoisonApplicationLocked(
+        PowerModel poisonPower,
+        Creature target,
+        Creature? applier,
+        decimal amount)
+    {
+        if (amount <= 0m) return false;
+
+        var window = TakePendingNoxiousFumesApplicationLocked(applier);
+        if (window == null) return false;
+
+        var ledger = FindNoxiousFumesLedgerLocked(window.Owner);
+        if (ledger == null || ledger.Chunks.Count == 0)
+        {
+            CoreMain.LogDebug(
+                $"Noxious Fumes poison application missing source ledger target={DescribeCreature(target)} " +
+                $"applier={DescribeCreature(applier)} amount={amount}");
+            return false;
+        }
+
+        var (allocations, unattributed) = PoisonLedgerMath.AllocateContributions(ledger.Chunks, amount);
+        foreach (var kv in allocations)
+        {
+            RecordPoisonApplicationLocked(kv.Key, poisonPower, target, kv.Value);
+        }
+
+        if (unattributed > 0m)
+        {
+            CoreMain.LogDebug(
+                $"Noxious Fumes poison application under-attributed target={DescribeCreature(target)} " +
+                $"applier={DescribeCreature(applier)} amount={amount} remainder={unattributed}");
+        }
+
+        return allocations.Count > 0;
+    }
+
+    private static bool TryRecordNoxiousFumesPoisonArtifactBlockLocked(
+        PowerModel poisonPower,
+        Creature target,
+        Creature? applier,
+        decimal requestedAmount)
+    {
+        if (requestedAmount <= 0m) return false;
+
+        var window = TakePendingNoxiousFumesApplicationLocked(applier);
+        if (window == null) return false;
+
+        var ledger = FindNoxiousFumesLedgerLocked(window.Owner);
+        if (ledger == null || ledger.Chunks.Count == 0)
+        {
+            CoreMain.LogDebug(
+                $"Noxious Fumes poison Artifact block missing source ledger target={DescribeCreature(target)} " +
+                $"applier={DescribeCreature(applier)} amount={requestedAmount}");
+            return false;
+        }
+
+        var (allocations, unattributed) = PoisonLedgerMath.AllocateContributions(ledger.Chunks, requestedAmount);
+        _pendingCombat ??= new PendingCombat();
+        foreach (var kv in allocations)
+        {
+            RecordArtifactBlockedEffectLocked(kv.Key, poisonPower, kv.Value);
+        }
+
+        if (unattributed > 0m)
+        {
+            CoreMain.LogDebug(
+                $"Noxious Fumes poison Artifact block under-attributed target={DescribeCreature(target)} " +
+                $"applier={DescribeCreature(applier)} amount={requestedAmount} remainder={unattributed}");
+        }
+
+        return allocations.Count > 0;
+    }
+
+    private static PendingNoxiousFumesApplicationWindow? TakePendingNoxiousFumesApplicationLocked(Creature? applier)
+    {
+        if (applier == null) return null;
+
+        for (int i = _pendingNoxiousFumesApplications.Count - 1; i >= 0; i--)
+        {
+            var window = _pendingNoxiousFumesApplications[i];
+            if (!ReferenceEquals(window.Owner, applier)) continue;
+
+            window.RemainingApplications--;
+            if (window.RemainingApplications <= 0)
+                _pendingNoxiousFumesApplications.RemoveAt(i);
+
+            return window;
+        }
+
+        return null;
+    }
+
+    private static bool TryRecordPoisonDamage(DamageReceivedEntry entry)
+    {
+        lock (_lock)
+        {
+            return TryRecordPoisonDamageLocked(entry);
+        }
+    }
+
+    private static bool TryRecordPoisonDamageLocked(DamageReceivedEntry entry)
+    {
+        PendingPoisonTick? pendingTick = null;
+        for (int i = _pendingPoisonTicks.Count - 1; i >= 0; i--)
+        {
+            var tick = _pendingPoisonTicks[i];
+            if (!ReferenceEquals(tick.Target, entry.Receiver)) continue;
+
+            pendingTick = tick;
+            _pendingPoisonTicks.RemoveAt(i);
+            break;
+        }
+
+        if (pendingTick == null) return false;
+
+        var ledger = FindPoisonLedgerLocked(entry.Receiver);
+        int effectiveDamage = Math.Max(0, entry.Result.UnblockedDamage - entry.Result.OverkillDamage);
+
+        if (ledger == null)
+        {
+            CoreMain.LogDebug(
+                $"Poison tick missing source ledger receiver={DescribeCreature(entry.Receiver)} " +
+                $"expected={pendingTick.ExpectedAmount} actual={effectiveDamage}");
+            return true;
+        }
+
+        var (allocations, unattributed) = PoisonLedgerMath.AttributeDamage(ledger.Chunks, effectiveDamage);
+        _pendingCombat ??= new PendingCombat();
+        foreach (var kv in allocations)
+        {
+            var agg = GetOrCreateAggregate(_pendingCombat, kv.Key);
+            agg.TotalPoisonDamageDealt += kv.Value;
+        }
+
+        decimal undecayed = PoisonLedgerMath.ApplyDecay(ledger.Chunks, 1m);
+        if (entry.Result.WasTargetKilled || PoisonLedgerMath.TotalRemaining(ledger.Chunks) <= 0m)
+            RemovePoisonLedgerLocked(entry.Receiver);
+
+        if (unattributed > 0m)
+        {
+            CoreMain.LogDebug(
+                $"Poison tick under-attributed receiver={DescribeCreature(entry.Receiver)} " +
+                $"damage={effectiveDamage} remainder={unattributed}");
+        }
+
+        if (undecayed > 0m)
+        {
+            CoreMain.LogDebug(
+                $"Poison tick decay underflow receiver={DescribeCreature(entry.Receiver)} " +
+                $"expectedDecay=1 remainder={undecayed}");
+        }
+
+        return true;
+    }
+
+    private static PoisonTargetLedger GetOrCreatePoisonLedgerLocked(Creature target)
+    {
+        _pendingCombat ??= new PendingCombat();
+
+        foreach (var ledger in _pendingCombat.PoisonLedgers)
+        {
+            if (ReferenceEquals(ledger.Target, target))
+                return ledger;
+        }
+
+        var created = new PoisonTargetLedger { Target = target };
+        _pendingCombat.PoisonLedgers.Add(created);
+        return created;
+    }
+
+    private static PoisonTargetLedger? FindPoisonLedgerLocked(Creature target)
+    {
+        if (_pendingCombat == null) return null;
+
+        foreach (var ledger in _pendingCombat.PoisonLedgers)
+        {
+            if (ReferenceEquals(ledger.Target, target))
+                return ledger;
+        }
+
+        return null;
+    }
+
+    private static void RemovePoisonLedgerLocked(Creature target)
+    {
+        _pendingCombat?.PoisonLedgers.RemoveAll(ledger => ReferenceEquals(ledger.Target, target));
+    }
+
+    private static NoxiousFumesSourceLedger GetOrCreateNoxiousFumesLedgerLocked(Creature owner)
+    {
+        _pendingCombat ??= new PendingCombat();
+
+        foreach (var ledger in _pendingCombat.NoxiousFumesLedgers)
+        {
+            if (ReferenceEquals(ledger.Owner, owner))
+                return ledger;
+        }
+
+        var created = new NoxiousFumesSourceLedger { Owner = owner };
+        _pendingCombat.NoxiousFumesLedgers.Add(created);
+        return created;
+    }
+
+    private static NoxiousFumesSourceLedger? FindNoxiousFumesLedgerLocked(Creature owner)
+    {
+        if (_pendingCombat == null) return null;
+
+        foreach (var ledger in _pendingCombat.NoxiousFumesLedgers)
+        {
+            if (ReferenceEquals(ledger.Owner, owner))
+                return ledger;
+        }
+
+        return null;
     }
 
     private static CardModel? FindLikelyBlockSourceCard(Creature receiver)
@@ -1447,20 +1808,38 @@ public static class RunTracker
 
             try
             {
-                var causingPlay = FindCurrentlyResolvingCardPlay();
-                if (causingPlay?.Card == null)
+                var target = GetPowerReceiverCreature(entry.Power);
+                var attempt = target != null
+                    ? TakePendingPowerChangeAttemptLocked(entry.Power, target, entry.Applier, entry.Amount)
+                    : null;
+                var sourceCard = ResolvePowerChangeSourceCardLocked(attempt, entry.Applier);
+
+                if (sourceCard != null)
                 {
-                    CoreMain.LogDebug(
-                        $"PowerReceivedEntry unattributed power={entry.Power.Id} amount={entry.Amount} " +
-                        $"applier={DescribeCreature(entry.Applier)}");
+                    var instanceId = GetOrAssignInstanceId(sourceCard);
+                    if (IsPoisonPower(entry.Power) && target != null)
+                    {
+                        RecordPoisonApplicationLocked(instanceId, entry.Power, target, entry.Amount);
+                    }
+                    else
+                    {
+                        RecordAppliedEffectLocked(instanceId, entry.Power, entry.Amount);
+                    }
+
+                    if (IsNoxiousFumesPower(entry.Power) && target != null && target.IsPlayer)
+                        RecordNoxiousFumesContributionLocked(target, instanceId, entry.Amount);
+
                     return;
                 }
 
-                var instanceId = GetOrAssignInstanceId(causingPlay.Card);
-                var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
-                var effect = GetOrCreateAppliedEffect(agg, entry.Power);
-                effect.TimesApplied++;
-                effect.TotalAmountApplied += entry.Amount;
+                if (target != null &&
+                    IsPoisonPower(entry.Power) &&
+                    TryRecordNoxiousFumesPoisonApplicationLocked(entry.Power, target, entry.Applier, entry.Amount))
+                    return;
+
+                CoreMain.LogDebug(
+                    $"PowerReceivedEntry unattributed power={entry.Power.Id} amount={entry.Amount} " +
+                    $"target={DescribeCreature(target)} applier={DescribeCreature(entry.Applier)}");
             }
             catch (Exception e)
             {
@@ -1751,6 +2130,7 @@ public static class RunTracker
             TimesExhausted = source.TimesExhausted,
             TotalHpLost = source.TotalHpLost,
             TimesCardsDrawn = source.TimesCardsDrawn,
+            TotalPoisonDamageDealt = source.TotalPoisonDamageDealt,
             FloorAdded = source.FloorAdded,
             InitialUpgradeLevel = source.InitialUpgradeLevel,
             Removed = source.Removed,
@@ -1782,6 +2162,7 @@ public static class RunTracker
         target.TimesExhausted += source.TimesExhausted;
         target.TotalHpLost += source.TotalHpLost;
         target.TimesCardsDrawn += source.TimesCardsDrawn;
+        target.TotalPoisonDamageDealt += source.TotalPoisonDamageDealt;
         MergeAppliedEffectsInto(target.AppliedEffects, source.AppliedEffects);
     }
 
@@ -1877,6 +2258,8 @@ internal class PendingCombat
     public Dictionary<string, CardAggregate> CombatAggregates { get; } = new();
     public List<CardEvent> CombatEvents { get; } = new();
     public List<BlockChunk> PlayerBlockLedger { get; } = new();
+    public List<PoisonTargetLedger> PoisonLedgers { get; } = new();
+    public List<NoxiousFumesSourceLedger> NoxiousFumesLedgers { get; } = new();
     public int NextBlockSequence { get; set; }
 }
 
@@ -1895,4 +2278,31 @@ internal sealed class PendingPowerChangeAttempt
     public Creature? Applier { get; init; }
     public required decimal RequestedAmount { get; init; }
     public CardModel? CardSource { get; init; }
+}
+
+internal sealed class PoisonTargetLedger
+{
+    public required Creature Target { get; init; }
+    public List<PoisonChunk> Chunks { get; } = new();
+    public int NextSequence { get; set; }
+}
+
+internal sealed class NoxiousFumesSourceLedger
+{
+    public required Creature Owner { get; init; }
+    public List<PersistentContributionChunk> Chunks { get; } = new();
+    public int NextSequence { get; set; }
+}
+
+internal sealed class PendingPoisonTick
+{
+    public required Creature Target { get; init; }
+    public decimal ExpectedAmount { get; init; }
+}
+
+internal sealed class PendingNoxiousFumesApplicationWindow
+{
+    public required Creature Owner { get; init; }
+    public int RemainingApplications { get; set; }
+    public decimal AmountPerApplication { get; init; }
 }

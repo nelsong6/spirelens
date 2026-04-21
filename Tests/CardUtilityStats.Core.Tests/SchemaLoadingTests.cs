@@ -88,19 +88,34 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV6Fixture()
+    public void HistoricalLoad_AcceptsLegacyResumableV6Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v6-per-instance-artifact-block-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
-        Assert.False(loaded.IsLegacy);
+        Assert.Equal(6, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Equal(6, loaded.Data.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
         var effect = loaded.Data.Aggregates["CARD.BASH_KIN#1"].AppliedEffects["POWER.WEAK"];
         Assert.Equal(1, effect.TimesBlockedByArtifact);
         Assert.Equal(2m, effect.TotalAmountBlockedByArtifact);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsCurrentV7Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v7-per-instance-poison-ledger-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
+        Assert.False(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        var agg = loaded.Data.Aggregates["CARD.NOXIOUS_FUMES#1"];
+        Assert.Equal(14m, agg.TotalPoisonDamageDealt);
+        Assert.Equal(12m, agg.AppliedEffects["POWER.POISON"].TotalAmountApplied);
     }
 
     [Fact]
@@ -162,16 +177,28 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV6Fixture()
+    public void ResumableLoad_AcceptsLegacyResumableV6Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v6-per-instance-artifact-block-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(6, resumed!.SchemaVersion);
         Assert.Equal(6, resumed.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
         var effect = resumed.Aggregates["CARD.BASH_KIN#1"].AppliedEffects["POWER.WEAK"];
         Assert.Equal(1, effect.TimesBlockedByArtifact);
         Assert.Equal(2m, effect.TotalAmountBlockedByArtifact);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsCurrentV7Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v7-per-instance-poison-ledger-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        var agg = resumed.Aggregates["CARD.NOXIOUS_FUMES#1"];
+        Assert.Equal(14m, agg.TotalPoisonDamageDealt);
+        Assert.Equal(3m, agg.AppliedEffects["POWER.POISON"].TotalAmountBlockedByArtifact);
     }
 
     [Fact]

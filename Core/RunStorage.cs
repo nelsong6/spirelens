@@ -107,6 +107,7 @@ public static class RunStorage
             case 3:
             case 4:
             case 5:
+            case 6:
             case RunData.CurrentSchemaVersion:
             {
                 var data = DeserializeRunData(path);

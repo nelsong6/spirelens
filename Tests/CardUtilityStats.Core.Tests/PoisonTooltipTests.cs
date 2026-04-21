@@ -26,6 +26,7 @@ public class PoisonTooltipTests
         var agg = new CardAggregate
         {
             Plays = 4,
+            TotalPoisonDamageDealt = 7m,
             AppliedEffects =
             {
                 ["POWER.POISON"] = new AppliedEffectAggregate
@@ -66,8 +67,40 @@ public class PoisonTooltipTests
         Assert.Contains("[b]3[/b]", text);
         Assert.Contains("Applications", text);
         Assert.Contains("[b]4[/b]", text);
+        Assert.Contains("Poison damage", text);
+        Assert.Contains("[b]7[/b]", text);
+        Assert.Contains("Avg poison dmg", text);
+        Assert.Contains("[b]1.75[/b]", text);
         Assert.Contains("Blocked by Artifact", text);
         Assert.Contains("[b]2[/b]", text);
+    }
+
+    [Fact]
+    public void AppendDedicatedPoisonStats_CompactViewShowsPoisonDamageWhenPresent()
+    {
+        var agg = new CardAggregate
+        {
+            TotalPoisonDamageDealt = 5m,
+            AppliedEffects =
+            {
+                ["POWER.POISON"] = new AppliedEffectAggregate
+                {
+                    EffectId = "POWER.POISON",
+                    DisplayName = "Poison",
+                    TimesApplied = 2,
+                    TotalAmountApplied = 6m,
+                },
+            }
+        };
+
+        var sb = new StringBuilder();
+        var rendered = AppendDedicatedPoisonStats(sb, agg, compact: true);
+        var text = sb.ToString();
+
+        Assert.True(rendered);
+        Assert.Contains("Poison applied", text);
+        Assert.Contains("Poison damage", text);
+        Assert.Contains("[b]5[/b]", text);
     }
 
     [Fact]

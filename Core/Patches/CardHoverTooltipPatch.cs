@@ -480,15 +480,23 @@ public static class CardHoverShowPatch
                 ? poison.Value.TimesApplied > 1 ? $"{poison.Value.TimesApplied}x" : "1x"
                 : "";
             Row3(sb, "Poison applied", FormatDecimal(poison.Value.TotalAmountApplied), extra);
+            if (poison.Value.TotalDamageDealt > 0m)
+                Row3(sb, "Poison damage", FormatDecimal(poison.Value.TotalDamageDealt), "");
             return true;
         }
 
         decimal avgPoison = agg.Plays > 0 ? poison.Value.TotalAmountApplied / agg.Plays : 0m;
+        decimal avgPoisonDamage = agg.Plays > 0 ? poison.Value.TotalDamageDealt / agg.Plays : 0m;
 
         sb.Append("[color=#b5b5b5]Poison applied[/color]\n");
         Row3(sb, "Total poison", FormatDecimal(poison.Value.TotalAmountApplied), "");
         Row3(sb, "Avg poison", FormatDecimal(avgPoison), "");
         Row3(sb, "Applications", poison.Value.TimesApplied.ToString(), "");
+        if (poison.Value.TotalDamageDealt > 0m)
+        {
+            Row3(sb, "Poison damage", FormatDecimal(poison.Value.TotalDamageDealt), "");
+            Row3(sb, "Avg poison dmg", FormatDecimal(avgPoisonDamage), "");
+        }
 
         if (poison.Value.TimesBlockedByArtifact > 0)
         {
@@ -503,34 +511,38 @@ public static class CardHoverShowPatch
 
     private static PoisonEffectSummary? GetPoisonSummary(CardAggregate agg)
     {
-        if (agg.AppliedEffects == null || agg.AppliedEffects.Count == 0) return null;
-
         int timesApplied = 0;
         decimal totalAmountApplied = 0m;
         int timesBlockedByArtifact = 0;
         decimal totalAmountBlockedByArtifact = 0m;
+        decimal totalDamageDealt = agg.TotalPoisonDamageDealt;
 
-        foreach (var effect in agg.AppliedEffects.Values)
+        if (agg.AppliedEffects != null)
         {
-            if (!IsPoisonEffect(effect)) continue;
+            foreach (var effect in agg.AppliedEffects.Values)
+            {
+                if (!IsPoisonEffect(effect)) continue;
 
-            timesApplied += effect.TimesApplied;
-            totalAmountApplied += effect.TotalAmountApplied;
-            timesBlockedByArtifact += effect.TimesBlockedByArtifact;
-            totalAmountBlockedByArtifact += effect.TotalAmountBlockedByArtifact;
+                timesApplied += effect.TimesApplied;
+                totalAmountApplied += effect.TotalAmountApplied;
+                timesBlockedByArtifact += effect.TimesBlockedByArtifact;
+                totalAmountBlockedByArtifact += effect.TotalAmountBlockedByArtifact;
+            }
         }
 
         if (timesApplied <= 0 &&
             totalAmountApplied == 0m &&
             timesBlockedByArtifact <= 0 &&
-            totalAmountBlockedByArtifact == 0m)
+            totalAmountBlockedByArtifact == 0m &&
+            totalDamageDealt == 0m)
             return null;
 
         return new PoisonEffectSummary(
             timesApplied,
             totalAmountApplied,
             timesBlockedByArtifact,
-            totalAmountBlockedByArtifact);
+            totalAmountBlockedByArtifact,
+            totalDamageDealt);
     }
 
     private static void AppendAppliedEffects(StringBuilder sb, CardAggregate agg, bool compact, bool excludePoison)
@@ -684,7 +696,8 @@ internal readonly record struct PoisonEffectSummary(
     int TimesApplied,
     decimal TotalAmountApplied,
     int TimesBlockedByArtifact,
-    decimal TotalAmountBlockedByArtifact);
+    decimal TotalAmountBlockedByArtifact,
+    decimal TotalDamageDealt);
 
 [HarmonyPatch(typeof(NCardHolder), "ClearHoverTips")]
 public static class CardHoverHidePatch
