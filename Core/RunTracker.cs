@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -53,6 +54,7 @@ public static class RunTracker
     private static CardModel? _pendingEffectSourceCard;
     private static int _pendingEffectSourceHistoryCount;
     private static readonly List<PendingPowerChangeAttempt> _pendingPowerChangeAttempts = new();
+    private static readonly AsyncLocal<ExecutionSourceFrame?> _executionSourceFrame = new();
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
     private static bool _shivAvailableThisRun;
@@ -615,6 +617,7 @@ public static class RunTracker
         _pendingEffectSourceCard = null;
         _pendingEffectSourceHistoryCount = 0;
         _pendingPowerChangeAttempts.Clear();
+        _executionSourceFrame.Value = null;
         _pendingPlayerBlockClearAmount = 0;
         _pendingPlayerBlockClearArmed = false;
     }
@@ -1129,10 +1132,14 @@ public static class RunTracker
     /// which patches <c>PlayerCombatState.GainEnergy</c> and forwards the
     /// ACTUAL post-clamp delta rather than the requested amount.
     ///
-    /// Attribution rule: only count gains that happen during a live
-    /// CardPlayStartedEntry → CardPlayFinishedEntry window, and only if the
-    /// resolving card's owner matches the PlayerCombatState being modified.
-    /// This keeps relic / power / start-of-turn gains out of the card stat.
+    /// Attribution rule:
+    ///   - if an owned power is currently executing and it was originally
+    ///     applied by a card, credit the gain to that originating card
+    ///   - otherwise fall back to the currently-resolving card play
+    ///
+    /// This keeps relic / start-of-turn gains out of the card stat while
+    /// letting delayed power-driven gains (Energy Next Turn, Orbit, etc.)
+    /// still land on the card that created the power.
     /// </summary>
     public static void RecordEnergyGained(MegaCrit.Sts2.Core.Entities.Players.PlayerCombatState combatState, int amount)
     {
@@ -1142,17 +1149,9 @@ public static class RunTracker
         {
             try
             {
-                var causingPlay = FindCurrentlyResolvingCardPlay();
-                if (causingPlay?.Card == null) return;
-
-                var sourceCard = causingPlay.Card;
-                var targetPlayer = combatState._player;
-                if (targetPlayer != null && sourceCard.Owner != null
-                    && !ReferenceEquals(sourceCard.Owner, targetPlayer))
-                    return;
-
+                var instanceId = ResolveResourceGainSourceInstanceIdLocked(combatState._player);
+                if (string.IsNullOrWhiteSpace(instanceId)) return;
                 _pendingCombat ??= new PendingCombat();
-                var instanceId = GetOrAssignInstanceId(sourceCard);
                 var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
                 agg.TotalEnergyGenerated += amount;
 
@@ -1184,17 +1183,9 @@ public static class RunTracker
         {
             try
             {
-                var causingPlay = FindCurrentlyResolvingCardPlay();
-                if (causingPlay?.Card == null) return;
-
-                var sourceCard = causingPlay.Card;
-                var targetPlayer = combatState._player;
-                if (targetPlayer != null && sourceCard.Owner != null
-                    && !ReferenceEquals(sourceCard.Owner, targetPlayer))
-                    return;
-
+                var instanceId = ResolveResourceGainSourceInstanceIdLocked(combatState._player);
+                if (string.IsNullOrWhiteSpace(instanceId)) return;
                 _pendingCombat ??= new PendingCombat();
-                var instanceId = GetOrAssignInstanceId(sourceCard);
                 var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
                 agg.TotalStarsGenerated += amount;
 
@@ -1211,6 +1202,61 @@ public static class RunTracker
                 CoreMain.LogDebug($"RecordStarsGained failed: {e.Message}");
             }
         }
+    }
+
+    internal static void PushExecutionSource(AbstractModel? source)
+    {
+        if (source == null) return;
+
+        _executionSourceFrame.Value = new ExecutionSourceFrame
+        {
+            Source = source,
+            Parent = _executionSourceFrame.Value,
+        };
+    }
+
+    internal static void PopExecutionSource(AbstractModel? source)
+    {
+        if (source == null) return;
+
+        var frame = _executionSourceFrame.Value;
+        if (frame != null && ReferenceEquals(frame.Source, source))
+            _executionSourceFrame.Value = frame.Parent;
+    }
+
+    private static string? ResolveResourceGainSourceInstanceIdLocked(Player? targetPlayer)
+    {
+        var executionSource = _executionSourceFrame.Value?.Source;
+        if (executionSource != null)
+            return ResolveOwnedSourceInstanceIdLocked(executionSource, targetPlayer);
+
+        var causingPlay = FindCurrentlyResolvingCardPlay();
+        return causingPlay?.Card == null
+            ? null
+            : ResolveOwnedSourceInstanceIdLocked(causingPlay.Card, targetPlayer);
+    }
+
+    private static string? ResolveOwnedSourceInstanceIdLocked(AbstractModel source, Player? targetPlayer)
+    {
+        if (source is CardModel sourceCard)
+        {
+            if (targetPlayer != null && sourceCard.Owner != null
+                && !ReferenceEquals(sourceCard.Owner, targetPlayer))
+                return null;
+
+            return GetOrAssignInstanceId(sourceCard);
+        }
+
+        if (TryResolvePlayerPowerOwnershipLocked(source, out var ownership) && ownership != null)
+        {
+            if (targetPlayer != null && ownership.OwnerPlayer != null
+                && !ReferenceEquals(ownership.OwnerPlayer, targetPlayer))
+                return null;
+
+            return ownership.CardInstanceId;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1940,7 +1986,8 @@ public static class RunTracker
     private static void TrackPlayerPowerOwnershipLocked(
         PowerModel power,
         string instanceId,
-        AppliedEffectAggregate effect)
+        AppliedEffectAggregate effect,
+        Player? ownerPlayer)
     {
         if (_pendingCombat == null) return;
 
@@ -1950,6 +1997,7 @@ public static class RunTracker
             EffectId = effect.EffectId,
             DisplayName = effect.DisplayName,
             IconPath = effect.IconPath,
+            OwnerPlayer = ownerPlayer,
         };
     }
 
@@ -1976,7 +2024,8 @@ public static class RunTracker
             if (match != null &&
                 (!string.Equals(match.CardInstanceId, candidate.CardInstanceId, StringComparison.Ordinal)
                  || !string.Equals(match.DisplayName, candidate.DisplayName, StringComparison.Ordinal)
-                 || !string.Equals(match.IconPath, candidate.IconPath, StringComparison.Ordinal)))
+                 || !string.Equals(match.IconPath, candidate.IconPath, StringComparison.Ordinal)
+                 || !ReferenceEquals(match.OwnerPlayer, candidate.OwnerPlayer)))
             {
                 return false;
             }
@@ -2360,7 +2409,7 @@ public static class RunTracker
 
                 var target = TryResolvePowerReceivedTarget(entry);
                 if (target?.IsPlayer == true && entry.Amount > 0m)
-                    TrackPlayerPowerOwnershipLocked(entry.Power, instanceId, effect);
+                    TrackPlayerPowerOwnershipLocked(entry.Power, instanceId, effect, causingPlay.Card.Owner);
 
                 if (entry.Amount > 0m && IsPoisonPower(entry.Power))
                 {
@@ -3232,6 +3281,13 @@ internal sealed class PlayerPowerOwnershipShare
     public required string EffectId { get; init; }
     public required string DisplayName { get; init; }
     public string? IconPath { get; init; }
+    public Player? OwnerPlayer { get; init; }
+}
+
+internal sealed class ExecutionSourceFrame
+{
+    public required AbstractModel Source { get; init; }
+    public ExecutionSourceFrame? Parent { get; init; }
 }
 
 internal readonly record struct PoisonOwnershipKey(string CardInstanceId, string EffectId);
