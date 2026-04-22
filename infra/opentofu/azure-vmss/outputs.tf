@@ -48,6 +48,11 @@ output "builder_vm_public_ip_address" {
   value       = var.enable_builder_vm ? azurerm_public_ip.builder[0].ip_address : null
 }
 
+output "builder_vm_public_fqdn" {
+  description = "Azure-managed FQDN for the standalone builder VM public IP, if a DNS label is configured."
+  value       = var.enable_builder_vm ? azurerm_public_ip.builder[0].fqdn : null
+}
+
 output "builder_vm_private_ip_address" {
   description = "Private IP address for the standalone builder VM, if enabled."
   value       = var.enable_builder_vm ? azurerm_network_interface.builder[0].private_ip_address : null

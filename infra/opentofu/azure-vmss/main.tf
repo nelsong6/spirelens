@@ -223,6 +223,7 @@ resource "azurerm_public_ip" "builder" {
   location            = azurerm_resource_group.vmss.location
   resource_group_name = azurerm_resource_group.vmss.name
   allocation_method   = "Static"
+  domain_name_label   = var.builder_public_ip_dns_label
   sku                 = "Standard"
   zones               = length(var.zones) == 0 ? null : var.zones
   tags                = local.builder_tags

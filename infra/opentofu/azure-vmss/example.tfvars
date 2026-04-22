@@ -7,6 +7,9 @@ admin_username = "runneradmin"
 enable_builder_vm          = true
 enable_vmss                = false
 builder_vm_sku             = "Standard_D4s_v5"
+# Optional: set this to get a stable Azure FQDN like
+# <label>.<region>.cloudapp.azure.com for the builder VM public IP.
+# builder_public_ip_dns_label = "card-utility-stats-builder"
 create_nat_gateway         = false
 encryption_at_host_enabled = false
 

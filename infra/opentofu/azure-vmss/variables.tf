@@ -219,6 +219,12 @@ variable "builder_public_ip_name" {
   default     = null
 }
 
+variable "builder_public_ip_dns_label" {
+  description = "Optional Azure-managed DNS label for the builder VM public IP. When set, Azure publishes an FQDN for the builder public IP."
+  type        = string
+  default     = null
+}
+
 variable "builder_computer_name" {
   description = "Optional Windows computer name for the builder VM. Defaults to a truncated form of the builder VM name."
   type        = string

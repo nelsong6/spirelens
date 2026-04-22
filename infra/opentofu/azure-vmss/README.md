@@ -39,6 +39,25 @@ This root supports a staged path:
 
 The long-term VMSS path should use `source_image_id`. The builder VM exists only to create that image without requiring the work laptop to host STS2.
 
+## Custom Domain And TLS
+
+Azure does not provide a one-click custom-domain-and-certificate feature for direct RDP into a VM or VMSS instance.
+
+The supported building blocks are:
+
+- a stable public endpoint such as a VM public IP, load balancer, or Application Gateway
+- DNS that you control
+- a server-authentication certificate installed inside Windows and bound to the RDP listener
+
+For this root, the practical first step is the builder VM:
+
+- set `builder_public_ip_dns_label` if you want Azure to publish a stable FQDN such as `<label>.<region>.cloudapp.azure.com`
+- point a custom DNS record such as `builder.romaine.life` at that public IP or Azure-managed FQDN
+- install a CA-signed certificate for that hostname on the builder VM
+- bind the certificate to the RDP listener
+
+The worker VMSS in this root is private-only by default. It does not currently expose a public ingress endpoint that a custom domain can target. If direct inbound access to VMSS instances is needed later, add a deliberate ingress pattern first, such as Azure Bastion, a jumpbox, or a load balancer plus explicit NAT rules.
+
 ## Files
 
 - [versions.tf](./versions.tf)
@@ -132,3 +151,4 @@ The workflow injects the backend values at runtime so that:
 - This root creates the compute/network shell, not the full worker bootstrap inside the guest.
 - Runner registration, Codex auth, Steam offline state, and STS2 driver setup still belong in the golden image and/or first-boot bootstrap layer described in [docs/vmss-worker-bootstrap.md](../../../docs/vmss-worker-bootstrap.md).
 - The builder VM shares the same subnet and NSG as the VMSS. If you need RDP through GitHub Actions, store trusted CIDRs in the Key Vault secret `card-utility-stats-rdp-allowed-cidrs` and let Terraform read them through the `azurerm_key_vault_secret` data source. Local runs can still set `enable_rdp_rule` and `rdp_allowed_cidrs` directly.
+- For a trusted RDP certificate, connect by hostname, not by raw IP address. A public CA certificate for `builder.romaine.life` will not validate if the client connects to `20.x.x.x`.
