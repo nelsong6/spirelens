@@ -49,12 +49,14 @@ public static class RunTracker
     private static CardPlay? _currentPlayerCardPlay;
     private static CardPlay? _recentCompletedPlayerCardPlay;
     private static int _recentCompletedPlayerCardPlayHistoryCount;
-    private static CardModel? _pendingDrawSourceCard;
+    private static string? _pendingDrawSourceInstanceId;
     private static readonly List<PendingDrawAttempt> _pendingDrawAttempts = new();
+    private static readonly List<PendingHandDrawSource> _pendingHandDrawSources = new();
     private static CardModel? _pendingEffectSourceCard;
     private static int _pendingEffectSourceHistoryCount;
     private static readonly List<PendingPowerChangeAttempt> _pendingPowerChangeAttempts = new();
     private static readonly AsyncLocal<ExecutionSourceFrame?> _executionSourceFrame = new();
+    private static PendingHandDrawResolution? _pendingHandDrawResolution;
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
     private static bool _shivAvailableThisRun;
@@ -612,12 +614,14 @@ public static class RunTracker
         _currentPlayerCardPlay = null;
         _recentCompletedPlayerCardPlay = null;
         _recentCompletedPlayerCardPlayHistoryCount = 0;
-        _pendingDrawSourceCard = null;
+        _pendingDrawSourceInstanceId = null;
         _pendingDrawAttempts.Clear();
+        _pendingHandDrawSources.Clear();
         _pendingEffectSourceCard = null;
         _pendingEffectSourceHistoryCount = 0;
         _pendingPowerChangeAttempts.Clear();
         _executionSourceFrame.Value = null;
+        _pendingHandDrawResolution = null;
         _pendingPlayerBlockClearAmount = 0;
         _pendingPlayerBlockClearArmed = false;
     }
@@ -1103,7 +1107,7 @@ public static class RunTracker
             _currentPlayerCardPlay = cardPlay;
             _recentCompletedPlayerCardPlay = null;
             _recentCompletedPlayerCardPlayHistoryCount = 0;
-            _pendingDrawSourceCard = null;
+            _pendingDrawSourceInstanceId = null;
             _pendingDrawAttempts.Clear();
             _pendingEffectSourceCard = null;
             _pendingEffectSourceHistoryCount = 0;
@@ -1638,32 +1642,140 @@ public static class RunTracker
         {
             if (fromHandDraw)
             {
-                _pendingDrawSourceCard = null;
+                _pendingDrawSourceInstanceId = null;
                 return;
             }
 
             try
             {
-                _pendingDrawSourceCard = FindLikelyDrawSourceCard(player);
-                if (_pendingDrawSourceCard != null)
+                _pendingDrawSourceInstanceId = ResolveLikelyDrawSourceInstanceIdLocked(player);
+                if (_pendingDrawSourceInstanceId != null)
                 {
                     _pendingCombat ??= new PendingCombat();
-                    var sourceId = GetOrAssignInstanceId(_pendingDrawSourceCard);
-                    var sourceAgg = GetOrCreateAggregate(_pendingCombat, sourceId);
+                    var sourceAgg = GetOrCreateAggregate(_pendingCombat, _pendingDrawSourceInstanceId);
                     sourceAgg.TimesCardsDrawAttempted++;
                     _pendingDrawAttempts.Add(new PendingDrawAttempt
                     {
                         Player = player,
-                        SourceCard = _pendingDrawSourceCard,
+                        SourceInstanceId = _pendingDrawSourceInstanceId,
                     });
                 }
             }
             catch (Exception e)
             {
-                _pendingDrawSourceCard = null;
+                _pendingDrawSourceInstanceId = null;
                 _pendingDrawAttempts.Clear();
                 CoreMain.LogDebug($"NoteDrawAttempt failed: {e.Message}");
             }
+        }
+    }
+
+    internal static void BeginHandDrawResolution(Player? player)
+    {
+        if (player == null) return;
+
+        lock (_lock)
+        {
+            RemovePendingHandDrawSourcesLocked(player);
+            _pendingHandDrawResolution = new PendingHandDrawResolution
+            {
+                Player = player,
+            };
+        }
+    }
+
+    internal static void RecordHandDrawModification(AbstractModel? modifier, Player? player, decimal beforeCount, decimal afterCount)
+    {
+        if (modifier == null || player == null) return;
+
+        int delta = (int)afterCount - (int)beforeCount;
+        if (delta == 0) return;
+
+        lock (_lock)
+        {
+            if (_pendingHandDrawResolution == null
+                || !ReferenceEquals(_pendingHandDrawResolution.Player, player))
+            {
+                return;
+            }
+
+            _pendingHandDrawResolution.Modifications.Add(new HandDrawModification
+            {
+                Modifier = modifier,
+                Delta = delta,
+            });
+        }
+    }
+
+    internal static void FinalizeHandDrawResolution(Player? player)
+    {
+        if (player == null) return;
+
+        lock (_lock)
+        {
+            var resolution = _pendingHandDrawResolution;
+            _pendingHandDrawResolution = null;
+
+            if (resolution == null || !ReferenceEquals(resolution.Player, player))
+                return;
+
+            _pendingCombat ??= new PendingCombat();
+            var pendingExtraDraws = new List<string>();
+
+            foreach (var modification in resolution.Modifications)
+            {
+                if (modification.Delta > 0)
+                {
+                    if (!TryResolvePlayerPowerOwnershipLocked(modification.Modifier, out var ownership)
+                        || ownership == null)
+                    {
+                        continue;
+                    }
+
+                    if (ownership.OwnerPlayer != null && !ReferenceEquals(ownership.OwnerPlayer, player))
+                        continue;
+
+                    var sourceAgg = GetOrCreateAggregate(_pendingCombat, ownership.CardInstanceId);
+                    sourceAgg.TimesCardsDrawAttempted += modification.Delta;
+
+                    for (int i = 0; i < modification.Delta; i++)
+                        pendingExtraDraws.Add(ownership.CardInstanceId);
+
+                    continue;
+                }
+
+                int blockedCount = -modification.Delta;
+                while (blockedCount-- > 0 && pendingExtraDraws.Count > 0)
+                {
+                    string sourceInstanceId = pendingExtraDraws[^1];
+                    pendingExtraDraws.RemoveAt(pendingExtraDraws.Count - 1);
+                    RecordBlockedDrawAttemptLocked(player, sourceInstanceId, modification.Modifier);
+                }
+            }
+
+            foreach (var sourceInstanceId in pendingExtraDraws)
+            {
+                _pendingHandDrawSources.Add(new PendingHandDrawSource
+                {
+                    Player = player,
+                    SourceInstanceId = sourceInstanceId,
+                });
+            }
+        }
+    }
+
+    internal static void CompletePendingHandDraw(Player? player)
+    {
+        if (player == null) return;
+
+        lock (_lock)
+        {
+            DrainPendingHandDrawSourcesLocked(
+                player,
+                modifier: null,
+                forcedReasonId: "other",
+                forcedDisplayName: "other",
+                suppressBlockingEffect: true);
         }
     }
 
@@ -2178,24 +2290,32 @@ public static class RunTracker
         return null;
     }
 
-    private static CardModel? FindLikelyDrawSourceCard(Player targetPlayer)
+    private static string? ResolveLikelyDrawSourceInstanceIdLocked(Player targetPlayer)
     {
         if (_pendingEffectSourceCard != null && IsOwnedBy(_pendingEffectSourceCard, targetPlayer))
         {
             int historyCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
             if (historyCount == _pendingEffectSourceHistoryCount)
-                return _pendingEffectSourceCard;
+                return GetOrAssignInstanceId(_pendingEffectSourceCard);
+        }
+
+        var executionSource = _executionSourceFrame.Value?.Source;
+        if (executionSource != null)
+        {
+            var ownedSourceInstanceId = ResolveOwnedSourceInstanceIdLocked(executionSource, targetPlayer);
+            if (ownedSourceInstanceId != null)
+                return ownedSourceInstanceId;
         }
 
         var causingPlay = FindCurrentlyResolvingCardPlay();
         if (causingPlay?.Card != null && IsOwnedBy(causingPlay.Card, targetPlayer))
-            return Canonical(causingPlay.Card);
+            return GetOrAssignInstanceId(causingPlay.Card);
 
         if (_recentCompletedPlayerCardPlay?.Card != null && IsOwnedBy(_recentCompletedPlayerCardPlay.Card, targetPlayer))
         {
             int historyCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
             if (historyCount == _recentCompletedPlayerCardPlayHistoryCount)
-                return Canonical(_recentCompletedPlayerCardPlay.Card);
+                return GetOrAssignInstanceId(_recentCompletedPlayerCardPlay.Card);
         }
 
         return null;
@@ -2234,6 +2354,60 @@ public static class RunTracker
         return true;
     }
 
+    private static bool TryConsumePendingHandDrawSource(Player? player, out PendingHandDrawSource? source)
+    {
+        source = null;
+        if (_pendingHandDrawSources.Count == 0) return false;
+
+        int index = -1;
+        if (player != null)
+        {
+            for (int i = 0; i < _pendingHandDrawSources.Count; i++)
+            {
+                if (ReferenceEquals(_pendingHandDrawSources[i].Player, player))
+                {
+                    index = i;
+                    break;
+                }
+            }
+        }
+
+        if (index < 0)
+            index = 0;
+
+        source = _pendingHandDrawSources[index];
+        _pendingHandDrawSources.RemoveAt(index);
+        return true;
+    }
+
+    private static void RemovePendingHandDrawSourcesLocked(Player player)
+    {
+        for (int i = _pendingHandDrawSources.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_pendingHandDrawSources[i].Player, player))
+                _pendingHandDrawSources.RemoveAt(i);
+        }
+    }
+
+    private static void DrainPendingHandDrawSourcesLocked(
+        Player player,
+        AbstractModel? modifier,
+        string? forcedReasonId = null,
+        string? forcedDisplayName = null,
+        bool suppressBlockingEffect = false)
+    {
+        while (TryConsumePendingHandDrawSource(player, out var pendingSource))
+        {
+            RecordBlockedDrawAttemptLocked(
+                player,
+                pendingSource!.SourceInstanceId,
+                modifier,
+                forcedReasonId,
+                forcedDisplayName,
+                suppressBlockingEffect);
+        }
+    }
+
     public static void RecordDrawFromCard(CardModel card, bool fromHandDraw)
     {
         lock (_lock)
@@ -2243,39 +2417,34 @@ public static class RunTracker
             var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
             agg.TimesDrawn++;
 
-            // If the draw is NOT a turn-start hand-draw (fromHandDraw=true
-            // means turn-start), it was caused by some card's play effect.
-            // Attribute to the currently-resolving play so that card can
-            // show "drew N cards this run" in its stats. Skip self-draw
-            // (drawing a card that happens to be the one being played)
-            // since that's uncommon and introduces noise.
-            if (!fromHandDraw)
+            try
             {
-                try
+                if (fromHandDraw)
                 {
-                    CardModel? sourceCard = null;
-                    if (TryConsumePendingDrawAttempt(card.Owner, out var pendingAttempt))
-                        sourceCard = pendingAttempt!.SourceCard;
-
-                    sourceCard ??= _pendingDrawSourceCard;
-                    if (sourceCard == null)
+                    if (TryConsumePendingHandDrawSource(card.Owner, out var handDrawSource)
+                        && handDrawSource != null)
                     {
-                        var causingPlay = FindCurrentlyResolvingCardPlay();
-                        sourceCard = causingPlay?.Card;
-                    }
-
-                    if (sourceCard != null
-                        && !ReferenceEquals(Canonical(sourceCard), Canonical(card)))
-                    {
-                        var causerId = GetOrAssignInstanceId(sourceCard);
-                        var causerAgg = GetOrCreateAggregate(_pendingCombat, causerId);
+                        var causerAgg = GetOrCreateAggregate(_pendingCombat, handDrawSource.SourceInstanceId);
                         causerAgg.TimesCardsDrawn++;
                     }
+
+                    return;
                 }
-                catch (Exception e)
+
+                string? sourceInstanceId = null;
+                if (TryConsumePendingDrawAttempt(card.Owner, out var pendingAttempt))
+                    sourceInstanceId = pendingAttempt!.SourceInstanceId;
+
+                sourceInstanceId ??= _pendingDrawSourceInstanceId ?? ResolveLikelyDrawSourceInstanceIdLocked(card.Owner);
+                if (sourceInstanceId != null && !string.Equals(sourceInstanceId, instanceId, StringComparison.Ordinal))
                 {
-                    CoreMain.LogDebug($"RecordDrawFromCard attribution failed: {e.Message}");
+                    var causerAgg = GetOrCreateAggregate(_pendingCombat, sourceInstanceId);
+                    causerAgg.TimesCardsDrawn++;
                 }
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordDrawFromCard attribution failed: {e.Message}");
             }
         }
     }
@@ -2284,18 +2453,22 @@ public static class RunTracker
     {
         lock (_lock)
         {
-            if (fromHandDraw) return;
-
             _pendingCombat ??= new PendingCombat();
 
             try
             {
-                CardModel? sourceCard = null;
-                if (TryConsumePendingDrawAttempt(player, out var pendingAttempt))
-                    sourceCard = pendingAttempt!.SourceCard;
+                if (fromHandDraw)
+                {
+                    DrainPendingHandDrawSourcesLocked(player, modifier);
+                    return;
+                }
 
-                sourceCard ??= _pendingDrawSourceCard ?? FindLikelyDrawSourceCard(player);
-                RecordBlockedDrawAttemptLocked(player, sourceCard, modifier);
+                string? sourceInstanceId = null;
+                if (TryConsumePendingDrawAttempt(player, out var pendingAttempt))
+                    sourceInstanceId = pendingAttempt!.SourceInstanceId;
+
+                sourceInstanceId ??= _pendingDrawSourceInstanceId ?? ResolveLikelyDrawSourceInstanceIdLocked(player);
+                RecordBlockedDrawAttemptLocked(player, sourceInstanceId, modifier);
             }
             catch (Exception e)
             {
@@ -2324,7 +2497,7 @@ public static class RunTracker
 
                 RecordBlockedDrawAttemptLocked(
                     player,
-                    pendingAttempt!.SourceCard,
+                    pendingAttempt!.SourceInstanceId,
                     modifier: null,
                     forcedReasonId: "full_hand",
                     forcedDisplayName: "hand full",
@@ -2339,7 +2512,7 @@ public static class RunTracker
 
     private static void RecordBlockedDrawAttemptLocked(
         Player player,
-        CardModel? sourceCard,
+        string? sourceInstanceId,
         AbstractModel? modifier,
         string? forcedReasonId = null,
         string? forcedDisplayName = null,
@@ -2347,10 +2520,9 @@ public static class RunTracker
     {
         bool recordedSourceBlockedDraw = false;
         CardAggregate? sourceAgg = null;
-        if (sourceCard != null)
+        if (!string.IsNullOrWhiteSpace(sourceInstanceId))
         {
-            var sourceId = GetOrAssignInstanceId(sourceCard);
-            sourceAgg = GetOrCreateAggregate(_pendingCombat!, sourceId);
+            sourceAgg = GetOrCreateAggregate(_pendingCombat!, sourceInstanceId);
             sourceAgg.TimesCardsDrawBlocked++;
             recordedSourceBlockedDraw = true;
         }
@@ -3272,7 +3444,25 @@ internal sealed class PendingPowerChangeAttempt
 internal sealed class PendingDrawAttempt
 {
     public required Player Player { get; init; }
-    public required CardModel SourceCard { get; init; }
+    public required string SourceInstanceId { get; init; }
+}
+
+internal sealed class PendingHandDrawSource
+{
+    public required Player Player { get; init; }
+    public required string SourceInstanceId { get; init; }
+}
+
+internal sealed class PendingHandDrawResolution
+{
+    public required Player Player { get; init; }
+    public List<HandDrawModification> Modifications { get; } = new();
+}
+
+internal sealed class HandDrawModification
+{
+    public required AbstractModel Modifier { get; init; }
+    public required int Delta { get; init; }
 }
 
 internal sealed class PlayerPowerOwnershipShare

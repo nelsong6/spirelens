@@ -8,10 +8,9 @@ namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
 /// Preserve the currently-executing power across async hook continuations so
-/// delayed energy/star gains can still be credited to the card that applied
-/// that power. The tracker only reads this for resource-gain attribution,
-/// so we scope the patch to power hook methods that are known to contain
-/// energy/star generation paths.
+/// delayed follow-on effects can still be credited to the card that applied
+/// that power. This now feeds both resource attribution and direct power-
+/// driven draw attribution.
 /// </summary>
 [HarmonyPatch]
 public static class PowerExecutionSourcePatch
@@ -20,9 +19,12 @@ public static class PowerExecutionSourcePatch
     {
         "AfterCardDrawn",
         "AfterCardPlayed",
+        "AfterCardExhausted",
         "AfterDamageReceived",
         "AfterEnergyReset",
         "AfterEnergySpent",
+        "AfterPowerAmountChanged",
+        "AfterTurnEnd",
         "BeforeCardPlayed",
     };
 

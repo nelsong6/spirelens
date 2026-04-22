@@ -8,6 +8,7 @@ using Xunit;
 
 namespace CardUtilityStats.Core.Tests;
 
+[Collection("RunTrackerSerial")]
 public class RunTrackerPowerResourceAttributionTests
 {
     private static readonly FieldInfo PendingCombatField =
