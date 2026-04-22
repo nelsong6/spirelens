@@ -60,9 +60,11 @@ Examples already implemented:
 - Regent stars spent / generated
 - forge granted from cards
 - observed cards drawn from draw effects
+- successful self-summons to hand for recurring cards like Make It So
 - effect applications credited back to the source card
 - Artifact-blocked debuffs
 - downstream poison damage and poison overkill
+- stacked merged effects like Noxious Fumes preserve per-source contribution ledgers before their poison fanout is charged back into the poison ownership ledger
 
 When attribution is not naturally one-card-to-one-outcome, the code prefers:
 

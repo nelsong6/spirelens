@@ -19,7 +19,7 @@ This repo is a hot-reloadable Slay the Spire 2 mod focused on per-card attributi
   - Instance numbers never get reused within a run.
   - Combat-generated cards that do not meaningfully exist in the deck may use pooled summaries instead of fake deck-instance identities.
 - Attribution prefers observed outcomes over listed card text whenever the game can diverge from the card face.
-  - Examples already in tree: actual energy gained, Regent stars spent/gained, forge granted, observed cards drawn, Artifact-blocked debuffs, and downstream poison damage.
+  - Examples already in tree: actual energy gained, Regent stars spent/gained, forge granted, observed cards drawn, successful self-summons to hand, Artifact-blocked debuffs, and downstream poison damage.
 - Tooltip style is intentionally quiet.
   - Hand view stays compact.
   - Rows should be self-describing without noisy section headers.
@@ -47,7 +47,7 @@ This repo is a hot-reloadable Slay the Spire 2 mod focused on per-card attributi
   - avoid adding loud headers unless they clearly earn their space
 - If you add new attribution:
   - prefer empirical results over intent text
-  - be explicit when attribution is heuristic, pooled, or case-specific
+  - be explicit when attribution is heuristic, pooled, contributor-ledger based, or case-specific
 
 ## Useful Commands
 
