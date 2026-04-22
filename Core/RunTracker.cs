@@ -1022,16 +1022,15 @@ public static class RunTracker
                     if (dre.Receiver.IsPlayer)
                         RecordPlayerBlockedDamage(dre);
 
-                    if (dre.CardSource != null)
-                    {
-                        CoreMain.LogDebug($"  -> RecordDamage from '{dre.CardSource.Title}' intended={dre.Result.BlockedDamage + dre.Result.UnblockedDamage} canonicalHash={Canonical(dre.CardSource).GetHashCode()}");
-                        RecordDamageFromCard(dre);
-                    }
-                    else if (!dre.Receiver.IsPlayer && TryRecordPoisonTickDamage(dre))
+                    if (!dre.Receiver.IsPlayer && TryRecordPoisonTickDamage(dre))
                     {
                         break;
                     }
-                    else
+                    if (dre.CardSource != null)
+                    {
+                        CoreMain.LogDebug($"  -> RecordDamage from '{dre.CardSource.Title}' intended={dre.Result.BlockedDamage + dre.Result.UnblockedDamage} canonicalHash={Canonical(dre.CardSource).GetHashCode()}");
+                    }
+                    if (!RecordDamageFromCard(dre) && !dre.Receiver.IsPlayer)
                     {
                         if (!dre.Receiver.IsPlayer)
                         {
@@ -1047,7 +1046,7 @@ public static class RunTracker
                             var recvDesc = DescribeCreature(dre.Receiver);
                             var dealerDesc = DescribeCreature(dre.Dealer);
                             CoreMain.Logger.Info(
-                                $"DamageReceivedEntry CardSource=null " +
+                                $"DamageReceivedEntry unattributed " +
                                 $"receiver={recvDesc} dealer={dealerDesc} " +
                                 $"blocked={dre.Result.BlockedDamage} unblocked={dre.Result.UnblockedDamage} " +
                                 $"overkill={dre.Result.OverkillDamage} killed={dre.Result.WasTargetKilled}");
@@ -2980,14 +2979,16 @@ public static class RunTracker
         _pendingPlayerBlockClearArmed = false;
     }
 
-    private static void RecordDamageFromCard(DamageReceivedEntry entry)
+    private static bool RecordDamageFromCard(DamageReceivedEntry entry)
     {
         var result = entry.Result;
 
         lock (_lock)
         {
             _pendingCombat ??= new PendingCombat();
-            var instanceId = GetOrAssignInstanceId(entry.CardSource!);
+            if (!TryResolveDamageSourceInstanceIdLocked(entry, out var instanceId) || instanceId == null)
+                return false;
+
             var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
 
             if (entry.Receiver.IsPlayer)
@@ -3026,7 +3027,59 @@ public static class RunTracker
                 Overkill = result.OverkillDamage,
                 Killed = result.WasTargetKilled,
             });
+
+            return true;
         }
+    }
+
+    private static bool TryResolveDamageSourceInstanceIdLocked(
+        DamageReceivedEntry entry,
+        out string? sourceInstanceId)
+    {
+        sourceInstanceId = null;
+
+        if (entry.CardSource != null)
+        {
+            sourceInstanceId = GetOrAssignInstanceId(entry.CardSource);
+            return true;
+        }
+
+        var targetPlayer = entry.Receiver.IsPlayer ? entry.Receiver.Player : null;
+        if (TryResolveOwnedSourceAttributionLocked(
+            _executionSourceFrame.Value?.Source,
+            targetPlayer,
+            out sourceInstanceId,
+            out _))
+        {
+            return true;
+        }
+
+        var causingPlay = FindCurrentlyResolvingCardPlay();
+        if (causingPlay?.Card != null
+            && TryResolveOwnedSourceAttributionLocked(
+                causingPlay.Card,
+                targetPlayer,
+                out sourceInstanceId,
+                out _))
+        {
+            return true;
+        }
+
+        if (_recentCompletedPlayerCardPlay?.Card != null)
+        {
+            int historyCount = CombatManager.Instance?.History?.Entries?.Count() ?? 0;
+            if (historyCount == _recentCompletedPlayerCardPlayHistoryCount
+                && TryResolveOwnedSourceAttributionLocked(
+                    Canonical(_recentCompletedPlayerCardPlay.Card),
+                    targetPlayer,
+                    out sourceInstanceId,
+                    out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static (int IntendedDamage, int EffectiveDamage) ComputeEnemyDamageTotals(
