@@ -270,9 +270,9 @@ variable "upgrade_mode" {
 }
 
 variable "encryption_at_host_enabled" {
-  description = "Enable encryption at host for VMSS instances."
+  description = "Enable encryption at host for VMSS instances when the Azure subscription has the required feature enabled."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "secure_boot_enabled" {
