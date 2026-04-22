@@ -267,7 +267,6 @@ public class BlockTooltipTests
         Assert.Contains("[img=16x16]res://images/atlases/power_atlas.sprites/draw_cards_next_turn_power.tres[/img] blocked by hand full", text);
         Assert.Contains("[b]2[/b]", text);
     }
-
     private static CardModel CreateCardModel(CardType type)
     {
         var concreteCardType = typeof(CardModel).Assembly.GetTypes()

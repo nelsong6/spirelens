@@ -6,10 +6,10 @@ using MegaCrit.Sts2.Core.Models;
 namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
-/// Preserve the originating card across Forge resolution so any immediate
-/// follow-up draws can still be credited back to that card. Also marks the
-/// deck-level Sovereign Blade overlay as available for the rest of the run
-/// once Forge has fired.
+/// Track forge granted by the originating card, preserve that source across
+/// Forge resolution so immediate follow-up effects can still be credited back
+/// correctly, and mark the deck-level Sovereign Blade overlay once Forge has
+/// fired for the run.
 /// </summary>
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterForge))]
 public static class HookAfterForgePatch

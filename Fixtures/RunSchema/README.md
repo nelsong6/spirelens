@@ -44,8 +44,12 @@ These fixture files pin the on-disk run-file shapes that the mod has written.
   draw cards can show what they tried to draw versus what actually landed,
   alongside the v11 effect-level blocked-draw totals.
 - `v13-per-instance-blocked-draw-reasons-run.json`
-  Current schema. Adds categorized blocked-draw reasons so draw cards can say
+  Legacy-but-resumable additive schema. Adds categorized blocked-draw reasons so draw cards can say
   why missing draws were prevented, alongside the v12 attempted/actual gap.
+- `v14-per-instance-make-it-so-run.json`
+  Current schema. Adds per-card summon-to-hand tracking for cards like
+  `Make It So`, alongside the existing forge, blocked-draw, and per-instance
+  attribution data.
 
 Why these exist:
 
@@ -53,6 +57,7 @@ Why these exist:
 - `v1 -> v2` is not a lossless migration, so the old pooled shape needs to stay
   visible when changing loader behavior
 - additive follow-on schemas (like `v2 -> v3`, `v4 -> v5`, `v5 -> v6`, `v6 -> v7`, `v7 -> v8`, `v8 -> v9`, `v9 -> v10`, `v10 -> v11`, `v11 -> v12`, and `v12 -> v13`) still need fixture coverage so
+- additive follow-on schemas (like `v2 -> v3`, `v4 -> v5`, `v5 -> v6`, `v6 -> v7`, `v7 -> v8`, `v8 -> v9`, `v9 -> v10`, `v10 -> v11`, `v11 -> v12`, `v12 -> v13`, and `v13 -> v14`) still need fixture coverage so
   "old but resumable" behavior stays intentional
 - future tests can read these files directly without having to reconstruct old
   JSON by hand

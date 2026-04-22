@@ -10,7 +10,7 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 13;
+    public const int CurrentSchemaVersion = 14;
 
     // v1: aggregates keyed by card definition id (pooled across instances)
     // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
@@ -51,6 +51,10 @@ public class RunData
     //      say why their missing draws were prevented (No Draw, hand full,
     //      other). Also additive; older v12 files remain resumable with the
     //      new field defaulting to empty.
+    // v14: add per-card "times summoned to hand" tracking for cards whose
+    //      own runtime behavior can recur them to hand (starting with
+    //      Make It So). Also additive; older v13 files remain resumable
+    //      with the new field defaulting to 0.
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
@@ -147,8 +151,9 @@ public class CardAggregate
     public int TotalStarsGenerated { get; set; }
 
     // M3l: Forge granted directly by this card while it is resolving.
-    // Stored as decimal because the game's forge command path is decimal-
-    // backed even when current cards mostly use whole numbers.
+    // Stored as decimal because forge values are sourced from the game's
+    // dynamic vars / command path, which are decimal-backed even when most
+    // current cards use whole numbers.
     public decimal TotalForgeGenerated { get; set; }
 
     // M2a: Block gained (how much block this card contributed over the run,
@@ -228,6 +233,11 @@ public class CardAggregate
     // the game prevented the draw for some reason we didn't categorize yet.
     public Dictionary<string, BlockedDrawReasonAggregate> BlockedDrawReasons { get; set; } = new();
 
+    // M3m: Successful self-summons into Hand. Counts actual arrivals in
+    // Hand, not mere attempts, so hand-full redirects to Discard stay out
+    // of this number.
+    public int TimesSummonedToHand { get; set; }
+
     // M4a: Effect / power application summary for this specific card
     // instance. First pass tracks ONLY that the card caused a power/effect
     // to be applied, not what the downstream effect later did. Keyed by the
@@ -303,7 +313,7 @@ public class BlockedDrawReasonAggregate
 public class CardEvent
 {
     public string T { get; set; } = "";          // ISO-8601 UTC timestamp
-    public string Type { get; set; } = "";       // "card_played" | "damage_received"
+    public string Type { get; set; } = "";       // "card_played" | "damage_received" | "energy_gained" | "stars_gained" | "forge_gained"
     public string CardId { get; set; } = "";
 
     // card_played fields

@@ -212,9 +212,27 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV13Fixture()
+    public void HistoricalLoad_AcceptsLegacyResumableV13Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v13-per-instance-blocked-draw-reasons-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(13, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
+        var blocker = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
+        Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
+        var reason = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#2"].BlockedDrawReasons["effect:POWER.NO_DRAW"];
+        Assert.Equal("No Draw", reason.DisplayName);
+        Assert.Equal(3, reason.Count);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsCurrentV14Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v14-per-instance-make-it-so-run.json"));
 
         Assert.NotNull(loaded);
         Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
@@ -222,11 +240,9 @@ public class SchemaLoadingTests
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Null(loaded.CompatibilityNote);
-        var blocker = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
-        Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
-        var reason = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#2"].BlockedDrawReasons["effect:POWER.NO_DRAW"];
-        Assert.Equal("No Draw", reason.DisplayName);
-        Assert.Equal(3, reason.Count);
+        Assert.Equal(9m, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.MAKE_IT_SO#1"].TimesSummonedToHand);
+        Assert.Equal(4m, loaded.Data.Events[2].ForgeGained);
     }
 
     [Fact]
@@ -384,17 +400,29 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV13Fixture()
+    public void ResumableLoad_AcceptsLegacyResumableV13Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v13-per-instance-blocked-draw-reasons-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(13, resumed!.SchemaVersion);
         var blocker = resumed.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
         var reason = resumed.Aggregates["CARD.BATTLE_TRANCE#2"].BlockedDrawReasons["effect:POWER.NO_DRAW"];
         Assert.Equal("No Draw", reason.DisplayName);
         Assert.Equal(3, reason.Count);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsCurrentV14Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v14-per-instance-make-it-so-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(9m, resumed.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(2, resumed.Aggregates["CARD.MAKE_IT_SO#1"].TimesSummonedToHand);
+        Assert.Equal(3, resumed.Aggregates["CARD.MAKE_IT_SO#1"].TimesDrawn);
     }
 
     [Fact]

@@ -8,9 +8,10 @@ namespace CardUtilityStats.Core.Patches;
 
 /// <summary>
 /// Observe the post-mutation pile-change hook so redirected draw attempts can
-/// still be counted on the source card. When the hand is full, the game can
-/// move the would-be drawn card somewhere other than Hand without producing a
-/// Hook.ShouldDraw=false veto.
+/// still be counted on the source card while card-specific recurrence only
+/// counts real arrivals in Hand. The game can redirect a would-be draw or
+/// summon somewhere else without a dedicated veto hook, so we need the final
+/// pile result to tell those cases apart.
 /// </summary>
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterCardChangedPiles))]
 public static class HookAfterCardChangedPilesPatch

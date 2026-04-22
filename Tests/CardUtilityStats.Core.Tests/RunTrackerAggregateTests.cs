@@ -15,33 +15,38 @@ public class RunTrackerAggregateTests
         ?? throw new InvalidOperationException("MergeAggregateInto not found.");
 
     [Fact]
-    public void CloneAggregate_CopiesForgeGenerated()
+    public void CloneAggregate_CopiesForgeGeneratedAndTimesSummonedToHand()
     {
         var source = new CardAggregate
         {
+            TimesSummonedToHand = 2,
             TotalForgeGenerated = 9m,
         };
 
         var clone = (CardAggregate)(CloneAggregateMethod.Invoke(null, new object?[] { source })
             ?? throw new InvalidOperationException("CloneAggregate returned null."));
 
+        Assert.Equal(2, clone.TimesSummonedToHand);
         Assert.Equal(9m, clone.TotalForgeGenerated);
     }
 
     [Fact]
-    public void MergeAggregateInto_AddsForgeGenerated()
+    public void MergeAggregateInto_AddsForgeGeneratedAndTimesSummonedToHand()
     {
         var target = new CardAggregate
         {
+            TimesSummonedToHand = 1,
             TotalForgeGenerated = 5m,
         };
         var source = new CardAggregate
         {
+            TimesSummonedToHand = 2,
             TotalForgeGenerated = 4m,
         };
 
         _ = MergeAggregateIntoMethod.Invoke(null, new object?[] { target, source });
 
+        Assert.Equal(3, target.TimesSummonedToHand);
         Assert.Equal(9m, target.TotalForgeGenerated);
     }
 }
