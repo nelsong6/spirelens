@@ -1,0 +1,85 @@
+{
+  "schema_version": 9,
+  "run_id": "fixture-v9-per-instance-forge",
+  "started_at": "2026-04-21T11:00:00Z",
+  "updated_at": "2026-04-21T11:06:00Z",
+  "ended_at": "2026-04-21T11:08:00Z",
+  "character": "REG",
+  "ascension": 10,
+  "floor_reached": 9,
+  "outcome": "win",
+  "game_start_time": 1713697200,
+  "aggregates": {
+    "CARD.REFINE_BLADE#1": {
+      "plays": 2,
+      "total_intended": 0,
+      "total_blocked": 0,
+      "total_overkill": 0,
+      "total_effective": 0,
+      "kills": 0,
+      "total_energy_spent": 2,
+      "total_energy_generated": 1,
+      "total_stars_spent": 0,
+      "total_stars_generated": 0,
+      "total_forge_generated": 9,
+      "total_block_gained": 0,
+      "total_block_effective": 0,
+      "total_block_wasted": 0,
+      "times_drawn": 1,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 0,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 0,
+      "applied_effects": {
+        "POWER.ENERGY_NEXT_TURN": {
+          "effect_id": "POWER.ENERGY_NEXT_TURN",
+          "display_name": "Energy Next Turn",
+          "icon_path": "res://images/atlases/power_atlas.sprites/energy_next_turn_power.tres",
+          "times_applied": 2,
+          "total_amount_applied": 2,
+          "times_blocked_by_artifact": 0,
+          "total_amount_blocked_by_artifact": 0,
+          "total_triggered_effective_damage": 0,
+          "total_triggered_overkill": 0
+        }
+      },
+      "floor_added": 1,
+      "initial_upgrade_level": 0,
+      "removed": false
+    }
+  },
+  "events": [
+    {
+      "t": "2026-04-21T11:02:00Z",
+      "type": "forge_gained",
+      "card_id": "CARD.REFINE_BLADE#1",
+      "forge_gained": 5,
+      "floor": 4
+    },
+    {
+      "t": "2026-04-21T11:02:00Z",
+      "type": "energy_gained",
+      "card_id": "CARD.REFINE_BLADE#1",
+      "energy_gained": 1,
+      "floor": 4
+    },
+    {
+      "t": "2026-04-21T11:05:00Z",
+      "type": "forge_gained",
+      "card_id": "CARD.REFINE_BLADE#1",
+      "forge_gained": 4,
+      "floor": 7
+    }
+  ],
+  "instance_numbers_by_def": {
+    "CARD.REFINE_BLADE": [
+      1
+    ]
+  },
+  "def_counters": {
+    "CARD.REFINE_BLADE": 1
+  }
+}

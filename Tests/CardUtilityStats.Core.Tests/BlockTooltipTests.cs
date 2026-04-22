@@ -27,6 +27,10 @@ public class BlockTooltipTests
         typeof(CardHoverShowPatch).GetMethod("GetStarStatLabel", BindingFlags.NonPublic | BindingFlags.Static)
         ?? throw new InvalidOperationException("GetStarStatLabel not found.");
 
+    private static readonly MethodInfo GetForgeStatLabelMethod =
+        typeof(CardHoverShowPatch).GetMethod("GetForgeStatLabel", BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException("GetForgeStatLabel not found.");
+
     private static readonly MethodInfo AppendCompactBodyMethod =
         typeof(CardHoverShowPatch).GetMethod("AppendCompactBody", BindingFlags.NonPublic | BindingFlags.Static)
         ?? throw new InvalidOperationException("AppendCompactBody not found.");
@@ -87,6 +91,15 @@ public class BlockTooltipTests
     }
 
     [Fact]
+    public void GetForgeStatLabel_UsesQuietTextLabel()
+    {
+        var label = (string)(GetForgeStatLabelMethod.Invoke(null, new object?[] { "gained" })
+            ?? throw new InvalidOperationException("GetForgeStatLabel returned null."));
+
+        Assert.Equal("Forge gained", label);
+    }
+
+    [Fact]
     public void AppendCompactBody_UsesDrawPowerIconForUnplayableDrawRows()
     {
         var cardModel = CreateCardModel(CardType.Curse);
@@ -139,6 +152,26 @@ public class BlockTooltipTests
 
         Assert.Contains("[img=16x16]res://images/packed/sprite_fonts/star_icon.png[/img] gained", text);
         Assert.Contains("[b]2[/b]", text);
+    }
+
+    [Fact]
+    public void AppendCompactBody_UsesQuietTextForForgeRows()
+    {
+        var cardModel = CreateCardModel(CardType.Skill);
+        var agg = new CardAggregate
+        {
+            Plays = 2,
+            TimesDrawn = 3,
+            TotalForgeGenerated = 6m,
+        };
+
+        var sb = new StringBuilder();
+        _ = AppendCompactBodyMethod.Invoke(null, new object?[] { sb, cardModel, agg });
+        var text = sb.ToString();
+
+        Assert.Contains("Forge gained", text);
+        Assert.DoesNotContain("[img=16x16]", text);
+        Assert.Contains("[b]6[/b]", text);
     }
 
     private static CardModel CreateCardModel(CardType type)

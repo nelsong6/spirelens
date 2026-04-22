@@ -119,19 +119,50 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV8Fixture()
+    public void HistoricalLoad_AcceptsLegacyResumableV8Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v8-per-instance-regent-stars-run.json"));
 
         Assert.NotNull(loaded);
         Assert.Equal(8, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
+        Assert.Equal(2, loaded.Data.Events[1].StarsSpent);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsLegacyResumableV9Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v9-per-instance-forge-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(9, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(9m, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(5m, loaded.Data.Events[0].ForgeGained);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsCurrentV10Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v10-per-instance-make-it-so-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(10, loaded!.SourceSchemaVersion);
         Assert.False(loaded.IsLegacy);
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Null(loaded.CompatibilityNote);
-        Assert.Equal(2, loaded.Data.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
-        Assert.Equal(2, loaded.Data.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
-        Assert.Equal(2, loaded.Data.Events[1].StarsSpent);
+        Assert.Equal(9m, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(2, loaded.Data.Aggregates["CARD.MAKE_IT_SO#1"].TimesSummonedToHand);
+        Assert.Equal(4m, loaded.Data.Events[2].ForgeGained);
     }
 
     [Fact]
@@ -218,7 +249,7 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV8Fixture()
+    public void ResumableLoad_AcceptsLegacyResumableV8Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v8-per-instance-regent-stars-run.json"));
 
@@ -227,6 +258,29 @@ public class SchemaLoadingTests
         Assert.Equal(2, resumed.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
         Assert.Equal(2, resumed.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
         Assert.Equal(1, resumed.Aggregates["CARD.VENERATE#1"].TimesDrawn);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsLegacyResumableV9Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v9-per-instance-forge-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(9, resumed!.SchemaVersion);
+        Assert.Equal(9m, resumed.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(1, resumed.Aggregates["CARD.REFINE_BLADE#1"].TimesDrawn);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsCurrentV10Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v10-per-instance-make-it-so-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(10, resumed!.SchemaVersion);
+        Assert.Equal(9m, resumed.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(2, resumed.Aggregates["CARD.MAKE_IT_SO#1"].TimesSummonedToHand);
+        Assert.Equal(3, resumed.Aggregates["CARD.MAKE_IT_SO#1"].TimesDrawn);
     }
 
     [Fact]

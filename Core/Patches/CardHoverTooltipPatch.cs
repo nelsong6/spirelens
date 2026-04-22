@@ -4,6 +4,7 @@ using System.Text;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 
 namespace CardUtilityStats.Core.Patches;
@@ -231,6 +232,8 @@ public static class CardHoverShowPatch
             Row3(sb, "Played/Drawn", $"{agg.Plays}/{agg.TimesDrawn}", $"{playRate:F0}%");
         }
 
+        AppendMakeItSoStats(sb, cardModel, agg, compact: false);
+
         bool hasDedicatedPoison = AppendDedicatedPoisonStats(sb, agg, compact: false);
         AppendAppliedEffects(sb, agg, compact: false, excludePoison: hasDedicatedPoison);
         AppendArtifactBlockedSummary(sb, agg, excludePoison: hasDedicatedPoison);
@@ -250,6 +253,13 @@ public static class CardHoverShowPatch
             float avgGenerated = agg.Plays > 0 ? (float)agg.TotalStarsGenerated / agg.Plays : 0f;
             Row3(sb, GetStarStatLabel("gained"), agg.TotalStarsGenerated.ToString(), "");
             Row3(sb, GetStarStatLabel("avg gained"), $"{avgGenerated:F1}", "");
+        }
+
+        if (agg.TotalForgeGenerated > 0m)
+        {
+            decimal avgGenerated = agg.Plays > 0 ? agg.TotalForgeGenerated / agg.Plays : 0m;
+            Row3(sb, GetForgeStatLabel("gained"), FormatDecimal(agg.TotalForgeGenerated), "");
+            Row3(sb, GetForgeStatLabel("avg gained"), FormatDecimal(avgGenerated), "");
         }
 
         // Energy-spent rows — only rendered when the card's cost is actually
@@ -406,6 +416,9 @@ public static class CardHoverShowPatch
         if (agg.TotalStarsGenerated > 0)
             Row3(sb, GetStarStatLabel("gained"), agg.TotalStarsGenerated.ToString(), "");
 
+        if (agg.TotalForgeGenerated > 0m)
+            Row3(sb, GetForgeStatLabel("gained"), FormatDecimal(agg.TotalForgeGenerated), "");
+
         if (agg.TotalBlockGained > 0)
             Row3(sb, GetBlockStatLabel("gained"), agg.TotalBlockGained.ToString(), "");
 
@@ -509,15 +522,15 @@ public static class CardHoverShowPatch
 
         decimal avgPoison = agg.Plays > 0 ? poison.Value.TotalAmountApplied / agg.Plays : 0m;
 
-        Row3(sb, GetPoisonStatLabel(poison.Value, "total"), FormatDecimal(poison.Value.TotalAmountApplied), "");
-        Row3(sb, GetPoisonStatLabel(poison.Value, "avg"), FormatDecimal(avgPoison), "");
+        Row3(sb, GetPoisonStatLabel(poison.Value, "total applied"), FormatDecimal(poison.Value.TotalAmountApplied), "");
+        Row3(sb, GetPoisonStatLabel(poison.Value, "avg applied"), FormatDecimal(avgPoison), "");
         Row3(sb, GetPoisonStatLabel(poison.Value, "applications"), poison.Value.TimesApplied.ToString(), "");
 
         if (poison.Value.TotalTriggeredEffectiveDamage > 0m || poison.Value.TotalTriggeredOverkill > 0m)
         {
             decimal avgPoisonDamage = agg.Plays > 0 ? poison.Value.TotalTriggeredEffectiveDamage / agg.Plays : 0m;
             Row3(sb, GetPoisonStatLabel(poison.Value, "damage"), FormatDecimal(poison.Value.TotalTriggeredEffectiveDamage), "");
-            Row3(sb, GetPoisonStatLabel(poison.Value, "avg dmg"), FormatDecimal(avgPoisonDamage), "");
+            Row3(sb, GetPoisonStatLabel(poison.Value, "avg damage"), FormatDecimal(avgPoisonDamage), "");
 
             if (poison.Value.TotalTriggeredOverkill > 0m)
                 Row3(sb, GetPoisonStatLabel(poison.Value, "overkill"), FormatDecimal(poison.Value.TotalTriggeredOverkill), "");
@@ -604,6 +617,48 @@ public static class CardHoverShowPatch
     private static string GetStarStatLabel(string suffix)
     {
         return GetInlineIconStatLabel(StarIconPath, suffix);
+    }
+
+    private static string GetForgeStatLabel(string suffix)
+    {
+        return suffix switch
+        {
+            "avg gained" => "Forge avg",
+            _ => $"Forge {suffix}",
+        };
+    }
+
+    private static void AppendMakeItSoStats(
+        StringBuilder sb,
+        MegaCrit.Sts2.Core.Models.CardModel cardModel,
+        CardAggregate agg,
+        bool compact)
+    {
+        if (cardModel is not MakeItSo) return;
+
+        int? currentCounter = null;
+        int threshold = 0;
+        if (RunTracker.TryGetMakeItSoSkillCounter(cardModel, out var current, out var currentThreshold))
+        {
+            currentCounter = current;
+            threshold = currentThreshold;
+        }
+
+        AppendMakeItSoStats(sb, agg, compact, currentCounter, threshold);
+    }
+
+    private static void AppendMakeItSoStats(
+        StringBuilder sb,
+        CardAggregate agg,
+        bool compact,
+        int? currentCounter,
+        int threshold)
+    {
+        if (currentCounter.HasValue && threshold > 0)
+            Row3(sb, "Skill counter", $"{currentCounter.Value}/{threshold}", "");
+
+        if (!compact && agg.TimesSummonedToHand > 0)
+            Row3(sb, "Summoned to hand", agg.TimesSummonedToHand.ToString(), "");
     }
 
     private static string GetInlineIconStatLabel(string iconPath, string suffix)
@@ -732,6 +787,8 @@ public static class CardHoverShowPatch
             return GetEnergyEffectLabel(label);
         if (IsStarEffect(effect))
             return GetStarEffectLabel(label);
+        if (IsNoxiousFumesEffect(effect))
+            return GetIconBackedEffectLabel(label, effect.IconPath);
 
         return label;
     }
@@ -789,6 +846,23 @@ public static class CardHoverShowPatch
         }
 
         return GetInlineIconStatLabel(StarIconPath, label);
+    }
+
+    private static bool IsNoxiousFumesEffect(AppliedEffectAggregate effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect.EffectId) &&
+            effect.EffectId.Contains("NOXIOUS_FUMES", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return string.Equals(effect.DisplayName, "Noxious Fumes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetIconBackedEffectLabel(string label, string? iconPath)
+    {
+        if (string.IsNullOrWhiteSpace(iconPath))
+            return label;
+
+        return GetInlineIconStatLabel(iconPath, label);
     }
 
     private static string FormatDecimal(decimal value)

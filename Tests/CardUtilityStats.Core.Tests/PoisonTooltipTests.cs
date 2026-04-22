@@ -66,15 +66,15 @@ public class PoisonTooltipTests
 
         Assert.True(rendered);
         Assert.DoesNotContain("[color=#b5b5b5]Poison applied[/color]", text);
-        Assert.Contains("[img=16x16]res://art/powers/poison.png[/img] total", text);
+        Assert.Contains("[img=16x16]res://art/powers/poison.png[/img] total applied", text);
         Assert.Contains("[b]12[/b]", text);
-        Assert.Contains("avg", text);
+        Assert.Contains("avg applied", text);
         Assert.Contains("[b]3[/b]", text);
         Assert.Contains("applications", text);
         Assert.Contains("[b]4[/b]", text);
         Assert.Contains("damage", text);
         Assert.Contains("[b]12[/b]", text);
-        Assert.Contains("avg dmg", text);
+        Assert.Contains("avg damage", text);
         Assert.Contains("overkill", text);
         Assert.Contains("[b]2[/b]", text);
         Assert.Contains("blocked by Artifact", text);
@@ -196,6 +196,32 @@ public class PoisonTooltipTests
 
         Assert.Contains("[img=16x16]res://images/packed/sprite_fonts/star_icon.png[/img] Next Turn", text);
         Assert.Contains("[b]2[/b]", text);
+    }
+
+    [Fact]
+    public void AppendAppliedEffects_UsesPowerIconForNoxiousFumes()
+    {
+        var agg = new CardAggregate
+        {
+            AppliedEffects =
+            {
+                ["POWER.NOXIOUS_FUMES"] = new AppliedEffectAggregate
+                {
+                    EffectId = "POWER.NOXIOUS_FUMES",
+                    DisplayName = "Noxious Fumes",
+                    IconPath = "res://art/powers/noxious_fumes.png",
+                    TimesApplied = 1,
+                    TotalAmountApplied = 3m,
+                },
+            }
+        };
+
+        var sb = new StringBuilder();
+        AppendAppliedEffects(sb, agg, compact: false, excludePoison: false);
+        var text = sb.ToString();
+
+        Assert.Contains("[img=16x16]res://art/powers/noxious_fumes.png[/img] Noxious Fumes", text);
+        Assert.Contains("[b]3[/b]", text);
     }
 
     [Fact]

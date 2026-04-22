@@ -41,7 +41,7 @@ This combat-boundary rule is important:
 
 - [Core/RunData.cs](D:/repos/CardUtilityStats/Core/RunData.cs:6) defines the serialized run shape.
 - [Core/RunStorage.cs](D:/repos/CardUtilityStats/Core/RunStorage.cs:9) handles load/save and resumability rules.
-- Schema changes are additive when possible. The current schema is `v8`.
+- Schema changes are additive when possible. The current schema is `v10`.
 
 Historical compatibility is pinned by:
 
@@ -58,6 +58,7 @@ Examples already implemented:
 - block gained / effective / wasted
 - actual energy generated
 - Regent stars spent / generated
+- forge granted from cards
 - observed cards drawn from draw effects
 - effect applications credited back to the source card
 - Artifact-blocked debuffs

@@ -23,15 +23,22 @@ These fixture files pin the on-disk run-file shapes that the mod has written.
   Legacy-but-resumable additive schema. Adds per-effect downstream damage and overkill counters so
   dedicated poison rows can report observed poison outcomes, not just poison applied.
 - `v8-per-instance-regent-stars-run.json`
-  Current schema. Adds Regent star-resource spend/gain fields alongside the
-  existing energy and per-instance attribution data.
+  Legacy-but-resumable additive schema. Adds Regent star-resource spend/gain
+  fields alongside the existing energy and per-instance attribution data.
+- `v9-per-instance-forge-run.json`
+  Legacy-but-resumable additive schema. Adds per-card forge granted tracking
+  alongside the existing energy, star, and per-instance attribution data.
+- `v10-per-instance-make-it-so-run.json`
+  Current schema. Adds per-card summon-to-hand tracking for cards like
+  `Make It So`, alongside the existing forge, star, and per-instance
+  attribution data.
 
 Why these exist:
 
 - schema work should be validated against real checked-in examples, not memory
 - `v1 -> v2` is not a lossless migration, so the old pooled shape needs to stay
   visible when changing loader behavior
-- additive follow-on schemas (like `v2 -> v3`, `v4 -> v5`, `v5 -> v6`, `v6 -> v7`, and `v7 -> v8`) still need fixture coverage so
+- additive follow-on schemas (like `v2 -> v3`, `v4 -> v5`, `v5 -> v6`, `v6 -> v7`, `v7 -> v8`, `v8 -> v9`, and `v9 -> v10`) still need fixture coverage so
   "old but resumable" behavior stays intentional
 - future tests can read these files directly without having to reconstruct old
   JSON by hand

@@ -10,7 +10,7 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 8;
+    public const int CurrentSchemaVersion = 10;
 
     // v1: aggregates keyed by card definition id (pooled across instances)
     // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
@@ -33,6 +33,14 @@ public class RunData
     // v8: add Regent star-resource spend / gain tracking alongside the
     //     existing energy fields. Also additive; older v7 files remain
     //     resumable with the new fields defaulting to 0.
+    // v9: add per-card forge granted tracking so Regent forge cards can
+    //     report actual forge added, alongside the existing star and energy
+    //     resource fields. Also additive; older v8 files remain resumable
+    //     with the new field defaulting to 0.
+    // v10: add per-card "times summoned to hand" tracking for cards whose
+    //      own runtime behavior can recur them to hand (starting with
+    //      Make It So). Also additive; older v9 files remain resumable
+    //      with the new field defaulting to 0.
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
@@ -128,6 +136,12 @@ public class CardAggregate
     public int TotalStarsSpent { get; set; }
     public int TotalStarsGenerated { get; set; }
 
+    // M3l: Forge granted directly by this card while it is resolving.
+    // Stored as decimal because forge values are sourced from the game's
+    // dynamic vars / command path, which are decimal-backed even when most
+    // current cards use whole numbers.
+    public decimal TotalForgeGenerated { get; set; }
+
     // M2a: Block gained (how much block this card contributed over the run,
     // summed across plays). M2b extends this with absorbed/wasted splits
     // using an ordered provenance ledger for the player's block pool.
@@ -184,6 +198,11 @@ public class CardAggregate
     // Acrobatics etc. depending on the character). Excludes turn-start
     // auto-draw via the game's FromHandDraw flag.
     public int TimesCardsDrawn { get; set; }
+
+    // M3m: Successful self-summons into Hand. Counts actual arrivals in
+    // Hand, not mere attempts, so hand-full redirects to Discard stay out
+    // of this number.
+    public int TimesSummonedToHand { get; set; }
 
     // M4a: Effect / power application summary for this specific card
     // instance. First pass tracks ONLY that the card caused a power/effect
@@ -252,7 +271,7 @@ public class AppliedEffectAggregate
 public class CardEvent
 {
     public string T { get; set; } = "";          // ISO-8601 UTC timestamp
-    public string Type { get; set; } = "";       // "card_played" | "damage_received"
+    public string Type { get; set; } = "";       // "card_played" | "damage_received" | "energy_gained" | "stars_gained" | "forge_gained"
     public string CardId { get; set; } = "";
 
     // card_played fields
@@ -261,6 +280,7 @@ public class CardEvent
     public int? EnergyGained { get; set; }       // actual energy added to the pool while this card was resolving
     public int? StarsSpent { get; set; }         // actual stars paid for this play
     public int? StarsGained { get; set; }        // actual stars added while this card was resolving
+    public decimal? ForgeGained { get; set; }    // actual forge added while this card was resolving
 
     // card_upgraded fields (and general-purpose: Floor also stamped on
     // other event types when useful). UpgradeLevel is the NEW level AFTER
