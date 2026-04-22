@@ -4,9 +4,9 @@ location    = "West US 3"
 admin_username = "runneradmin"
 
 # Phase 0: create only the temporary builder VM.
-enable_builder_vm = true
-enable_vmss       = false
-builder_vm_sku    = "Standard_D4s_v5"
+enable_builder_vm  = true
+enable_vmss        = false
+builder_vm_sku     = "Standard_D4s_v5"
 create_nat_gateway = false
 
 # The GitHub Actions workflow can inject TF_VAR_enable_rdp_rule and
