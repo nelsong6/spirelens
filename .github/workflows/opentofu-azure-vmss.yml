@@ -112,12 +112,19 @@ jobs:
       - name: OpenTofu validate
         run: tofu validate -no-color
 
+      - name: Write runtime tfvars
+        env:
+          ENABLE_RDP_RULE: ${{ steps.secrets.outputs.enable_rdp_rule }}
+          RDP_ALLOWED_CIDRS: ${{ steps.secrets.outputs.rdp_allowed_cidrs }}
+        run: |
+          printf '{\n  "enable_rdp_rule": %s,\n  "rdp_allowed_cidrs": %s\n}\n' \
+            "$ENABLE_RDP_RULE" \
+            "$RDP_ALLOWED_CIDRS" > runtime.auto.tfvars.json
+
       - name: OpenTofu plan
         env:
           TFVARS_FILE: ${{ github.event.inputs.tfvars_file || 'infra/opentofu/azure-vmss/example.tfvars' }}
           TF_VAR_admin_password: ${{ steps.secrets.outputs.vm_admin_password }}
-          TF_VAR_enable_rdp_rule: ${{ steps.secrets.outputs.enable_rdp_rule }}
-          TF_VAR_rdp_allowed_cidrs: ${{ steps.secrets.outputs.rdp_allowed_cidrs }}
         run: |
           set -euo pipefail
 
@@ -180,6 +187,4 @@ jobs:
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.apply) }}
         env:
           TF_VAR_admin_password: ${{ steps.secrets.outputs.vm_admin_password }}
-          TF_VAR_enable_rdp_rule: ${{ steps.secrets.outputs.enable_rdp_rule }}
-          TF_VAR_rdp_allowed_cidrs: ${{ steps.secrets.outputs.rdp_allowed_cidrs }}
         run: tofu apply -input=false -auto-approve tfplan
