@@ -1,0 +1,29 @@
+{
+  "name": "tooltip_visual_check",
+  "description": "Capture hand-view and deck-view tooltip screenshots for manual UI review on a live worker.",
+  "tags": [
+    "ui",
+    "tooltip",
+    "live"
+  ],
+  "intent": {
+    "primary_assertion": "Compact hand-view and fuller deck-view tooltips render with expected information density.",
+    "secondary_assertions": [
+      "Screenshot capture and artifact upload remain stable for visual review runs."
+    ]
+  },
+  "artifact_expectations": [
+    "hand tooltip screenshots",
+    "deck-view tooltip screenshots",
+    "driver logs describing capture points"
+  ],
+  "driver": {
+    "entrypoint": "scenario/tooltip-visual-check",
+    "profile": "ui-review",
+    "capture": [
+      "hand-hover",
+      "deck-hover"
+    ],
+    "timeout_minutes": 15
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "forge_grant_basic",
+  "description": "Verify forge granted from cards is visible in live run output on a worker machine.",
+  "tags": [
+    "forge",
+    "live"
+  ],
+  "intent": {
+    "primary_assertion": "Forge granted from the scenario card is recorded in run data.",
+    "secondary_assertions": [
+      "The worker captures enough logs to debug a failed live setup."
+    ]
+  },
+  "artifact_expectations": [
+    "screenshots around the forge-grant event",
+    "worker logs for scenario execution",
+    "run JSON containing the recorded forge stat"
+  ],
+  "driver": {
+    "entrypoint": "scenario/forge-grant-basic",
+    "profile": "regent",
+    "capture": [
+      "before-play",
+      "after-play"
+    ],
+    "timeout_minutes": 20
+  }
+}

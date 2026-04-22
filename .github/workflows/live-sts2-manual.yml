@@ -1,0 +1,74 @@
+name: Live STS2 Manual Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario_path:
+        description: Repo-relative scenario manifest to execute on the worker
+        required: true
+        default: LiveScenarios/noxious_fumes_basic.json
+        type: string
+      git_ref:
+        description: Branch, tag, or commit to test
+        required: true
+        default: main
+        type: string
+      configuration:
+        description: Dotnet build configuration
+        required: true
+        default: Release
+        type: choice
+        options:
+          - Release
+          - Debug
+      run_tests:
+        description: Run CardUtilityStats.Core tests before the live scenario
+        required: true
+        default: true
+        type: boolean
+      execute_live_driver:
+        description: Invoke the worker's local STS2 scenario driver
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  live-test:
+    name: Live test on self-hosted STS2 worker
+    runs-on:
+      - self-hosted
+      - windows
+      - sts2-live
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout target ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+          fetch-depth: 0
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Run live scenario harness
+        shell: pwsh
+        run: |
+          $artifactRoot = Join-Path $env:RUNNER_TEMP 'card-utility-stats-live'
+          ./scripts/ci/run-live-scenario.ps1 `
+            -ScenarioPath '${{ inputs.scenario_path }}' `
+            -ArtifactRoot $artifactRoot `
+            -Configuration '${{ inputs.configuration }}' `
+            -RunTests:${{ inputs.run_tests }} `
+            -ExecuteLiveDriver:${{ inputs.execute_live_driver }}
+
+      - name: Upload live test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-sts2-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.name }}
+          path: ${{ runner.temp }}/card-utility-stats-live
+          if-no-files-found: warn
+          retention-days: 14

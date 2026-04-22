@@ -1,0 +1,28 @@
+{
+  "name": "make_it_so_summon_basic",
+  "description": "Exercise recurring summon-to-hand attribution for Make It So on a live worker.",
+  "tags": [
+    "summon",
+    "live"
+  ],
+  "intent": {
+    "primary_assertion": "Successful self-summons to hand are credited back to the originating card instance.",
+    "secondary_assertions": [
+      "The run JSON and screenshots are sufficient for manual review."
+    ]
+  },
+  "artifact_expectations": [
+    "screenshots before and after the summon returns to hand",
+    "driver logs covering the summon trigger",
+    "run JSON with summon-related attribution"
+  ],
+  "driver": {
+    "entrypoint": "scenario/make-it-so-summon-basic",
+    "profile": "defect",
+    "capture": [
+      "before-play",
+      "after-return-to-hand"
+    ],
+    "timeout_minutes": 20
+  }
+}

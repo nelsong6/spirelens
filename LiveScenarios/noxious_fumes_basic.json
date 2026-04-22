@@ -1,0 +1,31 @@
+{
+  "name": "noxious_fumes_basic",
+  "description": "Exercise stacked Noxious Fumes attribution and capture the resulting run-data plus tooltip state.",
+  "tags": [
+    "poison",
+    "artifact",
+    "live"
+  ],
+  "intent": {
+    "primary_assertion": "Observed poison application and poison damage remain attributable to the source card.",
+    "secondary_assertions": [
+      "Artifact-blocked debuffs still surface in the run output.",
+      "The produced run JSON is useful enough for manual review."
+    ]
+  },
+  "artifact_expectations": [
+    "screenshots showing the tooltip or combat state after Noxious Fumes is active",
+    "bridge or driver logs covering scenario setup and completion",
+    "CardUtilityStats run JSON written during or after the scenario"
+  ],
+  "driver": {
+    "entrypoint": "scenario/noxious-fumes-basic",
+    "profile": "silent",
+    "capture": [
+      "combat-start",
+      "after-application",
+      "combat-end"
+    ],
+    "timeout_minutes": 20
+  }
+}
