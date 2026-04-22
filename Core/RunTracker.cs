@@ -1216,7 +1216,10 @@ public static class RunTracker
     /// <summary>
     /// Record forge added by a card. Sourced directly from
     /// <see cref="Patches.HookAfterForgePatch"/>, which sees the actual
-    /// forge amount passed through the game's Forge command path.
+    /// forge amount passed through the game's Forge command path. When the
+    /// forge source is a persistent power (for example Furnace or
+    /// Hammer Time), we reuse the combat-local power ownership map so the
+    /// originating card instance keeps credit for the downstream forge.
     /// </summary>
     public static void RecordForgeGranted(decimal amount, Player? forger, AbstractModel? source)
     {
@@ -1226,13 +1229,10 @@ public static class RunTracker
         {
             try
             {
-                if (source is not CardModel sourceCard) return;
-                if (forger != null && sourceCard.Owner != null
-                    && !ReferenceEquals(sourceCard.Owner, forger))
-                    return;
-
                 _pendingCombat ??= new PendingCombat();
-                var instanceId = GetOrAssignInstanceId(sourceCard);
+                var instanceId = ResolveForgeSourceInstanceIdLocked(forger, source);
+                if (string.IsNullOrWhiteSpace(instanceId)) return;
+
                 var agg = GetOrCreateAggregate(_pendingCombat, instanceId);
                 agg.TotalForgeGenerated += amount;
 
@@ -1250,6 +1250,25 @@ public static class RunTracker
                 CoreMain.LogDebug($"RecordForgeGranted failed: {e.Message}");
             }
         }
+    }
+
+    private static string? ResolveForgeSourceInstanceIdLocked(Player? forger, AbstractModel? source)
+    {
+        if (source is CardModel sourceCard)
+        {
+            if (forger != null && sourceCard.Owner != null
+                && !ReferenceEquals(sourceCard.Owner, forger))
+                return null;
+
+            return GetOrAssignInstanceId(sourceCard);
+        }
+
+        if (source != null
+            && TryResolvePlayerPowerOwnershipLocked(source, out var ownership)
+            && ownership != null)
+            return ownership.CardInstanceId;
+
+        return null;
     }
 
     /// <summary>
