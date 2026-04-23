@@ -65,6 +65,17 @@ That distinction lets the laptop join the pool before the Modding Assistant/MCP 
 
 The self-hosted workflows launch their repo-owned scripts with built-in Windows PowerShell so a runner service account does not depend on a user-scoped PowerShell 7 alias. The readiness report still records whether `pwsh` is visible because VMSS images should install PowerShell 7 machine-wide.
 
+Because the GitHub runner service runs as `NETWORK SERVICE`, it should not directly manipulate the visible desktop. The repo default driver uses a file bridge instead:
+
+- Actions calls [ops/live-worker/Invoke-Sts2BridgeDriver.ps1](../ops/live-worker/Invoke-Sts2BridgeDriver.ps1).
+- The bridge driver writes a request under `D:\automation\card-utility-stats-live-bridge`.
+- A user-session process runs [ops/live-worker/Start-Sts2InteractiveBridge.ps1](../ops/live-worker/Start-Sts2InteractiveBridge.ps1).
+- The user-session process launches or attaches to STS2, captures screenshots/logs, and writes the result back for Actions to upload.
+
+The first checked-in interactive driver is a launch/capture smoke driver. It proves the full Actions -> laptop bridge -> STS2 -> artifact loop. Scenario-specific intelligent navigation still belongs behind `CARD_UTILITY_STATS_MCP_ENDPOINT` or a richer future driver.
+
+STS2 direct launches need `steam_appid.txt` in the game install folder with the Steam app id `2868840`. The checked-in interactive driver creates that file if it is missing.
+
 Run this locally on the laptop:
 
 ```powershell
@@ -91,6 +102,14 @@ For this laptop specifically, dispatch it with:
 - `runs_on_json`: `["self-hosted","windows","sts2-side-a"]`
 - `worker_name`: `sts2-side-a`
 - `require_game_driver`: `false` until STS2 and the live driver are ready
+
+Start the laptop user-session bridge with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ops\live-worker\Start-Sts2InteractiveBridge.ps1
+```
+
+The bridge can also be registered as a per-user logon task so it comes back after reboot.
 
 ## Recommended Pool Shape
 

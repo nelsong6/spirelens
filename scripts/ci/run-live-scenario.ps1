@@ -70,6 +70,9 @@ if ([string]::IsNullOrWhiteSpace($liveRunDataSource)) {
 }
 
 $driverScript = $env:CARD_UTILITY_STATS_LIVE_DRIVER
+if ([string]::IsNullOrWhiteSpace($driverScript)) {
+    $driverScript = Join-Path $repoRoot "ops\live-worker\Invoke-Sts2BridgeDriver.ps1"
+}
 $metadata = [ordered]@{
     started_at = $startTime.ToString("o")
     scenario_path = $ScenarioPath

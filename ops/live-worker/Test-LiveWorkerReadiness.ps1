@@ -279,13 +279,43 @@ Add-Check `
     -Message ($(if ($modsExists) { "STS2 mods path exists." } elseif ($RequireGameDriver) { "STS2 mods path is required but was not found." } else { "STS2 mods path was not found yet." })) `
     -Data @{ path = $modsPath }
 
-$driverScript = Get-WorkerSetting -Name "CARD_UTILITY_STATS_LIVE_DRIVER"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$defaultLiveDriver = Join-Path $repoRoot "ops\live-worker\Invoke-Sts2BridgeDriver.ps1"
+$driverScript = Get-WorkerSetting -Name "CARD_UTILITY_STATS_LIVE_DRIVER" -DefaultValue $defaultLiveDriver
 $driverExists = -not [string]::IsNullOrWhiteSpace($driverScript) -and (Test-Path -LiteralPath $driverScript)
 Add-Check `
     -Name "live-driver" `
     -Status ($(if ($driverExists) { "pass" } elseif ($RequireGameDriver) { "fail" } else { "warn" })) `
     -Message ($(if ($driverExists) { "Worker-local live driver exists." } elseif ($RequireGameDriver) { "CARD_UTILITY_STATS_LIVE_DRIVER is required but missing or invalid." } else { "Worker-local live driver is not configured yet." })) `
     -Data @{ path = $driverScript }
+
+$bridgeRoot = Get-WorkerSetting -Name "CARD_UTILITY_STATS_LIVE_BRIDGE_DIR" -DefaultValue "D:\automation\card-utility-stats-live-bridge"
+$bridgeRootExists = Test-Path -LiteralPath $bridgeRoot
+Add-Check `
+    -Name "live-bridge-dir" `
+    -Status ($(if ($bridgeRootExists) { "pass" } elseif ($RequireGameDriver) { "fail" } else { "warn" })) `
+    -Message ($(if ($bridgeRootExists) { "Live bridge queue directory exists." } elseif ($RequireGameDriver) { "Live bridge queue directory is required but missing." } else { "Live bridge queue directory is not initialized yet." })) `
+    -Data @{ path = $bridgeRoot }
+
+$bridgeProcesses = @()
+if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    $bridgeProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -like "*Start-Sts2InteractiveBridge.ps1*"
+    })
+}
+
+Add-Check `
+    -Name "live-bridge-process" `
+    -Status ($(if ($bridgeProcesses.Count -gt 0) { "pass" } elseif ($RequireGameDriver) { "fail" } else { "warn" })) `
+    -Message ($(if ($bridgeProcesses.Count -gt 0) { "User-session STS2 bridge process is running." } elseif ($RequireGameDriver) { "User-session STS2 bridge process is required but not running." } else { "User-session STS2 bridge process is not running yet." })) `
+    -Data @{
+        processes = @($bridgeProcesses | ForEach-Object {
+            [ordered]@{
+                process_id = $_.ProcessId
+                name = $_.Name
+            }
+        })
+    }
 
 $runDataDir = Get-WorkerSetting -Name "CARD_UTILITY_STATS_RUN_DATA_DIR" -DefaultValue (Join-Path $env:APPDATA "SlayTheSpire2\CardUtilityStats\runs")
 
