@@ -112,6 +112,13 @@ jobs:
           $streamLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl"
           $debugLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log"
           $summaryLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-summary.log"
+          $screenshotDir = Join-Path $env:RUNNER_TEMP "sts2-screenshots"
+          $validationArtifactDir = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
+
+          Remove-Item -LiteralPath $streamLogPath, $debugLogPath, $summaryLogPath -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $screenshotDir, $validationArtifactDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $screenshotDir, $validationArtifactDir | Out-Null
+
           $prompt = @"
           You are Claude Code running as the issue agent for $($env:REPO_SLUG) on issue #$issueNumber.
 
@@ -134,7 +141,19 @@ jobs:
           - Use direct MCP/game control. Do not use or debug any legacy filesystem bridge or scenario-request queue.
           - Do not use `LiveScenarios/`, `ops/live-worker/`, `scripts/ci/run-live-scenario.ps1`, or any `request.json` / `ready.json` / `accepted.json` / `result.json` workflow.
           - Do not read from or write to `D:\automation\card-utility-stats-live-bridge`.
+          - For STS2 issue-agent work, capture screenshot artifacts of the affected card or tooltip states before marking the issue complete.
+          - Always include at least one screenshot.
+          - Save screenshots to `$screenshotDir` and any extra validation artifacts to `$validationArtifactDir` so the workflow can upload them.
+          - If the issue is about a specific card, include at least one screenshot showing that card's stats working in a representative in-run test case.
+          - Document the test case used for the screenshot artifacts: what was set up, what was exercised, and what each screenshot is intended to prove.
+          - Capture screenshots after the behavior is working, not just during setup.
+          - For tooltip-related changes, capture the affected tooltip states and use judgment about which views materially need coverage.
+          - If multiple materially distinct views changed, such as compact hand-hover and fuller deck-view tooltip states, capture each affected view when that is the clearest way to prove the change.
+          - Use judgment on how many screenshots to include, but do not exceed 10 screenshots for a single issue or pull request.
+          - If adequate proof would require more than 10 screenshots, split the work into smaller branches or pull requests instead of overloading one.
+          - If screenshot capture is impossible, stop and report the blocker instead of completing the issue without screenshot artifacts.
           - Comment on the issue with what you did, what you observed, and any PR/screenshot/artifact links or paths.
+          - In the issue comment and pull request summary, include the test-case summary and the screenshot or artifact links or paths.
           - If you complete the issue, remove `issue-agent` and add `issue-agent-complete`.
           - If you are blocked, comment with the blocker, remove `issue-agent`, and add `issue-agent-blocked`.
           - If you make code changes, create a branch, commit, push, and open a PR.
@@ -146,10 +165,11 @@ jobs:
           $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
           $promptText = Get-Content -LiteralPath $promptPath -Raw
 
-          Remove-Item -LiteralPath $streamLogPath, $debugLogPath, $summaryLogPath -ErrorAction SilentlyContinue
           "Claude issue agent stream for $($env:REPO_SLUG)#$issueNumber" | Set-Content -LiteralPath $summaryLogPath -Encoding UTF8
           "Sanitized event stream: $streamLogPath" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
           "Debug log: $debugLogPath" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
+          "Screenshot dir: $screenshotDir" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
+          "Validation artifact dir: $validationArtifactDir" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
 
           function Write-AgentEvent {
             param(
@@ -176,6 +196,8 @@ jobs:
           Write-Host "Launching Claude for $($env:REPO_SLUG)#$issueNumber with stream-json output."
           Write-Host "Sanitized event stream will be saved to: $streamLogPath"
           Write-Host "Debug log will be saved to: $debugLogPath"
+          Write-Host "Screenshot dir will be saved to: $screenshotDir"
+          Write-Host "Validation artifact dir will be saved to: $validationArtifactDir"
           Write-AgentEvent "start" "Launching Claude for $($env:REPO_SLUG)#$issueNumber."
 
           & $env:CLAUDE_CLI_PATH `
@@ -238,7 +260,7 @@ jobs:
             throw "Claude issue agent failed with exit code $claudeExitCode. See $streamLogPath and $debugLogPath."
           }
 
-      - name: Upload Claude agent logs
+      - name: Upload Claude agent logs and STS2 validation artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -246,3 +268,5 @@ jobs:
           path: |
             ${{ runner.temp }}/claude-issue-agent-*.jsonl
             ${{ runner.temp }}/claude-issue-agent-*.log
+            ${{ runner.temp }}/sts2-screenshots/**/*.png
+            ${{ runner.temp }}/sts2-artifacts/**/*
