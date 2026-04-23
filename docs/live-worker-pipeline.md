@@ -72,7 +72,7 @@ Because the GitHub runner service runs as `NETWORK SERVICE`, it should not direc
 - A user-session process runs [ops/live-worker/Start-Sts2InteractiveBridge.ps1](../ops/live-worker/Start-Sts2InteractiveBridge.ps1).
 - The user-session process launches or attaches to STS2, captures screenshots/logs, and writes the result back for Actions to upload.
 
-The first checked-in interactive driver is a launch/capture smoke driver. It proves the full Actions -> laptop bridge -> STS2 -> artifact loop. Scenario-specific intelligent navigation still belongs behind `CARD_UTILITY_STATS_MCP_ENDPOINT` or a richer future driver.
+The checked-in interactive driver proves the full Actions -> laptop bridge -> STS2 -> artifact loop. For manifests that include `driver.automation`, the launched mod now consumes the active bridge request from inside STS2 and can perform scenario actions through game APIs instead of screen control.
 
 STS2 direct launches need `steam_appid.txt` in the game install folder with the Steam app id `2868840`. The checked-in interactive driver creates that file if it is missing.
 
@@ -250,6 +250,20 @@ Current fields:
 - `driver`
 
 The `driver` object is the worker-local handoff payload. The repo documents the shape and expected semantics, but the first version does not require a single global scenario engine yet.
+
+`driver.automation` is the first in-game automation contract. The user-session bridge writes an active request pointer under `D:\automation\card-utility-stats-live-bridge\active-request.json`; the `CardUtilityStats` mod reads that pointer in-game, executes the manifest steps, and writes `driver-output/scenario-automation-result.json`.
+
+Currently supported in-game actions:
+
+- `start_run`
+- `wait_for_run`
+- `enter_combat`
+- `wait_for_combat`
+- `grant_card`
+- `play_card`
+- `console`
+- `wait`
+- `win_combat`
 
 ## Rollout Order
 

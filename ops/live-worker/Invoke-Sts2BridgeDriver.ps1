@@ -76,7 +76,7 @@ $requestsRoot = New-Directory -Path (Join-Path $queueRoot "requests")
 $scenario = Get-Content -LiteralPath $ScenarioPath -Raw | ConvertFrom-Json
 $timeoutMinutes = 30
 if ($scenario.driver -and $scenario.driver.timeout_minutes) {
-    $timeoutMinutes = [Math]::Max(5, [int]$scenario.driver.timeout_minutes + 5)
+    $timeoutMinutes = [Math]::Max(5, [int]$scenario.driver.timeout_minutes + 2)
 }
 
 $requestId = "{0}-{1}" -f (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ"), ([Guid]::NewGuid().ToString("N").Substring(0, 8))

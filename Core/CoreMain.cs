@@ -106,6 +106,7 @@ public static class CoreMain
         // No-op if we're not mid-run (main menu, between runs) — RunStarted
         // will handle fresh setup when the next run begins.
         RunTracker.TryResumeActiveRun();
+        ScenarioAutomation.Initialize();
 
         // Re-inject the ViewStats checkbox if the deck view is currently
         // open — Shutdown just freed the injected clone, so without this
@@ -150,6 +151,9 @@ public static class CoreMain
 
         try { RunTracker.TeardownHooks(); }
         catch (Exception e) { Logger.Error($"Shutdown: TeardownHooks failed: {e}"); }
+
+        try { ScenarioAutomation.Shutdown(); }
+        catch (Exception e) { Logger.Error($"Shutdown: ScenarioAutomation teardown failed: {e}"); }
 
         try { _harmony?.UnpatchAll(_harmonyId); }
         catch (Exception e) { Logger.Error($"Shutdown: UnpatchAll failed: {e}"); }

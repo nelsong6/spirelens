@@ -26,6 +26,44 @@
       "after-application",
       "combat-end"
     ],
-    "timeout_minutes": 20
+    "timeout_minutes": 5,
+    "automation": {
+      "engine": "card-utility-stats-mod",
+      "timeout_seconds": 120,
+      "steps": [
+        {
+          "action": "start_run",
+          "character": "silent",
+          "seed": "CUS-NOXIOUS-51",
+          "save_run_history": false
+        },
+        {
+          "action": "enter_combat"
+        },
+        {
+          "action": "grant_card",
+          "card": "CARD.NOXIOUS_FUMES",
+          "pile": "hand"
+        },
+        {
+          "action": "wait",
+          "seconds": 1
+        },
+        {
+          "action": "play_card",
+          "card": "CARD.NOXIOUS_FUMES",
+          "target": "none",
+          "free": true
+        },
+        {
+          "action": "wait",
+          "seconds": 2
+        },
+        {
+          "action": "win_combat",
+          "post_wait_seconds": 4
+        }
+      ]
+    }
   }
 }

@@ -35,7 +35,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="*" PrivateAssets="All"/>
+        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="*" PrivateAssets="All" GeneratePathProperty="true"/>
         <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="All"/>
         <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*" />
         <!-- Mono.Cecil: rewrites the Core assembly's manifest name per load so
@@ -85,6 +85,14 @@
         <Message Text="Copying .dll, manifest, and dependencies to mods folder." Importance="high" />
         <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
         <Copy SourceFiles="$(AssemblyName).json" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <!-- BaseLib is a real STS2 mod dependency, not only a DLL reference.
+             Keep the worker's mods/BaseLib folder present whenever we deploy. -->
+        <ItemGroup>
+            <BaseLibModFiles Include="$(TargetDir)BaseLib.dll" />
+            <BaseLibModFiles Include="$(PkgAlchyr_Sts2_BaseLib)\Content\BaseLib.json" />
+            <BaseLibModFiles Include="$(PkgAlchyr_Sts2_BaseLib)\Content\BaseLib.pck" />
+        </ItemGroup>
+        <Copy SourceFiles="@(BaseLibModFiles)" DestinationFolder="$(ModsPath)BaseLib/" SkipUnchangedFiles="true" />
         <!-- Copy NuGet dependency DLLs (Mono.Cecil, its companions) alongside
              the Loader so CLR assembly resolution finds them at runtime.
              Filter to avoid copying huge framework assemblies by accident. -->

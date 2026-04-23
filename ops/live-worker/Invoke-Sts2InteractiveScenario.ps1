@@ -201,6 +201,69 @@ function Copy-NewFiles {
         }
 }
 
+function Test-JsonProperty {
+    param(
+        [object]$InputObject,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return $null -ne $InputObject -and $InputObject.PSObject.Properties.Name -contains $Name
+}
+
+function Get-BridgeRootFromRequestDir {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $requestsRoot = Split-Path -Parent $Path
+    return Split-Path -Parent $requestsRoot
+}
+
+function Write-ActiveScenarioPointer {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BridgeRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RequestId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RequestPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ResultPath
+    )
+
+    [ordered]@{
+        request_id = $RequestId
+        request_path = $RequestPath
+        result_path = $ResultPath
+        activated_at = (Get-Date).ToString("o")
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $BridgeRoot "active-request.json")
+}
+
+function Wait-ScenarioAutomationResult {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [int]$TimeoutSeconds = 300
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Path -LiteralPath $Path) {
+            return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    return $null
+}
+
 $requestPath = Join-Path $RequestDir "request.json"
 $resultPath = Join-Path $RequestDir "result.json"
 $request = Get-Content -LiteralPath $requestPath -Raw | ConvertFrom-Json
@@ -220,6 +283,11 @@ $warnings = New-Object System.Collections.Generic.List[string]
 $captures = New-Object System.Collections.Generic.List[object]
 $scenarioName = $request.scenario.name
 $exePath = Join-Path $Sts2Path "SlayTheSpire2.exe"
+$hasScenarioAutomation = Test-JsonProperty -InputObject $request.scenario.driver -Name "automation"
+$automationResultPath = Join-Path $driverOutputDir "scenario-automation-result.json"
+$automationResult = $null
+$automationFailure = $false
+$bridgeRoot = Get-BridgeRootFromRequestDir -Path $RequestDir
 
 try {
     Write-ScenarioLog "Starting interactive scenario request '$($request.id)' for '$scenarioName'."
@@ -228,6 +296,22 @@ try {
         throw "SlayTheSpire2.exe was not found at '$exePath'."
     }
     Ensure-SteamAppIdFile -GamePath $Sts2Path
+
+    if ($hasScenarioAutomation) {
+        if (Test-Path -LiteralPath $automationResultPath) {
+            Remove-Item -LiteralPath $automationResultPath -Force
+        }
+
+        $env:CARD_UTILITY_STATS_LIVE_BRIDGE_DIR = $bridgeRoot
+        $env:CARD_UTILITY_STATS_SCENARIO_REQUEST_PATH = $requestPath
+        $env:CARD_UTILITY_STATS_SCENARIO_AUTOMATION_RESULT_PATH = $automationResultPath
+        Write-ActiveScenarioPointer `
+            -BridgeRoot $bridgeRoot `
+            -RequestId $request.id `
+            -RequestPath $requestPath `
+            -ResultPath $automationResultPath
+        Write-ScenarioLog "Published active scenario automation pointer for in-game mod consumption."
+    }
 
     $process = Get-Sts2Process
     if ($process) {
@@ -283,6 +367,32 @@ try {
     Write-ScenarioLog "Waiting $warmupSeconds second(s) before first capture."
     Start-Sleep -Seconds $warmupSeconds
 
+    if ($hasScenarioAutomation) {
+        $automationTimeoutSeconds = 300
+        if ($request.scenario.driver.automation -and $request.scenario.driver.automation.timeout_seconds) {
+            $automationTimeoutSeconds = [int]$request.scenario.driver.automation.timeout_seconds
+        }
+        elseif ($request.scenario.driver.timeout_minutes) {
+            $automationTimeoutSeconds = [Math]::Max(60, [int]$request.scenario.driver.timeout_minutes * 60)
+        }
+
+        Write-ScenarioLog "Waiting up to $automationTimeoutSeconds second(s) for in-game scenario automation."
+        $automationResult = Wait-ScenarioAutomationResult -Path $automationResultPath -TimeoutSeconds $automationTimeoutSeconds
+        if ($null -eq $automationResult) {
+            $automationFailure = $true
+            $warnings.Add("In-game scenario automation did not write a result before timeout.")
+            Write-ScenarioLog "In-game scenario automation timed out."
+        }
+        elseif ($automationResult.status -ne "success") {
+            $automationFailure = $true
+            $warnings.Add("In-game scenario automation finished with status '$($automationResult.status)': $($automationResult.message)")
+            Write-ScenarioLog "In-game scenario automation returned status '$($automationResult.status)': $($automationResult.message)"
+        }
+        else {
+            Write-ScenarioLog "In-game scenario automation completed successfully."
+        }
+    }
+
     $captureNames = @("launch")
     if ($request.scenario.driver -and $request.scenario.driver.capture) {
         $captureNames += @($request.scenario.driver.capture | ForEach-Object { [string]$_ })
@@ -329,15 +439,22 @@ try {
 
     $hasMcp = -not [string]::IsNullOrWhiteSpace([string]$request.options.mcp_endpoint)
     $requiresScenarioAutomation = [bool]$request.options.require_scenario_automation
-    $mode = if ($hasMcp) { "mcp-configured-launch-smoke" } else { "launch-smoke" }
+    $mode = if ($automationResult -and $automationResult.status -eq "success") { "in-game-automation" } elseif ($hasMcp) { "mcp-configured-launch-smoke" } else { "launch-smoke" }
 
-    if (-not $hasMcp) {
+    if (-not $hasScenarioAutomation -and -not $hasMcp) {
         $warnings.Add("No CARD_UTILITY_STATS_MCP_ENDPOINT is configured; the driver launched/captured STS2 but did not perform scenario-specific navigation.")
     }
 
-    $status = if ($requiresScenarioAutomation -and -not $hasMcp) { "failure" } elseif ($warnings.Count -gt 0) { "warning" } else { "success" }
-    $message = if ($status -eq "failure") {
-        "Scenario automation was required, but no MCP endpoint is configured."
+    $hasSuccessfulAutomation = $automationResult -and $automationResult.status -eq "success"
+    $status = if ($automationFailure -or ($requiresScenarioAutomation -and -not ($hasMcp -or $hasSuccessfulAutomation))) { "failure" } elseif ($warnings.Count -gt 0) { "warning" } else { "success" }
+    $message = if ($automationFailure) {
+        "In-game scenario automation failed or timed out."
+    }
+    elseif ($status -eq "failure") {
+        "Scenario automation was required, but no in-game automation or MCP endpoint completed."
+    }
+    elseif ($hasSuccessfulAutomation) {
+        "STS2 in-game scenario automation completed."
     }
     else {
         "STS2 launch/capture bridge completed."
@@ -353,6 +470,7 @@ try {
         completed_at = (Get-Date).ToString("o")
         sts2_process_id = $process.Id
         screenshots = $captures
+        scenario_automation = $automationResult
         warnings = @($warnings)
     }
 
