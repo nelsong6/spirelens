@@ -86,8 +86,89 @@ jobs:
             throw "MCP config was not found at '$mcpConfig'."
           }
 
+          $mcpConfigText = Get-Content -LiteralPath $mcpConfig -Raw
+          if ($mcpConfigText -notmatch '"sts2-modding"') {
+            throw "MCP config does not declare the required 'sts2-modding' server."
+          }
+
           & $env:CLAUDE_CLI_PATH --version
-          & $env:CLAUDE_CLI_PATH "--mcp-config=$mcpConfig" mcp list
+
+          $mcpListOutput = & $env:CLAUDE_CLI_PATH "--mcp-config=$mcpConfig" mcp list 2>&1
+          $mcpListExitCode = $LASTEXITCODE
+          $mcpListText = ($mcpListOutput | Out-String)
+          Write-Host $mcpListText
+
+          if ($mcpListExitCode -ne 0) {
+            throw "Claude Code could not list MCP servers."
+          }
+          if ($mcpListText -notmatch 'sts2-modding') {
+            throw "Required MCP server 'sts2-modding' was not listed by Claude Code."
+          }
+          if ($mcpListText -match 'sts2-modding:.*Failed to connect') {
+            throw "Required MCP server 'sts2-modding' failed to connect. Stop and fix MCP before running the issue agent."
+          }
+
+          $probePrompt = @"
+          Use the `sts2-modding` MCP server and call `get_setup_status` exactly once.
+          If the tool call succeeds, respond with exactly READY.
+          If the tool is unavailable or fails, respond with exactly BLOCKED.
+          Do not use any other tools.
+          "@
+
+          $probeSawTool = $false
+          $probeSawFailure = $false
+          $probeText = New-Object System.Text.StringBuilder
+
+          & $env:CLAUDE_CLI_PATH `
+            -p $probePrompt `
+            --bare `
+            --model sonnet `
+            --permission-mode bypassPermissions `
+            --output-format stream-json `
+            --strict-mcp-config `
+            "--mcp-config=$mcpConfig" `
+            --max-budget-usd "1.00" `
+            --add-dir $env:GITHUB_WORKSPACE 2>&1 |
+            ForEach-Object {
+              $line = [string]$_
+
+              try {
+                $event = $line | ConvertFrom-Json -ErrorAction Stop
+                if ($event.type -eq "assistant" -and $event.message.content) {
+                  foreach ($block in $event.message.content) {
+                    if ($block.type -eq "tool_use" -and [string]$block.name -match 'get_setup_status') {
+                      $probeSawTool = $true
+                    } elseif ($block.type -eq "text" -and -not [string]::IsNullOrWhiteSpace([string]$block.text)) {
+                      [void]$probeText.Append([string]$block.text)
+                    }
+                  }
+                } elseif ($event.type -eq "user" -and $event.tool_use_result) {
+                  $toolResult = [string]$event.tool_use_result
+                  if ($toolResult -match '"error"' -or $toolResult -match '(?i)\berror\b') {
+                    $probeSawFailure = $true
+                  }
+                  [void]$probeText.Append($toolResult)
+                }
+              } catch {
+                # Ignore non-JSON lines during the probe.
+              }
+            }
+
+          $probeExitCode = $LASTEXITCODE
+          $probeTextValue = $probeText.ToString()
+
+          if ($probeExitCode -ne 0) {
+            throw "Claude Code MCP probe exited non-zero while validating 'sts2-modding'."
+          }
+          if (-not $probeSawTool) {
+            throw "Claude Code MCP probe did not call get_setup_status on 'sts2-modding'."
+          }
+          if ($probeSawFailure) {
+            throw "Claude Code MCP probe saw an error result from 'sts2-modding'."
+          }
+          if ($probeTextValue -notmatch 'READY') {
+            throw "Claude Code MCP probe did not confirm readiness for 'sts2-modding'."
+          }
 
       - name: Run Claude issue agent
         env:
@@ -119,6 +200,9 @@ jobs:
           Remove-Item -LiteralPath $screenshotDir, $validationArtifactDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $screenshotDir, $validationArtifactDir | Out-Null
 
+          $env:SCREENSHOT_DIR = $screenshotDir
+          $env:VALIDATION_ARTIFACT_DIR = $validationArtifactDir
+
           $prompt = @"
           You are Claude Code running as the issue agent for $($env:REPO_SLUG) on issue #$issueNumber.
 
@@ -138,7 +222,10 @@ jobs:
           - Use the local checkout at `$env:GITHUB_WORKSPACE`.
           - Use `gh`, `git`, tests, and MCP tools as needed.
           - Use the project MCP config at `$mcpConfig`; for live STS2 work, use the `sts2-modding` MCP server.
+          - `sts2-modding` is a hard prerequisite for live STS2 work. If it is unavailable, unhealthy, or unusable, stop immediately and report a blocker.
+          - All stateful STS2 work must go through approved MCP tools. Do not use raw TCP bridge calls, ad hoc PowerShell bridge scripts, Azure Python imports, Windows API clicking, or other non-MCP workarounds.
           - Use direct MCP/game control. Do not use or debug any legacy filesystem bridge or scenario-request queue.
+          - Missing MCP capability is a tooling gap to report, not a reason to invent side automation.
           - Do not use `LiveScenarios/`, `ops/live-worker/`, `scripts/ci/run-live-scenario.ps1`, or any `request.json` / `ready.json` / `accepted.json` / `result.json` workflow.
           - Do not read from or write to `D:\automation\card-utility-stats-live-bridge`.
           - For STS2 issue-agent work, capture screenshot artifacts of the affected card or tooltip states before marking the issue complete.
