@@ -1,12 +1,6 @@
 name: OpenTofu Azure VMSS
 
 on:
-  pull_request:
-    branches: [main]
-    paths: ['infra/opentofu/azure-vmss/**']
-  push:
-    branches: [main]
-    paths: ['infra/opentofu/azure-vmss/**']
   workflow_dispatch:
     inputs:
       tfvars_file:
@@ -31,12 +25,11 @@ concurrency:
 
 jobs:
   opentofu:
-    name: Plan or apply Azure VMSS
+    name: Manual plan or apply Azure VMSS
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-      pull-requests: write
 
     defaults:
       run:
@@ -103,43 +96,6 @@ jobs:
 
           tofu plan -input=false -no-color -out=tfplan "${VAR_ARGS[@]}"
 
-      - name: Post plan to PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const planPath = 'infra/opentofu/azure-vmss/tfplan';
-            const body = fs.existsSync(planPath)
-              ? '### OpenTofu VMSS Plan\nA binary plan artifact was produced for `infra/opentofu/azure-vmss`.\n\nReview the workflow logs and artifact for details.'
-              : '### OpenTofu VMSS Plan\nNo plan artifact was produced.';
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('### OpenTofu VMSS Plan')
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
-
       - name: Upload OpenTofu plan artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,5 +108,5 @@ jobs:
           retention-days: 14
 
       - name: OpenTofu apply
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.apply) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
         run: tofu apply -input=false -auto-approve tfplan
