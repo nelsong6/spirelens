@@ -85,7 +85,7 @@ The queue worker owns the queue loop, and Claude Code owns the one-issue coding 
 
 Each Windows queue host should install Claude Code once at:
 
-- `D:\automation\claude-code\node_modules\.bin\claude.cmd`
+- `D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`
 
 The GitHub Actions wakeup checks that path before claiming an issue. This avoids reinstalling Claude Code on every run while keeping the setup repeatable across the laptop, the next PC, and VMSS instances.
 

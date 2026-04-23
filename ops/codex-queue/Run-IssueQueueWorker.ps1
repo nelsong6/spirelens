@@ -601,14 +601,14 @@ Execution requirements:
         "--max-budget-usd", $ClaudeMaxBudgetUsd.ToString([Globalization.CultureInfo]::InvariantCulture),
         "--max-turns", $ClaudeMaxTurns.ToString([Globalization.CultureInfo]::InvariantCulture),
         "--add-dir", $runDir,
-        "--json-schema", $schemaJson
+        "--json-schema", $schemaJson,
+        $prompt
     )
 
     $process = Start-Process `
         -FilePath $ClaudePath `
         -ArgumentList $args `
         -WorkingDirectory $RepoRootValue `
-        -RedirectStandardInput $promptPath `
         -RedirectStandardOutput $stdoutPath `
         -RedirectStandardError $stderrPath `
         -NoNewWindow `

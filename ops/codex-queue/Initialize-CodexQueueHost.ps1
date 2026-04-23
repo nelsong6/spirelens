@@ -94,7 +94,7 @@ function Install-ClaudeCode {
         throw "Failed to install Claude Code CLI."
     }
 
-    $claudePath = Join-Path $resolvedRoot "node_modules\.bin\claude.cmd"
+    $claudePath = Join-Path $resolvedRoot "node_modules\@anthropic-ai\claude-code\bin\claude.exe"
     if (-not (Test-Path -LiteralPath $claudePath)) {
         throw "Claude Code CLI was not found at $claudePath."
     }
@@ -106,7 +106,7 @@ function Install-ClaudeCode {
 $resolvedQueueStateRoot = Ensure-Directory -Path $QueueStateRoot
 Grant-RunnerAccess -Path $resolvedQueueStateRoot
 
-$resolvedClaudePath = Join-Path $ClaudeInstallRoot "node_modules\.bin\claude.cmd"
+$resolvedClaudePath = Join-Path $ClaudeInstallRoot "node_modules\@anthropic-ai\claude-code\bin\claude.exe"
 if ($InstallClaudeCode) {
     $resolvedClaudePath = Install-ClaudeCode -InstallRoot $ClaudeInstallRoot
 }
