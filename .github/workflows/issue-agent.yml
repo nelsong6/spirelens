@@ -1,4 +1,4 @@
-name: Codex Issue Agent
+name: Issue Agent
 
 on:
   issues:
@@ -24,13 +24,13 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
-        (github.event.action == 'labeled' && github.event.label.name == 'codex-queue') ||
-        contains(github.event.issue.labels.*.name, 'codex-queue')
+        (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
+        contains(github.event.issue.labels.*.name, 'issue-agent')
       ))
     runs-on:
       - self-hosted
       - windows
-      - codex-queue
+      - issue-agent
 
     steps:
       - name: Checkout repository
@@ -135,8 +135,8 @@ jobs:
           - Do not use `LiveScenarios/`, `ops/live-worker/`, `scripts/ci/run-live-scenario.ps1`, or any `request.json` / `ready.json` / `accepted.json` / `result.json` workflow.
           - Do not read from or write to `D:\automation\card-utility-stats-live-bridge`.
           - Comment on the issue with what you did, what you observed, and any PR/screenshot/artifact links or paths.
-          - If you complete the issue, remove `codex-queue` and add `codex-complete`.
-          - If you are blocked, comment with the blocker, remove `codex-queue`, and add `codex-blocked`.
+          - If you complete the issue, remove `issue-agent` and add `issue-agent-complete`.
+          - If you are blocked, comment with the blocker, remove `issue-agent`, and add `issue-agent-blocked`.
           - If you make code changes, create a branch, commit, push, and open a PR.
           - Do not wait for a human continuation unless the issue is genuinely blocked.
 

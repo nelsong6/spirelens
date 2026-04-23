@@ -1,29 +1,31 @@
-# Codex Issue Queue
+# Issue Agent
 
-The current queue model is GitHub Actions driven.
+The current issue-agent model is GitHub Actions driven.
 
-There is no repo-owned queue worker, scheduled task, filesystem lock, or outer loop script anymore. GitHub itself is the queue and dispatch layer.
+There is no repo-owned queue worker, scheduled task, filesystem lock, or outer loop script anymore. GitHub supplies the event and queue layer.
 
-## Queue Contract
+## Trigger Contract
 
 An issue is eligible for autonomous work when it has:
 
-- `codex-queue`
+- `issue-agent`
 
 The issue-agent workflow is triggered by the GitHub issue event, and GitHub passes the exact issue number into the run.
 
-Queue/result labels are:
+Issue-agent labels are:
 
-- `codex-queue`
-- `codex-blocked`
-- `codex-complete`
+- `issue-agent`
+- `issue-agent-running`
+- `issue-agent-blocked`
+- `issue-agent-complete`
+- `issue-agent-pr-open`
 
 ## Processing Model
 
 The processing model is intentionally simple:
 
 1. GitHub issue event fires.
-2. GitHub Actions starts one workflow job on a self-hosted runner labeled `codex-queue`.
+2. GitHub Actions starts one workflow job on a self-hosted runner labeled `issue-agent`.
 3. Claude is launched for that exact issue number only.
 4. Claude owns the issue work: code changes, comments, labels, tests, and PR creation.
 
@@ -33,7 +35,7 @@ There is no second script that chooses issues, reads structured result files, or
 
 Each Windows issue-agent host should provide:
 
-- self-hosted GitHub Actions runner labeled `codex-queue`
+- self-hosted GitHub Actions runner labeled `issue-agent`
 - Claude Code installed at `D:\automation\claude-code`
 - project checkout under `D:\repos\card-utility-stats`
 - STS2 Modding MCP checkout under `D:\repos\sts2-modding-mcp`

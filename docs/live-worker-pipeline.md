@@ -9,7 +9,7 @@ The old repo-managed scenario manifests, bridge-driver queue files, and in-game 
 The intended flow is:
 
 1. GitHub issue event triggers the issue-agent workflow.
-2. GitHub Actions selects one self-hosted Windows runner labeled `codex-queue`.
+2. GitHub Actions selects one self-hosted Windows runner labeled `issue-agent`.
 3. Claude receives the exact issue number from the event.
 4. Claude uses the project `.mcp.json` and the `sts2-modding` MCP server directly for STS2 inspection/control.
 5. Claude comments on the issue, updates labels, and opens a PR if code changes are required.
@@ -76,5 +76,5 @@ Not around:
 
 ## Related Docs
 
-- [docs/codex-issue-queue.md](./codex-issue-queue.md)
+- [docs/issue-agent.md](./issue-agent.md)
 - [docs/vmss-worker-bootstrap.md](./vmss-worker-bootstrap.md)

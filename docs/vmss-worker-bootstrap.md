@@ -16,7 +16,7 @@ Build Windows workers that can:
 ```mermaid
 flowchart LR
     A["Work computer"] --> B["GitHub Actions issue events"]
-    B --> C["Windows self-hosted runner<br/>label: codex-queue"]
+    B --> C["Windows self-hosted runner<br/>label: issue-agent"]
     C --> D["Claude Code"]
     D --> E["STS2 Modding MCP"]
     E --> F["Slay the Spire 2"]
@@ -51,9 +51,9 @@ Recommended stable paths:
 
 For the current issue-agent model, the important label is:
 
-- `codex-queue`
+- `issue-agent`
 
-That label now means "runner that can process one issue-agent job," not "machine running a local queue worker."
+That label now means "runner that can process one issue-agent job."
 
 ## Auth
 
@@ -67,7 +67,7 @@ The runner should be able to:
 
 Minimum validation checklist for a new VMSS node:
 
-1. runner comes online with `self-hosted`, `windows`, and `codex-queue`
+1. runner comes online with `self-hosted`, `windows`, and `issue-agent`
 2. `.mcp.json` exists in the repo checkout
 3. `claude.exe mcp list` shows `sts2-modding`
 4. STS2 MCP bridge ports are reachable when the game is running
