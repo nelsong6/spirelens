@@ -170,6 +170,49 @@ Set these on the worker image or during first-boot bootstrap before expecting li
 
 The repo-owned workflow handles build/test/artifact staging. The worker-local driver handles game-specific automation.
 
+## MCP Game-Control Surface
+
+For agent-driven live work, Claude Code should control STS2 through the STS2 Modding MCP server instead of treating checked-in scenario JSON as the primary reasoning interface.
+
+Standard Windows worker layout:
+
+- `D:\repos\sts2-modding-mcp`
+  - clone of `https://github.com/elliotttate/sts2-modding-mcp`
+- `D:\repos\sts2-modding-mcp\venv`
+  - Python virtual environment used by the MCP server
+- `D:\repos\card-utility-stats\.mcp.json`
+  - project-scoped Claude Code MCP config pointing at that virtual environment
+
+One-time setup on each worker:
+
+```powershell
+winget install -e --id Python.Python.3.12 --scope user --accept-package-agreements --accept-source-agreements --disable-interactivity
+winget install -e --id Microsoft.DotNet.Runtime.8 --accept-package-agreements --accept-source-agreements --disable-interactivity
+git clone https://github.com/elliotttate/sts2-modding-mcp.git D:\repos\sts2-modding-mcp
+& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv D:\repos\sts2-modding-mcp\venv
+& D:\repos\sts2-modding-mcp\venv\Scripts\python.exe -m pip install --upgrade pip
+& D:\repos\sts2-modding-mcp\venv\Scripts\python.exe -m pip install D:\repos\sts2-modding-mcp
+dotnet tool install -g ilspycmd --version 9.1.0.7988
+$env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+$env:STS2_GAME_DIR = "D:\SteamLibrary\steamapps\common\Slay the Spire 2"
+& D:\repos\sts2-modding-mcp\venv\Scripts\python.exe -m sts2mcp.setup -y
+```
+
+The setup deploys the MCP bridge mods into STS2:
+
+- `mods\mcptest`
+  - live playtesting/control bridge on TCP `21337`
+- `mods\godotexplorer`
+  - live Godot scene inspection bridge on TCP `27020`
+
+Validation commands:
+
+```powershell
+& D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe mcp list
+Test-NetConnection -ComputerName localhost -Port 21337
+Test-NetConnection -ComputerName localhost -Port 27020
+```
+
 ## Dispatch Flow
 
 Run the workflow from GitHub Actions with these inputs:

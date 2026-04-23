@@ -114,6 +114,8 @@ Each Windows queue host should use the same shape so the laptop, the next PC, an
 - a stable worker name such as `sts2-side-a`
 - GitHub runner label `codex-queue`
 - Claude Code installed once at `D:\automation\claude-code`
+- STS2 Modding MCP cloned and initialized at `D:\repos\sts2-modding-mcp`
+- project-scoped MCP config present at `D:\repos\card-utility-stats\.mcp.json`
 - a persistent queue state directory outside the disposable Actions workspace
 - a machine-level `CODEX_ISSUE_QUEUE_STATE_ROOT`
 
@@ -129,6 +131,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ops\codex-queue\Initia
 ```
 
 Restart the GitHub runner service after changing machine-level environment variables.
+
+For live STS2 issues, verify Claude Code can see the project MCP server before enabling queue work:
+
+```powershell
+& D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe mcp list
+```
+
+Expected result includes `sts2-modding` connected. With STS2 running, the MCP bridge mods should also expose:
+
+- `localhost:21337` for game control/playtesting
+- `localhost:27020` for Godot scene inspection
 
 ## Scheduling
 
