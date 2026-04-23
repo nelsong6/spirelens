@@ -109,6 +109,9 @@ jobs:
 
           $mcpConfig = Join-Path $env:GITHUB_WORKSPACE ".mcp.json"
           $promptPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-prompt.md"
+          $streamLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl"
+          $debugLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log"
+          $summaryLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-summary.log"
           $prompt = @"
           You are Claude Code running as the issue agent for $($env:REPO_SLUG) on issue #$issueNumber.
 
@@ -139,12 +142,103 @@ jobs:
           $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
           $promptText = Get-Content -LiteralPath $promptPath -Raw
 
+          Remove-Item -LiteralPath $streamLogPath, $debugLogPath, $summaryLogPath -ErrorAction SilentlyContinue
+          "Claude issue agent stream for $($env:REPO_SLUG)#$issueNumber" | Set-Content -LiteralPath $summaryLogPath -Encoding UTF8
+          "Sanitized event stream: $streamLogPath" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
+          "Debug log: $debugLogPath" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
+
+          function Write-AgentEvent {
+            param(
+              [Parameter(Mandatory = $true)][string]$Kind,
+              [Parameter(Mandatory = $true)][string]$Message,
+              [object]$Data = $null
+            )
+
+            $record = [ordered]@{
+              timestamp = (Get-Date).ToString("o")
+              kind = $Kind
+              message = $Message
+            }
+            if ($null -ne $Data) {
+              $record.data = $Data
+            }
+
+            $json = $record | ConvertTo-Json -Compress -Depth 30
+            Add-Content -LiteralPath $streamLogPath -Value $json -Encoding UTF8
+            Write-Host "[$Kind] $Message"
+          }
+
+          Write-Host "::group::Claude issue agent live stream"
+          Write-Host "Launching Claude for $($env:REPO_SLUG)#$issueNumber with stream-json output."
+          Write-Host "Sanitized event stream will be saved to: $streamLogPath"
+          Write-Host "Debug log will be saved to: $debugLogPath"
+          Write-AgentEvent "start" "Launching Claude for $($env:REPO_SLUG)#$issueNumber."
+
           & $env:CLAUDE_CLI_PATH `
             -p $promptText `
             --bare `
             --model sonnet `
             --permission-mode bypassPermissions `
-            --output-format text `
+            --output-format stream-json `
+            --verbose `
+            --debug-file $debugLogPath `
+            --strict-mcp-config `
             "--mcp-config=$mcpConfig" `
             --max-budget-usd "5.00" `
-            --add-dir $env:GITHUB_WORKSPACE
+            --add-dir $env:GITHUB_WORKSPACE 2>&1 |
+            ForEach-Object {
+              $line = [string]$_
+
+              try {
+                $event = $line | ConvertFrom-Json -ErrorAction Stop
+                if ($event.type -eq "assistant" -and $event.message.content) {
+                  foreach ($block in $event.message.content) {
+                    if ($block.type -eq "tool_use") {
+                      $inputJson = if ($null -ne $block.input) { $block.input | ConvertTo-Json -Compress -Depth 20 } else { "{}" }
+                      $message = "$($block.name) $inputJson"
+                      Write-AgentEvent "tool_use" $message
+                      Add-Content -LiteralPath $summaryLogPath -Value "tool_use: $message" -Encoding UTF8
+                    } elseif ($block.type -eq "text" -and -not [string]::IsNullOrWhiteSpace([string]$block.text)) {
+                      $text = [string]$block.text
+                      if ($text.Length -gt 1000) {
+                        $text = $text.Substring(0, 1000) + "... [truncated]"
+                      }
+                      Write-AgentEvent "assistant_text" $text
+                      Add-Content -LiteralPath $summaryLogPath -Value "assistant_text: $text" -Encoding UTF8
+                    }
+                  }
+                } elseif ($event.type -eq "user" -and $event.tool_use_result) {
+                  $result = [string]$event.tool_use_result
+                  if ($result.Length -gt 600) {
+                    $result = $result.Substring(0, 600) + "... [truncated]"
+                  }
+                  Write-AgentEvent "tool_result" $result
+                  Add-Content -LiteralPath $summaryLogPath -Value "tool_result: $result" -Encoding UTF8
+                } elseif ($event.type -eq "result") {
+                  $resultJson = $event | ConvertTo-Json -Compress -Depth 30
+                  Write-AgentEvent "result" $resultJson
+                  Add-Content -LiteralPath $summaryLogPath -Value "result: $resultJson" -Encoding UTF8
+                } elseif ($event.type -eq "system" -and $event.status) {
+                  Write-AgentEvent "status" ([string]$event.status)
+                }
+              } catch {
+                Write-AgentEvent "raw" $line
+              }
+            }
+
+          $claudeExitCode = $LASTEXITCODE
+          Write-Host "::endgroup::"
+          "Claude exit code: $claudeExitCode" | Add-Content -LiteralPath $summaryLogPath -Encoding UTF8
+          Write-AgentEvent "exit" "Claude exit code: $claudeExitCode"
+          if ($claudeExitCode -ne 0) {
+            throw "Claude issue agent failed with exit code $claudeExitCode. See $streamLogPath and $debugLogPath."
+          }
+
+      - name: Upload Claude agent logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-issue-agent-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/claude-issue-agent-*.jsonl
+            ${{ runner.temp }}/claude-issue-agent-*.log
