@@ -48,10 +48,14 @@ jobs:
           ref: ${{ inputs.git_ref }}
           fetch-depth: 0
 
-      - name: Setup .NET 9 SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
+      - name: Verify .NET 9 SDK
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $version = dotnet --version
+          Write-Host "dotnet version: $version"
+          if (-not $version.StartsWith('9.')) {
+            throw "Expected .NET 9 SDK on this self-hosted worker, but found '$version'."
+          }
 
       - name: Run live scenario harness
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
