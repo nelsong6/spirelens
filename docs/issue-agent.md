@@ -55,13 +55,31 @@ Required repository variables:
 
 ## Visibility
 
-The issue-agent workflow writes and uploads:
+The issue-agent workflow writes and uploads validation artifacts:
 
 - `claude-issue-agent-events.jsonl`
 - `claude-issue-agent-summary.log`
 - `claude-issue-agent-debug.log`
+- screenshots saved under `sts2-screenshots/`
+- additional validation artifacts saved under `sts2-artifacts/`
 
-These are uploaded as Actions artifacts after every run, even on failure, so the post-run Claude trace is visible from another machine.
+These are uploaded as Actions artifacts after every run, even on failure, so the post-run Claude trace and live validation evidence are visible from another machine.
+
+## Screenshot Validation
+
+For STS2 issue-agent work:
+
+- capture screenshot artifacts of the affected card or tooltip states before marking the issue complete
+- always include at least one screenshot
+- if the issue is about a specific card, include at least one screenshot showing that card's stats working in a representative in-run test case
+- document the test case used for the screenshot artifacts: what was set up, what was exercised, and what each screenshot is intended to prove
+- capture screenshots after the behavior is working, not just during setup
+- for tooltip-related changes, capture the affected tooltip states and use judgment about which views materially need coverage
+- if multiple materially distinct views changed, such as compact hand-hover and fuller deck-view tooltip states, capture each affected view when that is the clearest way to prove the change
+- use judgment on how many screenshots to include, but do not exceed 10 screenshots for a single issue or pull request
+- if adequate proof would require more than 10 screenshots, split the work into smaller branches or pull requests instead of overloading one
+- if screenshot capture is impossible, stop and report the blocker instead of completing the issue without screenshot artifacts
+- in the issue comment and pull request summary, include the test-case summary and the screenshot or artifact links or paths
 
 ## Direct Control Rule
 
