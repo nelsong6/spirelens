@@ -101,11 +101,38 @@ jobs:
         run: |
           set -euo pipefail
 
+          RUN_COMMAND_OUTPUT="$(mktemp)"
+
           az vm run-command invoke \
             --resource-group "${RESOURCE_GROUP_NAME}" \
             --name "${BUILDER_VM_NAME}" \
             --command-id RunPowerShellScript \
-            --scripts @"${GITHUB_WORKSPACE}/ops/windows-worker/Enable-AnsibleWinRm.ps1"
+            --scripts @"${GITHUB_WORKSPACE}/ops/windows-worker/Enable-AnsibleWinRm.ps1" \
+            > "${RUN_COMMAND_OUTPUT}"
+
+          cat "${RUN_COMMAND_OUTPUT}"
+
+          python - "${RUN_COMMAND_OUTPUT}" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "r", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          stderr_messages = []
+          for item in payload.get("value", []):
+              code = item.get("code", "")
+              message = (item.get("message") or "").strip()
+              if "StdErr" in code and message:
+                  stderr_messages.append(message)
+
+          if stderr_messages:
+              print("Azure Run Command reported stderr:", file=sys.stderr)
+              for message in stderr_messages:
+                  print(message, file=sys.stderr)
+              sys.exit(1)
+          PY
 
       - name: Summarize builder connectivity details
         shell: bash
