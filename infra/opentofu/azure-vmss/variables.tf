@@ -317,6 +317,24 @@ variable "rdp_allowed_cidrs_secret_name" {
   default     = "card-utility-stats-rdp-allowed-cidrs"
 }
 
+variable "enable_winrm_rule" {
+  description = "Add an NSG rule allowing inbound WinRM over HTTPS from the effective CIDR list."
+  type        = bool
+  default     = false
+}
+
+variable "winrm_allowed_cidrs" {
+  description = "Explicit CIDRs allowed to reach WinRM over HTTPS on port 5986. When empty, the root may load the CIDRs from Key Vault."
+  type        = list(string)
+  default     = []
+}
+
+variable "winrm_allowed_cidrs_secret_name" {
+  description = "Optional Key Vault secret name containing a JSON array of WinRM allowlist CIDRs."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to Azure resources."
   type        = map(string)
