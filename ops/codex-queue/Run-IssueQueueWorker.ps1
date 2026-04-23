@@ -424,6 +424,97 @@ function Get-TextFileTail {
     }
 }
 
+function Test-ObjectProperty {
+    param(
+        [object]$Value,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return $null -ne $Value -and $null -ne $Value.PSObject.Properties[$Name]
+}
+
+function Test-IssueResultShape {
+    param(
+        [object]$Value
+    )
+
+    return (Test-ObjectProperty -Value $Value -Name "status") -and
+        (Test-ObjectProperty -Value $Value -Name "summary") -and
+        (Test-ObjectProperty -Value $Value -Name "issue_comment")
+}
+
+function ConvertFrom-ClaudeRunOutput {
+    param(
+        [string]$StdoutText
+    )
+
+    $emptyOutcome = @{
+        Result = $null
+        Wrapper = $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($StdoutText)) {
+        return $emptyOutcome
+    }
+
+    try {
+        $parsed = $StdoutText | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $emptyOutcome
+    }
+
+    if (Test-IssueResultShape -Value $parsed) {
+        return @{
+            Result = $parsed
+            Wrapper = $null
+        }
+    }
+
+    if (Test-ObjectProperty -Value $parsed -Name "result") {
+        $rawResult = $parsed.result
+
+        if ($rawResult -is [string]) {
+            $trimmedResult = $rawResult.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmedResult)) {
+                try {
+                    $nestedResult = $trimmedResult | ConvertFrom-Json -ErrorAction Stop
+                }
+                catch {
+                    $nestedResult = $null
+                }
+
+                if (Test-IssueResultShape -Value $nestedResult) {
+                    return @{
+                        Result = $nestedResult
+                        Wrapper = $parsed
+                    }
+                }
+            }
+        }
+        elseif (Test-IssueResultShape -Value $rawResult) {
+            return @{
+                Result = $rawResult
+                Wrapper = $parsed
+            }
+        }
+    }
+
+    if (Test-ObjectProperty -Value $parsed -Name "structured_output" -and (Test-IssueResultShape -Value $parsed.structured_output)) {
+        return @{
+            Result = $parsed.structured_output
+            Wrapper = $parsed
+        }
+    }
+
+    return @{
+        Result = $null
+        Wrapper = $parsed
+    }
+}
+
 function Get-NextQueuedIssue {
     param(
         [Parameter(Mandatory = $true)]
@@ -560,6 +651,7 @@ function Invoke-ClaudeIssueRun {
     $stderrPath = Join-Path $runDir "claude-stderr.log"
     $debugPath = Join-Path $runDir "claude-debug.log"
     $resultPath = Join-Path $runDir "claude-result.json"
+    $wrapperPath = Join-Path $runDir "claude-wrapper.json"
     $schemaPath = Join-Path $RepoRootValue "ops\codex-queue\issue-output-schema.json"
     $instructionsPath = Join-Path $RepoRootValue "ops\codex-queue\worker-instructions.md"
 
@@ -596,7 +688,7 @@ Execution requirements:
         "--model", $ClaudeModel,
         "--permission-mode", "bypassPermissions",
         "--debug-file", $debugPath,
-        "--output-format", "text",
+        "--output-format", "json",
         "--no-session-persistence",
         "--max-budget-usd", $ClaudeMaxBudgetUsd.ToString([Globalization.CultureInfo]::InvariantCulture),
         "--max-turns", $ClaudeMaxTurns.ToString([Globalization.CultureInfo]::InvariantCulture),
@@ -624,16 +716,18 @@ Execution requirements:
     }
 
     $resultObject = $null
+    $wrapperObject = $null
     if (Test-Path -LiteralPath $stdoutPath) {
         $stdoutText = (Get-Content -LiteralPath $stdoutPath -Raw).Trim()
         if (-not [string]::IsNullOrWhiteSpace($stdoutText)) {
-            try {
-                $resultObject = $stdoutText | ConvertFrom-Json
-            }
-            catch {
-                $resultObject = $null
-            }
+            $parsedOutput = ConvertFrom-ClaudeRunOutput -StdoutText $stdoutText
+            $resultObject = $parsedOutput.Result
+            $wrapperObject = $parsedOutput.Wrapper
         }
+    }
+
+    if ($wrapperObject) {
+        $wrapperObject | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $wrapperPath
     }
 
     if ($resultObject) {
@@ -649,6 +743,7 @@ Execution requirements:
         StderrPath = $stderrPath
         DebugPath = $debugPath
         ResultPath = $resultPath
+        WrapperPath = $wrapperPath
     }
 }
 
