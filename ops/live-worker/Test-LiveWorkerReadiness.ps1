@@ -304,11 +304,28 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     })
 }
 
+$bridgeHeartbeatPath = Join-Path $bridgeRoot "bridge-heartbeat.json"
+$bridgeHeartbeat = $null
+$bridgeHeartbeatFresh = $false
+if (Test-Path -LiteralPath $bridgeHeartbeatPath) {
+    try {
+        $bridgeHeartbeat = Get-Content -LiteralPath $bridgeHeartbeatPath -Raw | ConvertFrom-Json
+        $heartbeatAt = [DateTime]::Parse([string]$bridgeHeartbeat.heartbeat_at)
+        $bridgeHeartbeatFresh = ((Get-Date) - $heartbeatAt).TotalMinutes -lt 2
+    }
+    catch {
+        $bridgeHeartbeat = $null
+    }
+}
+
+$bridgeRunning = $bridgeProcesses.Count -gt 0 -or $bridgeHeartbeatFresh
 Add-Check `
     -Name "live-bridge-process" `
-    -Status ($(if ($bridgeProcesses.Count -gt 0) { "pass" } elseif ($RequireGameDriver) { "fail" } else { "warn" })) `
-    -Message ($(if ($bridgeProcesses.Count -gt 0) { "User-session STS2 bridge process is running." } elseif ($RequireGameDriver) { "User-session STS2 bridge process is required but not running." } else { "User-session STS2 bridge process is not running yet." })) `
+    -Status ($(if ($bridgeRunning) { "pass" } elseif ($RequireGameDriver) { "fail" } else { "warn" })) `
+    -Message ($(if ($bridgeProcesses.Count -gt 0) { "User-session STS2 bridge process is running." } elseif ($bridgeHeartbeatFresh) { "User-session STS2 bridge heartbeat is fresh." } elseif ($RequireGameDriver) { "User-session STS2 bridge process is required but not running." } else { "User-session STS2 bridge process is not running yet." })) `
     -Data @{
+        heartbeat_path = $bridgeHeartbeatPath
+        heartbeat = $bridgeHeartbeat
         processes = @($bridgeProcesses | ForEach-Object {
             [ordered]@{
                 process_id = $_.ProcessId

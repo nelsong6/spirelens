@@ -29,6 +29,15 @@ function Write-BridgeLog {
     Add-Content -LiteralPath $script:BridgeLogPath -Value $line
 }
 
+function Write-BridgeHeartbeat {
+    [ordered]@{
+        heartbeat_at = (Get-Date).ToString("o")
+        process_id = $PID
+        bridge_user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        bridge_machine = $env:COMPUTERNAME
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $queueRootPath "bridge-heartbeat.json")
+}
+
 function Complete-FailedRequest {
     param(
         [Parameter(Mandatory = $true)]
@@ -70,6 +79,7 @@ $scenarioScript = Join-Path $PSScriptRoot "Invoke-Sts2InteractiveScenario.ps1"
 Write-BridgeLog "STS2 interactive bridge started. queue_root=$queueRootPath sts2_path=$Sts2Path stop_after_one=$([bool]$StopAfterOne)"
 
 while ($true) {
+    Write-BridgeHeartbeat
     $readyFiles = @(Get-ChildItem -LiteralPath $requestsRoot -Recurse -Filter "ready.json" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
 
     foreach ($readyFile in $readyFiles) {
