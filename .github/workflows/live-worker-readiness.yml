@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run worker readiness check
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

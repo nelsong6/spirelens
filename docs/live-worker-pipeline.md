@@ -68,7 +68,7 @@ The self-hosted workflows launch their repo-owned scripts with built-in Windows 
 Run this locally on the laptop:
 
 ```powershell
-.\ops\live-worker\Test-LiveWorkerReadiness.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ops\live-worker\Test-LiveWorkerReadiness.ps1 `
   -RepoSlug 'nelsong6/card-utility-stats' `
   -WorkerName 'sts2-side-a' `
   -OutputPath "$env:TEMP\card-utility-stats-worker-readiness.json"
@@ -77,7 +77,7 @@ Run this locally on the laptop:
 When STS2 and the live-driver script are configured, run the stricter check:
 
 ```powershell
-.\ops\live-worker\Test-LiveWorkerReadiness.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ops\live-worker\Test-LiveWorkerReadiness.ps1 `
   -RepoSlug 'nelsong6/card-utility-stats' `
   -WorkerName 'sts2-side-a' `
   -RequireGameDriver `

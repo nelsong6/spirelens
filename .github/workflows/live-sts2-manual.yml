@@ -54,7 +54,7 @@ jobs:
           dotnet-version: 9.0.x
 
       - name: Run live scenario harness
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           $artifactRoot = Join-Path $env:RUNNER_TEMP 'card-utility-stats-live'
           ./scripts/ci/run-live-scenario.ps1 `
