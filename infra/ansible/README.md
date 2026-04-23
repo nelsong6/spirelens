@@ -28,6 +28,15 @@ For now, the first-touch bootstrap script lives at:
 
 That script is intentionally small. The durable setup belongs here in Ansible.
 
+For the Azure builder VM, the preferred first-touch entry point is:
+
+- [bootstrap-azure-builder-winrm.yml](../../.github/workflows/bootstrap-azure-builder-winrm.yml)
+
+That workflow runs the WinRM bootstrap inside Azure on the builder VM by using
+`az vm run-command invoke`, which means we can standardize the first-touch step
+without pretending a GitHub-hosted runner can later reach private VMSS nodes
+directly over WinRM.
+
 ## Current Boundaries
 
 This Ansible layer is designed to automate deterministic setup:
@@ -70,6 +79,14 @@ ansible-playbook -i inventory/builder.example.yml playbooks/bootstrap-builder.ym
 
 The example inventory is intentionally not runnable as-is. Replace the host,
 credentials, and certificate assumptions with the real builder VM values.
+
+Recommended builder loop:
+
+1. create or update the builder VM with OpenTofu
+2. run `Bootstrap Azure Builder WinRM`
+3. confirm the builder VM public IP or FQDN
+4. run `bootstrap-builder.yml` from a Linux or WSL control node
+5. iterate on idempotence until the builder VM is stable enough to image
 
 ## Iteration Rule
 
