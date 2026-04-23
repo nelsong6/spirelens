@@ -76,6 +76,37 @@ Minimum validation checklist for a new VMSS node:
    - `claude-issue-agent-summary.log`
    - `claude-issue-agent-debug.log`
 
+## Ansible Layer
+
+Guest configuration should now be authored in:
+
+- [infra/ansible/README.md](../../../infra/ansible/README.md)
+
+The intent is:
+
+1. create the standalone builder VM on the target SKU
+2. run the first-touch bootstrap automation:
+   - [.github/workflows/bootstrap-azure-builder-winrm.yml](../../../.github/workflows/bootstrap-azure-builder-winrm.yml)
+3. that workflow enables WinRM on the VM with:
+   - [ops/windows-worker/Enable-AnsibleWinRm.ps1](../../../ops/windows-worker/Enable-AnsibleWinRm.ps1)
+4. iterate on the Windows worker setup through Ansible against the builder VM
+5. once stable, capture the golden image
+6. reuse that same Ansible source of truth for VMSS instance setup later
+
+Important boundary:
+
+- Ansible is the guest-configuration source of truth
+- the Windows guest should not be treated as the Ansible control node
+- use a Linux or WSL control node that can reach the builder or worker over WinRM
+- GitHub-hosted runners are a good fit for the builder VM first-touch bootstrap, but not a magic answer for future private VMSS reachability
+
+Manual builder steps still expected for now:
+
+- Steam login
+- Slay the Spire 2 installation
+- first-launch confirmation
+- Steam offline mode confirmation
+
 ## What Was Removed
 
 This VMSS direction no longer depends on:
