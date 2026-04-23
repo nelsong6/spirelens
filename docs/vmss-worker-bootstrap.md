@@ -137,6 +137,7 @@ The VMSS design needs three kinds of auth/configuration:
   - needed on the queue host because the scheduled task can run outside GitHub Actions
 - Codex auth
   - needed anywhere the autonomous queue worker is expected to invoke Codex headlessly
+  - GitHub Actions queue wakeups load Azure Key Vault secret `card-utility-stats`, which is exposed to Codex as `OPENAI_API_KEY`
 
 Additional secrets:
 

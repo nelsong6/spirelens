@@ -13,6 +13,7 @@ param(
     [string]$DashboardEventAudience = "diagrams-codex-queue",
     [string]$DashboardEventIssuer = "codex-queue-worker",
     [int]$DashboardEventTimeoutSeconds = 10,
+    [string]$StateRoot = "",
     [int]$MaxIssuesPerRun = 100,
     [int]$MaxAttemptsPerIssue = 3
 )
@@ -44,13 +45,31 @@ function Ensure-Directory {
     return $Path
 }
 
-function Get-StateRoot {
+function Resolve-StateRoot {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$RepoSlugValue
+        [string]$RepoSlugValue,
+
+        [string]$ExplicitStateRoot = ""
     )
 
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitStateRoot)) {
+        return Ensure-Directory -Path $ExplicitStateRoot
+    }
+
     $safeRepoSlug = $RepoSlugValue.Replace("/", "-")
+    $configuredBase = [Environment]::GetEnvironmentVariable("CODEX_ISSUE_QUEUE_STATE_ROOT", "Process")
+    if ([string]::IsNullOrWhiteSpace($configuredBase)) {
+        $configuredBase = [Environment]::GetEnvironmentVariable("CODEX_ISSUE_QUEUE_STATE_ROOT", "User")
+    }
+    if ([string]::IsNullOrWhiteSpace($configuredBase)) {
+        $configuredBase = [Environment]::GetEnvironmentVariable("CODEX_ISSUE_QUEUE_STATE_ROOT", "Machine")
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($configuredBase)) {
+        return Ensure-Directory -Path (Join-Path $configuredBase $safeRepoSlug)
+    }
+
     return Ensure-Directory -Path (Join-Path $env:LOCALAPPDATA "CodexIssueQueue\$safeRepoSlug")
 }
 
@@ -832,7 +851,7 @@ if ([string]::IsNullOrWhiteSpace($WorkerName)) {
     $WorkerName = Get-DefaultWorkerName
 }
 
-$stateRoot = Get-StateRoot -RepoSlugValue $RepoSlug
+$stateRoot = Resolve-StateRoot -RepoSlugValue $RepoSlug -ExplicitStateRoot $StateRoot
 $script:QueueRunId = [guid]::NewGuid().ToString()
 $script:WorkerLogPath = Join-Path $stateRoot "worker.log"
 $lockPath = Acquire-Lock -StateRoot $stateRoot

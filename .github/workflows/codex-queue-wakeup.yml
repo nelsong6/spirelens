@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   issues: write
+  id-token: write
   pull-requests: write
 
 concurrency:
@@ -37,11 +38,45 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.KEY_VAULT_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Load Codex API key from Key Vault
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $keyVaultName = '${{ vars.KEY_VAULT_NAME }}'
+          $secretName = 'card-utility-stats'
+
+          if ([string]::IsNullOrWhiteSpace($keyVaultName)) {
+            throw "Missing repository variable KEY_VAULT_NAME."
+          }
+
+          $openAiApiKey = az keyvault secret show `
+            --vault-name $keyVaultName `
+            --name $secretName `
+            --query value `
+            --output tsv
+
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($openAiApiKey)) {
+            throw "Unable to load Key Vault secret '$secretName' from vault '$keyVaultName'."
+          }
+
+          Write-Host "::add-mask::$openAiApiKey"
+          "OPENAI_API_KEY=$openAiApiKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Run queue worker
         env:
           GH_TOKEN: ${{ github.token }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
+            throw "OPENAI_API_KEY was not loaded from Azure Key Vault."
+          }
+
           ./ops/codex-queue/Run-IssueQueueWorker.ps1 `
             -RepoRoot $env:GITHUB_WORKSPACE `
             -DashboardEventUrl '${{ vars.CODEX_QUEUE_PUSH_EVENT_URL }}'

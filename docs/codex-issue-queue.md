@@ -85,6 +85,45 @@ The worker does not rely on the packaged WindowsApps alias for `codex.exe`, whic
 
 Instead, the bootstrap step copies the installed Codex CLI into a normal local path and executes that copy. The copied CLI still uses the existing `~/.codex` auth and configuration on the machine.
 
+For GitHub Actions wakeups, the repo uses API-key auth for repeatability across laptops, desktop PCs, and VMSS instances. Store the key in Azure Key Vault as:
+
+- Key Vault secret name: `card-utility-stats`
+
+The workflow loads that process-specific secret and maps it to the standard environment variable Codex expects:
+
+- `OPENAI_API_KEY`
+
+This keeps the secret name scoped to this automation while avoiding custom Codex configuration on every runner. If the secret is absent or inaccessible, the queue wakeup fails before claiming an issue.
+
+The workflow expects these repository variables to already point at the Key Vault subscription and vault:
+
+- `ARM_CLIENT_ID`
+- `ARM_TENANT_ID`
+- `ARM_SUBSCRIPTION_ID`
+- `KEY_VAULT_NAME`
+- `KEY_VAULT_SUBSCRIPTION_ID`
+
+## Reusable Queue Host Setup
+
+Each Windows queue host should use the same shape so the laptop, the next PC, and VMSS workers are interchangeable:
+
+- a stable worker name such as `sts2-side-a`
+- GitHub runner label `codex-queue`
+- a persistent queue state directory outside the disposable Actions workspace
+- a machine-level `CODEX_ISSUE_QUEUE_STATE_ROOT`
+
+Use the initializer to create the local directories, grant the runner service account access, and optionally attach runner labels:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ops\codex-queue\Initialize-CodexQueueHost.ps1 `
+  -WorkerName 'sts2-side-a' `
+  -RunnerName 'sts2-side-a' `
+  -SetMachineEnvironment `
+  -AddRunnerLabels
+```
+
+Restart the GitHub runner service after changing machine-level environment variables.
+
 ## Scheduling
 
 The intended steady state is hybrid:
