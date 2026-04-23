@@ -440,9 +440,47 @@ function Test-IssueResultShape {
         [object]$Value
     )
 
-    return (Test-ObjectProperty -Value $Value -Name "status") -and
-        (Test-ObjectProperty -Value $Value -Name "summary") -and
-        (Test-ObjectProperty -Value $Value -Name "issue_comment")
+    foreach ($name in @("status", "summary", "issue_comment", "branch", "commit", "pr_url", "validation", "needs_follow_up")) {
+        if (-not (Test-ObjectProperty -Value $Value -Name $name)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function ConvertFrom-JsonTextFragment {
+    param(
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $null
+    }
+
+    $candidate = $Text.Trim()
+    if ($candidate -match "(?s)^\s*```(?:json)?\s*(.*?)\s*```\s*$") {
+        $candidate = $Matches[1].Trim()
+    }
+
+    try {
+        return $candidate | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        $objectStart = $candidate.IndexOf("{")
+        $objectEnd = $candidate.LastIndexOf("}")
+        if ($objectStart -ge 0 -and $objectEnd -gt $objectStart) {
+            $candidate = $candidate.Substring($objectStart, $objectEnd - $objectStart + 1)
+            try {
+                return $candidate | ConvertFrom-Json -ErrorAction Stop
+            }
+            catch {
+                return $null
+            }
+        }
+
+        return $null
+    }
 }
 
 function ConvertFrom-ClaudeRunOutput {
@@ -463,7 +501,15 @@ function ConvertFrom-ClaudeRunOutput {
         $parsed = $StdoutText | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
-        return $emptyOutcome
+        $parsed = ConvertFrom-JsonTextFragment -Text $StdoutText
+        if (-not (Test-IssueResultShape -Value $parsed)) {
+            return $emptyOutcome
+        }
+
+        return @{
+            Result = $parsed
+            Wrapper = $null
+        }
     }
 
     if (Test-IssueResultShape -Value $parsed) {
@@ -477,20 +523,12 @@ function ConvertFrom-ClaudeRunOutput {
         $rawResult = $parsed.result
 
         if ($rawResult -is [string]) {
-            $trimmedResult = $rawResult.Trim()
-            if (-not [string]::IsNullOrWhiteSpace($trimmedResult)) {
-                try {
-                    $nestedResult = $trimmedResult | ConvertFrom-Json -ErrorAction Stop
-                }
-                catch {
-                    $nestedResult = $null
-                }
+            $nestedResult = ConvertFrom-JsonTextFragment -Text $rawResult
 
-                if (Test-IssueResultShape -Value $nestedResult) {
-                    return @{
-                        Result = $nestedResult
-                        Wrapper = $parsed
-                    }
+            if (Test-IssueResultShape -Value $nestedResult) {
+                return @{
+                    Result = $nestedResult
+                    Wrapper = $parsed
                 }
             }
         }
@@ -513,6 +551,19 @@ function ConvertFrom-ClaudeRunOutput {
         Result = $null
         Wrapper = $parsed
     }
+}
+
+function ConvertTo-PowerShellSingleQuotedString {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) {
+        $Value = ""
+    }
+
+    return "'" + $Value.Replace("'", "''") + "'"
 }
 
 function Get-NextQueuedIssue {
@@ -652,6 +703,7 @@ function Invoke-ClaudeIssueRun {
     $debugPath = Join-Path $runDir "claude-debug.log"
     $resultPath = Join-Path $runDir "claude-result.json"
     $wrapperPath = Join-Path $runDir "claude-wrapper.json"
+    $launcherPath = Join-Path $runDir "invoke-claude.ps1"
     $schemaPath = Join-Path $RepoRootValue "ops\codex-queue\issue-output-schema.json"
     $instructionsPath = Join-Path $RepoRootValue "ops\codex-queue\worker-instructions.md"
 
@@ -677,32 +729,36 @@ Execution requirements:
 - Use git locally for branch/commit work.
 - Do not wait for a human if the issue can be advanced.
 - Return only JSON that matches the schema file at: $schemaPath
+- Do not wrap the final JSON in Markdown fences.
 "@
 
     $prompt | Set-Content -LiteralPath $promptPath
-    $schemaJson = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 20
-
-    $args = @(
-        "-p",
-        "--bare",
-        "--model", $ClaudeModel,
-        "--permission-mode", "bypassPermissions",
-        "--debug-file", $debugPath,
-        "--output-format", "json",
-        "--no-session-persistence",
-        "--max-budget-usd", $ClaudeMaxBudgetUsd.ToString([Globalization.CultureInfo]::InvariantCulture),
-        "--max-turns", $ClaudeMaxTurns.ToString([Globalization.CultureInfo]::InvariantCulture),
-        "--add-dir", $runDir,
-        "--json-schema", $schemaJson,
-        $prompt
-    )
+    $budgetText = $ClaudeMaxBudgetUsd.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $maxTurnsText = $ClaudeMaxTurns.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $launcher = @"
+`$ErrorActionPreference = "Stop"
+`$prompt = Get-Content -LiteralPath $(ConvertTo-PowerShellSingleQuotedString -Value $promptPath) -Raw
+`$claudeArgs = @(
+    "-p", `$prompt,
+    "--bare",
+    "--model", $(ConvertTo-PowerShellSingleQuotedString -Value $ClaudeModel),
+    "--permission-mode", "bypassPermissions",
+    "--debug-file", $(ConvertTo-PowerShellSingleQuotedString -Value $debugPath),
+    "--output-format", "json",
+    "--no-session-persistence",
+    "--max-budget-usd", $(ConvertTo-PowerShellSingleQuotedString -Value $budgetText),
+    "--max-turns", $(ConvertTo-PowerShellSingleQuotedString -Value $maxTurnsText),
+    "--add-dir", $(ConvertTo-PowerShellSingleQuotedString -Value $runDir)
+)
+& $(ConvertTo-PowerShellSingleQuotedString -Value $ClaudePath) @claudeArgs > $(ConvertTo-PowerShellSingleQuotedString -Value $stdoutPath) 2> $(ConvertTo-PowerShellSingleQuotedString -Value $stderrPath)
+exit `$LASTEXITCODE
+"@
+    $launcher | Set-Content -LiteralPath $launcherPath
 
     $process = Start-Process `
-        -FilePath $ClaudePath `
-        -ArgumentList $args `
+        -FilePath "powershell.exe" `
+        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $launcherPath) `
         -WorkingDirectory $RepoRootValue `
-        -RedirectStandardOutput $stdoutPath `
-        -RedirectStandardError $stderrPath `
         -NoNewWindow `
         -PassThru
 
