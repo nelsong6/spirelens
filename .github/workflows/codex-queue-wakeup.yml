@@ -1,4 +1,4 @@
-name: Codex Queue Wakeup
+name: Codex Issue Agent
 
 on:
   issues:
@@ -7,6 +7,10 @@ on:
       - reopened
       - labeled
   workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to hand to Claude
+        required: true
 
 permissions:
   contents: write
@@ -14,15 +18,11 @@ permissions:
   id-token: write
   pull-requests: write
 
-concurrency:
-  group: codex-queue-worker
-  cancel-in-progress: false
-
 jobs:
-  wake-queue-worker:
-    name: Wake autonomous issue worker
+  run-issue-agent:
+    name: Run Claude for one issue
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.issue_number != '') ||
       (github.event_name == 'issues' && (
         (github.event.action == 'labeled' && github.event.label.name == 'codex-queue') ||
         contains(github.event.issue.labels.*.name, 'codex-queue')
@@ -68,11 +68,10 @@ jobs:
           Write-Host "::add-mask::$anthropicApiKey"
           "ANTHROPIC_API_KEY=$anthropicApiKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Run queue worker
+      - name: Verify Claude and MCP
         env:
           CLAUDE_CLI_PATH: D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:ANTHROPIC_API_KEY)) {
@@ -82,6 +81,67 @@ jobs:
             throw "Claude Code CLI was not found at '$env:CLAUDE_CLI_PATH'. Install it once with: npm.cmd install --prefix D:\automation\claude-code @anthropic-ai/claude-code"
           }
 
-          ./ops/codex-queue/Run-IssueQueueWorker.ps1 `
-            -RepoRoot $env:GITHUB_WORKSPACE `
-            -DashboardEventUrl '${{ vars.CODEX_QUEUE_PUSH_EVENT_URL }}'
+          $mcpConfig = Join-Path $env:GITHUB_WORKSPACE ".mcp.json"
+          if (-not (Test-Path -LiteralPath $mcpConfig)) {
+            throw "MCP config was not found at '$mcpConfig'."
+          }
+
+          & $env:CLAUDE_CLI_PATH --version
+          & $env:CLAUDE_CLI_PATH "--mcp-config=$mcpConfig" mcp list
+
+      - name: Run Claude issue agent
+        env:
+          CLAUDE_CLI_PATH: D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+          GH_TOKEN: ${{ github.token }}
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          DISPATCH_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          REPO_SLUG: ${{ github.repository }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $issueNumber = $env:EVENT_ISSUE_NUMBER
+          if ([string]::IsNullOrWhiteSpace($issueNumber)) {
+            $issueNumber = $env:DISPATCH_ISSUE_NUMBER
+          }
+          if ([string]::IsNullOrWhiteSpace($issueNumber)) {
+            throw "No issue number was provided by the event or workflow_dispatch input."
+          }
+
+          $mcpConfig = Join-Path $env:GITHUB_WORKSPACE ".mcp.json"
+          $promptPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-prompt.md"
+          $prompt = @"
+You are Claude Code running as the issue agent for $($env:REPO_SLUG) on issue #$issueNumber.
+
+Read the issue and comments yourself using GitHub CLI:
+
+``````
+gh issue view $issueNumber --repo $($env:REPO_SLUG) --comments
+``````
+
+You own the result. GitHub Actions is only launching you; there is no queue worker or result parser.
+
+Expectations:
+- Work exactly this issue.
+- Use the local checkout at `$env:GITHUB_WORKSPACE`.
+- Use `gh`, `git`, tests, and MCP tools as needed.
+- Use the project MCP config at `$mcpConfig`; for live STS2 work, use the `sts2-modding` MCP server.
+- Comment on the issue with what you did, what you observed, and any PR/screenshot/artifact links or paths.
+- If you complete the issue, remove `codex-queue` and add `codex-complete`.
+- If you are blocked, comment with the blocker, remove `codex-queue`, and add `codex-blocked`.
+- If you make code changes, create a branch, commit, push, and open a PR.
+- Do not wait for a human continuation unless the issue is genuinely blocked.
+
+For this validation path, prefer a minimal live STS2 MCP proof over broad code changes.
+"@
+          $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
+          $promptText = Get-Content -LiteralPath $promptPath -Raw
+
+          & $env:CLAUDE_CLI_PATH `
+            -p $promptText `
+            --bare `
+            --model sonnet `
+            --permission-mode bypassPermissions `
+            --output-format text `
+            "--mcp-config=$mcpConfig" `
+            --max-budget-usd "5.00" `
+            --add-dir $env:GITHUB_WORKSPACE
