@@ -8,6 +8,11 @@ on:
       - labeled
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 concurrency:
   group: codex-queue-worker
   cancel-in-progress: false
@@ -33,6 +38,8 @@ jobs:
           fetch-depth: 0
 
       - name: Run queue worker
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           ./ops/codex-queue/Run-IssueQueueWorker.ps1 `

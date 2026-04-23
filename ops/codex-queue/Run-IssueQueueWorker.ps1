@@ -90,12 +90,59 @@ function Ensure-LocalCodexBinary {
         [string]$StateRoot
     )
 
-    $candidatePaths = @(
-        "C:\Program Files\WindowsApps\OpenAI.Codex_26.421.620.0_x64__2p2nqsd0c76g0\app\resources\codex.exe"
-    )
+    $candidatePaths = New-Object System.Collections.Generic.List[string]
+
+    foreach ($scope in @("Process", "User", "Machine")) {
+        $explicitPath = [Environment]::GetEnvironmentVariable("CODEX_CLI_PATH", $scope)
+        if (-not [string]::IsNullOrWhiteSpace($explicitPath)) {
+            $candidatePaths.Add($explicitPath)
+        }
+    }
+
+    $codexCommand = Get-Command codex -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($codexCommand) {
+        if (-not [string]::IsNullOrWhiteSpace($codexCommand.Source)) {
+            $candidatePaths.Add($codexCommand.Source)
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($codexCommand.Path)) {
+            $candidatePaths.Add($codexCommand.Path)
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $candidatePaths.Add((Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin\codex.exe"))
+    }
+
+    $userRoot = "C:\Users"
+    if (Test-Path -LiteralPath $userRoot) {
+        Get-ChildItem -LiteralPath $userRoot -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $candidatePaths.Add((Join-Path $_.FullName "AppData\Local\OpenAI\Codex\bin\codex.exe"))
+            }
+    }
+
+    $windowsAppsRoots = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $windowsAppsRoots += (Join-Path $env:ProgramFiles "WindowsApps")
+    }
+    $windowsAppsRoots += "C:\Program Files\WindowsApps"
+
+    foreach ($root in ($windowsAppsRoots | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $root)) {
+            continue
+        }
+
+        Get-ChildItem -LiteralPath $root -Directory -Filter "OpenAI.Codex_*" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending |
+            ForEach-Object {
+                $candidatePaths.Add((Join-Path $_.FullName "app\resources\codex.exe"))
+            }
+    }
+
+    $candidatePaths.Add("C:\Program Files\WindowsApps\OpenAI.Codex_26.421.620.0_x64__2p2nqsd0c76g0\app\resources\codex.exe")
 
     $sourcePath = $null
-    foreach ($candidate in $candidatePaths) {
+    foreach ($candidate in ($candidatePaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
         if (Test-Path -LiteralPath $candidate) {
             $sourcePath = $candidate
             break
