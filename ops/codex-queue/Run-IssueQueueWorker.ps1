@@ -421,10 +421,40 @@ function Clear-IssueAttemptCount {
     }
 }
 
+function Get-TextFileTail {
+    param(
+        [string]$Path,
+
+        [int]$MaxLines = 40,
+
+        [int]$MaxCharacters = 4000
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+
+    try {
+        $text = (Get-Content -LiteralPath $Path -Tail $MaxLines -ErrorAction Stop) -join [Environment]::NewLine
+        $text = $text.Trim()
+        if ($text.Length -gt $MaxCharacters) {
+            $text = $text.Substring($text.Length - $MaxCharacters)
+        }
+
+        $markdownFence = ([string][char]96) * 3
+        return $text.Replace($markdownFence, "'''")
+    }
+    catch {
+        return ""
+    }
+}
+
 function Get-NextQueuedIssue {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Repo
+        [string]$Repo,
+
+        [int[]]$ExcludeIssueNumbers = @()
     )
 
     $issues = Invoke-GhJson -Arguments @(
@@ -442,7 +472,7 @@ function Get-NextQueuedIssue {
 
     $eligible = $issues | Where-Object {
         $labelNames = @($_.labels | ForEach-Object { $_.name })
-        -not ($labelNames -contains $ActiveLabel)
+        -not ($labelNames -contains $ActiveLabel) -and -not ($ExcludeIssueNumbers -contains [int]$_.number)
     }
 
     if (-not $eligible) {
@@ -691,6 +721,17 @@ function Apply-ResultToIssue {
     $attempt = $InvocationResult.Attempt
     $result = $InvocationResult.Result
     $exitCode = $InvocationResult.ExitCode
+    $stdoutTail = Get-TextFileTail -Path $InvocationResult.StdoutPath
+    $stderrTail = Get-TextFileTail -Path $InvocationResult.StderrPath
+
+    $diagnostics = ""
+    $markdownFence = ([string][char]96) * 3
+    if (-not [string]::IsNullOrWhiteSpace($stderrTail)) {
+        $diagnostics += [Environment]::NewLine + "Stderr tail:" + [Environment]::NewLine + $markdownFence + "text" + [Environment]::NewLine + $stderrTail + [Environment]::NewLine + $markdownFence + [Environment]::NewLine
+    }
+    if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
+        $diagnostics += [Environment]::NewLine + "Stdout tail:" + [Environment]::NewLine + $markdownFence + "text" + [Environment]::NewLine + $stdoutTail + [Environment]::NewLine + $markdownFence + [Environment]::NewLine
+    }
 
     if ($exitCode -ne 0 -or -not $result) {
         if ($attempt -ge $MaxAttemptsPerIssue) {
@@ -700,6 +741,7 @@ Autonomous worker ``$Worker`` could not complete issue #$IssueNumber after $atte
 
 - Codex exit code: $exitCode
 - Last run directory: $($InvocationResult.RunDirectory)
+$diagnostics
 
 The issue has been moved out of the queue and marked blocked for human review.
 "@
@@ -712,6 +754,7 @@ Autonomous worker ``$Worker`` failed attempt $attempt on issue #$IssueNumber.
 
 - Codex exit code: $exitCode
 - Last run directory: $($InvocationResult.RunDirectory)
+$diagnostics
 
 The issue remains queued and will be retried automatically.
 "@
@@ -798,6 +841,7 @@ if (-not $lockPath) {
 }
 
 $processedCount = 0
+$processedIssueNumbersThisRun = New-Object 'System.Collections.Generic.HashSet[int]'
 try {
     try {
         Ensure-QueueLabels -Repo $RepoSlug
@@ -810,7 +854,7 @@ try {
         }
 
         while ($processedCount -lt $MaxIssuesPerRun) {
-            $nextIssue = Get-NextQueuedIssue -Repo $RepoSlug
+            $nextIssue = Get-NextQueuedIssue -Repo $RepoSlug -ExcludeIssueNumbers ([int[]]@($processedIssueNumbersThisRun))
             if (-not $nextIssue) {
                 Write-Log "Queue is empty."
                 Send-DashboardEvent -Type "queue_empty" -Data @{
@@ -853,6 +897,7 @@ try {
 
             Write-Log "Issue #$issueNumber finished with queue outcome '$outcome'."
             $processedCount += 1
+            $processedIssueNumbersThisRun.Add($issueNumber) | Out-Null
             Send-DashboardEvent -Type "issue_finished" -Data @{
                 issue_number = $issueNumber
                 issue_title = $nextIssue.title
