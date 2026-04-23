@@ -22,6 +22,11 @@ It is intentionally CI-first:
 
 The NAT gateway is included because the workers need reliable outbound internet access for GitHub, Steam, mod dependencies, and artifact upload. That is also the safer long-term Azure posture for new subnets. For the temporary builder-only phase, you can set `create_nat_gateway = false` and let the builder VM use its own public IP.
 
+This root can also optionally allow private WinRM over HTTPS on port `5986`
+from a trusted CIDR list, which is useful when an ansible-only GitHub runner in
+AKS or another peered network needs to configure the builder VM without opening
+WinRM to the public internet.
+
 ## Image Strategy
 
 This root supports a staged path:
@@ -76,7 +81,7 @@ That workflow:
 - uses repository variables `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
 - uses repository variable `KEY_VAULT_NAME`
 - passes `KEY_VAULT_NAME` into Terraform as `TF_VAR_key_vault_name`
-- lets the root read the VM admin password and optional RDP CIDR allowlist from Azure Key Vault through `azurerm` data sources
+- lets the root read the VM admin password plus optional RDP and WinRM CIDR allowlists from Azure Key Vault through `azurerm` data sources
 - initializes the `azurerm` backend
 - runs `tofu fmt -check`
 - runs `tofu validate`
@@ -102,6 +107,9 @@ Assumed handoff:
 5. Optional but recommended for builder VM RDP access:
    - store a JSON array of trusted CIDRs in Key Vault as `card-utility-stats-rdp-allowed-cidrs`
    - example value: `["203.0.113.10/32"]`
+6. Optional for private Ansible control-node access:
+   - set `winrm_allowed_cidrs` in the `.tfvars` file, or
+   - store a JSON array of trusted private CIDRs in Key Vault and point `winrm_allowed_cidrs_secret_name` at that secret
 
 Recommended Azure permissions for that principal:
 
@@ -143,6 +151,7 @@ The workflow injects the backend values at runtime so that:
    - set `source_image_id` to the gallery image definition or version ID
    - optionally set `enable_builder_vm = false` if you no longer need the seed box
    - optionally set `create_nat_gateway = true` for the VMSS phase
+   - optionally set `winrm_allowed_cidrs` for a private Ansible runner subnet such as the AKS node subnet
 12. Re-run the workflow to stand up the VMSS from the captured image.
 
 ## Important Limits
@@ -150,4 +159,5 @@ The workflow injects the backend values at runtime so that:
 - This root creates the compute/network shell, not the full worker bootstrap inside the guest.
 - Runner registration, Codex auth, Steam offline state, and STS2 driver setup still belong in the golden image and/or first-boot bootstrap layer described in [docs/vmss-worker-bootstrap.md](../../../docs/vmss-worker-bootstrap.md).
 - The builder VM shares the same subnet and NSG as the VMSS. If you need RDP through GitHub Actions, store trusted CIDRs in the Key Vault secret `card-utility-stats-rdp-allowed-cidrs` and let Terraform read them through the `azurerm_key_vault_secret` data source. Local runs can still set `enable_rdp_rule` and `rdp_allowed_cidrs` directly.
+- Private WinRM is supported through the same pattern by setting `winrm_allowed_cidrs` or `winrm_allowed_cidrs_secret_name`. Keep WinRM scoped to trusted private ranges such as the AKS node subnet instead of opening `5986` broadly.
 - For a trusted RDP certificate, connect by hostname, not by raw IP address. A public CA certificate for `builder.romaine.life` will not validate if the client connects to `20.x.x.x`.
