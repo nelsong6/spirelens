@@ -20,7 +20,7 @@ locals {
       : [for cidr in split(",", trimsuffix(trimprefix(trimspace(local.rdp_allowed_cidrs_secret_value), "["), "]")) : trimspace(cidr) if trimspace(cidr) != ""]
     )
   )
-  effective_enable_rdp_rule = var.enable_rdp_rule || length(local.effective_rdp_allowed_cidrs) > 0
+  effective_enable_rdp_rule        = var.enable_rdp_rule || length(local.effective_rdp_allowed_cidrs) > 0
   winrm_allowed_cidrs_secret_value = length(var.winrm_allowed_cidrs) > 0 || var.winrm_allowed_cidrs_secret_name == null ? null : nonsensitive(data.azurerm_key_vault_secret.winrm_allowed_cidrs[0].value)
   effective_winrm_allowed_cidrs = length(var.winrm_allowed_cidrs) > 0 ? var.winrm_allowed_cidrs : (
     var.winrm_allowed_cidrs_secret_name == null ? [] : (
