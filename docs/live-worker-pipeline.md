@@ -5,7 +5,7 @@ Issue [#51](https://github.com/nelsong6/card-utility-stats/issues/51) started as
 - the main work machine edits code, dispatches runs, and reviews artifacts
 - dedicated Windows workers run Slay the Spire 2 and execute live scenarios
 
-The deployment target is now Azure VM Scale Sets (VMSS) rather than named physical side laptops. This document describes the first VMSS-backed milestone using GitHub Actions self-hosted runners.
+The long-term deployment target is Azure VM Scale Sets (VMSS), but the laptop can also be a first-class worker-pool member while Azure quota and image bootstrap are still moving. This document describes the shared GitHub Actions worker contract that both the laptop and VMSS nodes should satisfy.
 
 ## Current Rollout Phase
 
@@ -17,6 +17,7 @@ The target design is:
 
 The current first step should stay conservative:
 
+- recruit the laptop as Worker 1 in the shared `sts2-live` pool
 - prove the workflow on one manually configured Windows VM first
 - capture that VM as the golden image
 - create a VMSS at capacity `1`
@@ -41,7 +42,55 @@ The first pass is intentionally conservative:
 - hand off to a worker-local live-driver script
 - upload artifacts back to GitHub Actions
 
-The workflow does not try to solve VM reimage policy, Steam recovery, or MCP/game automation orchestration centrally yet. Those remain worker-local concerns until the live path is stable.
+The workflow does not try to solve VM reimage policy, laptop reset policy, Steam recovery, or MCP/game automation orchestration centrally yet. Those remain worker-local concerns until the live path is stable.
+
+## Laptop Worker 1
+
+The laptop is allowed to be a real pool member, not just a temporary manual test box.
+
+Treat it as:
+
+- worker name: `sts2-side-a`
+- shared pool label: `sts2-live`
+- unique debug label: `sts2-side-a`
+- queue host role: optional, only if it also carries the queue scheduled task
+- live scenario role: yes, once STS2 and the worker-local driver are configured
+
+The repo includes a readiness check at [ops/live-worker/Test-LiveWorkerReadiness.ps1](../ops/live-worker/Test-LiveWorkerReadiness.ps1). It separates two questions:
+
+- Is this machine in the agent pool and reachable by GitHub Actions?
+- Is this machine fully ready to drive STS2 through the live driver?
+
+That distinction lets the laptop join the pool before the Modding Assistant/MCP automation is fully stable.
+
+The self-hosted workflows launch their repo-owned scripts with built-in Windows PowerShell so a runner service account does not depend on a user-scoped PowerShell 7 alias. The readiness report still records whether `pwsh` is visible because VMSS images should install PowerShell 7 machine-wide.
+
+Run this locally on the laptop:
+
+```powershell
+.\ops\live-worker\Test-LiveWorkerReadiness.ps1 `
+  -RepoSlug 'nelsong6/card-utility-stats' `
+  -WorkerName 'sts2-side-a' `
+  -OutputPath "$env:TEMP\card-utility-stats-worker-readiness.json"
+```
+
+When STS2 and the live-driver script are configured, run the stricter check:
+
+```powershell
+.\ops\live-worker\Test-LiveWorkerReadiness.ps1 `
+  -RepoSlug 'nelsong6/card-utility-stats' `
+  -WorkerName 'sts2-side-a' `
+  -RequireGameDriver `
+  -OutputPath "$env:TEMP\card-utility-stats-worker-readiness.json"
+```
+
+There is also a manual GitHub Actions workflow, `Live Worker Readiness`, that targets the `sts2-live` pool and uploads the same readiness report as an artifact.
+
+For this laptop specifically, dispatch it with:
+
+- `runs_on_json`: `["self-hosted","windows","sts2-side-a"]`
+- `worker_name`: `sts2-side-a`
+- `require_game_driver`: `false` until STS2 and the live driver are ready
 
 ## Recommended Pool Shape
 

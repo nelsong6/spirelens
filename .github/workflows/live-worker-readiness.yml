@@ -1,0 +1,66 @@
+name: Live Worker Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_on_json:
+        description: JSON array of runner labels to target
+        required: true
+        default: '["self-hosted","windows","sts2-live"]'
+        type: string
+      worker_name:
+        description: Optional expected runner name, such as sts2-side-a
+        required: false
+        default: ""
+        type: string
+      require_game_driver:
+        description: Fail if STS2 or the worker-local live driver is not ready
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  readiness:
+    name: Check STS2 worker pool member
+    runs-on: ${{ fromJSON(inputs.runs_on_json) }}
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run worker readiness check
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $artifactRoot = Join-Path $env:RUNNER_TEMP 'card-utility-stats-worker-readiness'
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $args = @{
+            RepoSlug = $env:GITHUB_REPOSITORY
+            RequiredLabels = @('self-hosted', 'windows', 'sts2-live')
+            OutputPath = Join-Path $artifactRoot 'readiness.json'
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.worker_name }}')) {
+            $args.WorkerName = '${{ inputs.worker_name }}'
+          }
+
+          if ('${{ inputs.require_game_driver }}' -eq 'true') {
+            $args.RequireGameDriver = $true
+          }
+
+          ./ops/live-worker/Test-LiveWorkerReadiness.ps1 @args
+
+      - name: Upload readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-worker-readiness-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.name }}
+          path: ${{ runner.temp }}/card-utility-stats-worker-readiness
+          if-no-files-found: warn
+          retention-days: 14
