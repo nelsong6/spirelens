@@ -22,7 +22,7 @@ jobs:
   run-issue-agent:
     name: Run Claude for one issue
     if: |
-      (github.event_name == 'workflow_dispatch' && inputs.issue_number != '') ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
         (github.event.action == 'labeled' && github.event.label.name == 'codex-queue') ||
         contains(github.event.issue.labels.*.name, 'codex-queue')
@@ -95,7 +95,7 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           GH_TOKEN: ${{ github.token }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
-          DISPATCH_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          DISPATCH_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
           REPO_SLUG: ${{ github.repository }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
