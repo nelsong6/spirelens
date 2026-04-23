@@ -1,0 +1,221 @@
+name: Bootstrap Azure Builder via Ansible
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_scale_set_name:
+        description: ARC runner scale set name to target
+        required: true
+        default: ansible-control
+        type: string
+      builder_host:
+        description: Private IP or FQDN for the builder VM
+        required: true
+        default: 10.42.1.4
+        type: string
+      builder_port:
+        description: WinRM HTTPS port
+        required: true
+        default: "5986"
+        type: string
+      builder_user:
+        description: Windows admin user for the builder VM
+        required: true
+        default: runneradmin
+        type: string
+      builder_password_secret_name:
+        description: Key Vault secret that stores the builder VM admin password
+        required: true
+        default: card-utility-stats-vm-admin-password
+        type: string
+      key_vault_subscription_id:
+        description: Optional subscription override for the Key Vault lookup
+        required: false
+        default: ""
+        type: string
+      winrm_transport:
+        description: WinRM transport to use
+        required: true
+        default: ntlm
+        type: string
+      ansible_verbosity:
+        description: Optional ansible-playbook verbosity flag such as -v or -vv
+        required: false
+        default: ""
+        type: string
+      check_mode:
+        description: Run the playbook in --check mode
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: bootstrap-azure-builder-${{ github.event.inputs.builder_host || 'builder' }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Run bootstrap-builder.yml against the Azure builder
+    runs-on: ${{ github.event.inputs.runner_scale_set_name || 'ansible-control' }}
+
+    env:
+      ANSIBLE_CONFIG: ${{ github.workspace }}/infra/ansible/ansible.cfg
+      KEY_VAULT_SUBSCRIPTION_ID: ${{ github.event.inputs.key_vault_subscription_id || vars.KEY_VAULT_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install control-node prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl git gnupg lsb-release python3 python3-pip
+
+          if ! command -v az >/dev/null 2>&1; then
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          fi
+
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user ansible pywinrm requests-ntlm requests-credssp
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ env.KEY_VAULT_SUBSCRIPTION_ID }}
+
+      - name: Install Ansible collections
+        shell: bash
+        run: |
+          set -euo pipefail
+          ansible-galaxy collection install -r infra/ansible/collections/requirements.yml
+
+      - name: Load builder password from Key Vault
+        env:
+          KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${KEY_VAULT_NAME}" ]]; then
+            echo "Missing repository variable KEY_VAULT_NAME." >&2
+            exit 1
+          fi
+
+          builder_password="$(az keyvault secret show \
+            --vault-name "${KEY_VAULT_NAME}" \
+            --name "${{ inputs.builder_password_secret_name }}" \
+            --query value \
+            --output tsv)"
+
+          if [[ -z "${builder_password}" ]]; then
+            echo "Builder password secret was empty." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${builder_password}"
+          echo "BUILDER_PASSWORD=${builder_password}" >> "${GITHUB_ENV}"
+
+      - name: Render builder inventory
+        env:
+          INVENTORY_PATH: ${{ runner.temp }}/builder.inventory.yml
+          BUILDER_HOST: ${{ inputs.builder_host }}
+          BUILDER_PORT: ${{ inputs.builder_port }}
+          BUILDER_USER: ${{ inputs.builder_user }}
+          WINRM_TRANSPORT: ${{ inputs.winrm_transport }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import os
+
+          def q(value: str) -> str:
+              return json.dumps(value)
+
+          content = "\n".join(
+              [
+                  "all:",
+                  "  children:",
+                  "    builder:",
+                  "      hosts:",
+                  "        azure-builder:",
+                  f"          ansible_host: {q(os.environ['BUILDER_HOST'])}",
+                  "          ansible_connection: winrm",
+                  f"          ansible_port: {os.environ['BUILDER_PORT']}",
+                  f"          ansible_user: {q(os.environ['BUILDER_USER'])}",
+                  f"          ansible_password: {q(os.environ['BUILDER_PASSWORD'])}",
+                  "          ansible_shell_type: powershell",
+                  f"          ansible_winrm_transport: {q(os.environ['WINRM_TRANSPORT'])}",
+                  "          ansible_winrm_server_cert_validation: ignore",
+                  "          ansible_winrm_operation_timeout_sec: 60",
+                  "          ansible_winrm_read_timeout_sec: 90",
+                  "",
+              ]
+          )
+
+          Path(os.environ["INVENTORY_PATH"]).write_text(content, encoding="utf-8")
+          PY
+
+      - name: Run builder bootstrap playbook
+        env:
+          INVENTORY_PATH: ${{ runner.temp }}/builder.inventory.yml
+          LOG_PATH: ${{ runner.temp }}/bootstrap-builder-ansible.log
+          VERBOSITY: ${{ inputs.ansible_verbosity }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=(
+            ansible-playbook
+            -i "${INVENTORY_PATH}"
+            infra/ansible/playbooks/bootstrap-builder.yml
+          )
+
+          if [[ -n "${VERBOSITY}" ]]; then
+            args+=("${VERBOSITY}")
+          fi
+
+          if [[ "${{ inputs.check_mode }}" == "true" ]]; then
+            args+=("--check")
+          fi
+
+          "${args[@]}" 2>&1 | tee "${LOG_PATH}"
+
+      - name: Upload ansible bootstrap log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-builder-ansible-${{ github.run_id }}
+          path: ${{ runner.temp }}/bootstrap-builder-ansible.log
+          if-no-files-found: warn
+
+      - name: Summarize builder bootstrap run
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Azure builder bootstrap via Ansible"
+            echo
+            echo "- Builder host: \`${{ inputs.builder_host }}\`"
+            echo "- WinRM port: \`${{ inputs.builder_port }}\`"
+            echo "- WinRM transport: \`${{ inputs.winrm_transport }}\`"
+            echo "- Runner scale set: \`${{ inputs.runner_scale_set_name }}\`"
+            if [[ "${{ inputs.check_mode }}" == "true" ]]; then
+              echo "- Mode: \`check\`"
+            else
+              echo "- Mode: \`apply\`"
+            fi
+            echo "- Log artifact: \`bootstrap-builder-ansible-${{ github.run_id }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

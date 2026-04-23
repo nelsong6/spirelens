@@ -89,16 +89,23 @@ The intent is:
    - [.github/workflows/bootstrap-azure-builder-winrm.yml](../../../.github/workflows/bootstrap-azure-builder-winrm.yml)
 3. that workflow enables WinRM on the VM with:
    - [ops/windows-worker/Enable-AnsibleWinRm.ps1](../../../ops/windows-worker/Enable-AnsibleWinRm.ps1)
-4. iterate on the Windows worker setup through Ansible against the builder VM
-5. once stable, capture the golden image
-6. reuse that same Ansible source of truth for VMSS instance setup later
+4. stand up the private Linux control node in AKS:
+   - [.github/workflows/deploy-aks-ansible-control-runner.yml](../../../.github/workflows/deploy-aks-ansible-control-runner.yml)
+5. run the first real builder bootstrap pass over private WinRM:
+   - [.github/workflows/bootstrap-azure-builder-ansible.yml](../../../.github/workflows/bootstrap-azure-builder-ansible.yml)
+6. iterate on the Windows worker setup through Ansible against the builder VM
+7. once stable, capture the golden image
+8. reuse that same Ansible source of truth for VMSS instance setup later
 
 Important boundary:
 
 - Ansible is the guest-configuration source of truth
 - the Windows guest should not be treated as the Ansible control node
-- use a Linux or WSL control node that can reach the builder or worker over WinRM
-- GitHub-hosted runners are a good fit for the builder VM first-touch bootstrap, but not a magic answer for future private VMSS reachability
+- use a Linux control node that can reach the builder or worker over private WinRM
+- GitHub-hosted runners are a good fit for the builder VM first-touch bootstrap, but not for the private Ansible execution path
+- the ARC runner scale set `ansible-control` is the intended GitHub Actions `runs-on` target for the builder bootstrap workflow
+
+See [docs/aks-ansible-control-node.md](../../../docs/aks-ansible-control-node.md) for the runner deployment inputs, secret names, and builder-bootstrap workflow contract.
 
 Manual builder steps still expected for now:
 

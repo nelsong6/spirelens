@@ -84,9 +84,20 @@ Recommended builder loop:
 
 1. create or update the builder VM with OpenTofu
 2. run `Bootstrap Azure Builder WinRM`
-3. confirm the builder VM public IP or FQDN
-4. run `bootstrap-builder.yml` from a Linux or WSL control node
+3. deploy or refresh the AKS ansible control runner
+4. run `Bootstrap Azure Builder via Ansible` against the private builder address
 5. iterate on idempotence until the builder VM is stable enough to image
+
+## GitHub Actions Control Node
+
+The preferred private control-node path is now repo-managed:
+
+1. run [deploy-aks-ansible-control-runner.yml](../../.github/workflows/deploy-aks-ansible-control-runner.yml) from a GitHub-hosted runner
+2. that workflow installs ARC in AKS and brings up the Linux runner scale set `ansible-control`
+3. run [bootstrap-azure-builder-ansible.yml](../../.github/workflows/bootstrap-azure-builder-ansible.yml)
+4. that workflow schedules on `runs-on: ansible-control` and executes [playbooks/bootstrap-builder.yml](./playbooks/bootstrap-builder.yml) against the builder VM over private WinRM
+
+See [docs/aks-ansible-control-node.md](../../docs/aks-ansible-control-node.md) for the concrete workflow inputs and default Key Vault secret names.
 
 ## Iteration Rule
 
