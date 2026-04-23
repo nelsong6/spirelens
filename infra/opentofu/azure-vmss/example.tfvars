@@ -18,6 +18,10 @@ encryption_at_host_enabled = false
 # the `azurerm_key_vault_secret` data source, so this file does not need to
 # hardcode a personal public IP.
 
+# Private WinRM from the infra-aks node subnet so an ansible-only runner can
+# reach the builder VM without exposing port 5986 publicly.
+winrm_allowed_cidrs = ["10.0.0.0/22"]
+
 # Phase 1+: flip enable_vmss to true and point this at the captured worker image.
 instance_count = 1
 vm_sku         = "Standard_NV6ads_A10_v5"
