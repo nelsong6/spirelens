@@ -432,7 +432,7 @@ function Test-ObjectProperty {
         [string]$Name
     )
 
-    return $null -ne $Value -and $null -ne $Value.PSObject.Properties[$Name]
+    return ($null -ne $Value -and $null -ne $Value.PSObject.Properties[$Name])
 }
 
 function Test-IssueResultShape {
