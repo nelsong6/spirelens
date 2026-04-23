@@ -1,0 +1,9 @@
+- name: Bootstrap Azure builder VM for CardUtilityStats
+  hosts: builder
+  gather_facts: false
+  vars_files:
+    - ../group_vars/windows_issue_agent_worker.yml
+  roles:
+    - role: windows_issue_agent_worker
+      vars:
+        windows_worker_expect_game_present: false
