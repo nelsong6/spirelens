@@ -660,9 +660,17 @@ function Comment-OnIssue {
         [string]$Body
     )
 
-    & gh issue comment $IssueNumber --repo $Repo --body $Body | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to comment on issue #$IssueNumber."
+    $bodyFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $Body | Set-Content -LiteralPath $bodyFile -Encoding UTF8
+
+        & gh issue comment $IssueNumber --repo $Repo --body-file $bodyFile | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to comment on issue #$IssueNumber."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $bodyFile -Force -ErrorAction SilentlyContinue
     }
 }
 
