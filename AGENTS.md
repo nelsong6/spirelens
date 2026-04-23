@@ -2,6 +2,16 @@
 
 This repo is a hot-reloadable Slay the Spire 2 mod focused on per-card attribution: not just what a card says it should do, but what it actually caused in the run.
 
+## GitHub Source Of Truth
+
+This repo now uses a **pull-only** workflow with GitHub as the source of truth. The policy is documented in [docs/pull-only-workflow.md](docs/pull-only-workflow.md).
+
+- Do not read from the local filesystem for repository state.
+- Do not write to the local filesystem for repository changes.
+- Do not use local `git` or local `gh` as the normal mutation path.
+- Read and write repo state through GitHub-backed tools only.
+- If a remote branch, commit, or PR cannot be produced, stop and report blocked.
+
 ## Current Truths
 
 - Runtime is split into a stable loader and a hot-reloaded core.
@@ -29,6 +39,7 @@ This repo is a hot-reloadable Slay the Spire 2 mod focused on per-card attributi
 ## Start Here
 
 - Read [README.md](D:/repos/CardUtilityStats/README.md:1) for the product-level overview.
+- Read [docs/pull-only-workflow.md](docs/pull-only-workflow.md) for the repo's GitHub-native workflow policy.
 - Read [docs/architecture.md](D:/repos/CardUtilityStats/docs/architecture.md:1) for subsystem layout and data flow.
 - For tracking behavior, start in [Core/RunTracker.cs](D:/repos/CardUtilityStats/Core/RunTracker.cs:18).
 - For tooltip/UI behavior, start in:

@@ -6,6 +6,17 @@ Per-card attribution stats mod for [Slay the Spire 2](https://store.steampowered
 
 For codebase orientation, start with [AGENTS.md](D:/repos/CardUtilityStats/AGENTS.md:1) and [docs/architecture.md](D:/repos/CardUtilityStats/docs/architecture.md:1).
 
+## Development Workflow
+
+This repo now runs in **pull-only** mode for assistant-driven work, with GitHub as the source of truth.
+
+- Assistant sessions should read and write repository state through GitHub-backed tools only.
+- Local filesystem reads and writes are out of bounds for normal repo work.
+- Changes should materialize as remote artifacts: branch, commit, and pull request.
+- If a remote artifact cannot be produced, the work should stop as blocked rather than leaving hidden local state behind.
+
+The detailed policy lives in [docs/pull-only-workflow.md](docs/pull-only-workflow.md).
+
 ## Why
 
 Existing stats mods answer "how often did I *pick* this card" ([SlayTheStats](https://www.nexusmods.com/slaythespire2/mods/349)) or "how much value did this *relic* provide" ([Relic Stats](https://www.nexusmods.com/slaythespire2/mods/327)). Nothing tracks how much of what each card *attempted* actually mattered. A 6-damage Strike into a 4-HP enemy and a 6-damage Strike into a fresh elite look the same on a play counter, but they have very different value.
