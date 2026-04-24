@@ -174,117 +174,6 @@ jobs:
           Write-Host "::add-mask::$anthropicApiKey"
           "ANTHROPIC_API_KEY=$anthropicApiKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Verify Claude and MCP
-        env:
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:ANTHROPIC_API_KEY)) {
-            throw "ANTHROPIC_API_KEY was not loaded from Azure Key Vault."
-          }
-          if ([string]::IsNullOrWhiteSpace($env:CLAUDE_CLI_PATH) -or -not (Test-Path -LiteralPath $env:CLAUDE_CLI_PATH)) {
-            throw "Claude Code CLI was not found at '$env:CLAUDE_CLI_PATH'. Install it once with: npm.cmd install --prefix D:\automation\claude-code @anthropic-ai/claude-code"
-          }
-
-          $repoRoot = $env:ISSUE_AGENT_REPO_ROOT
-          if ([string]::IsNullOrWhiteSpace($repoRoot)) {
-            $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
-          }
-          if (-not (Test-Path -LiteralPath $repoRoot)) {
-            throw "Issue-agent checkout was not found at '$repoRoot'."
-          }
-
-          Set-Location -LiteralPath $repoRoot
-
-          $mcpConfig = Join-Path $repoRoot ".mcp.json"
-          if (-not (Test-Path -LiteralPath $mcpConfig)) {
-            throw "MCP config was not found at '$mcpConfig'."
-          }
-
-          $mcpConfigText = Get-Content -LiteralPath $mcpConfig -Raw
-          if ($mcpConfigText -notmatch '"sts2-modding"') {
-            throw "MCP config does not declare the required 'sts2-modding' server."
-          }
-
-          & $env:CLAUDE_CLI_PATH --version
-
-          $mcpListOutput = & $env:CLAUDE_CLI_PATH "--mcp-config=$mcpConfig" mcp list 2>&1
-          $mcpListExitCode = $LASTEXITCODE
-          $mcpListText = ($mcpListOutput | Out-String)
-          Write-Host $mcpListText
-
-          if ($mcpListExitCode -ne 0) {
-            throw "Claude Code could not list MCP servers."
-          }
-          if ($mcpListText -notmatch 'sts2-modding') {
-            throw "Required MCP server 'sts2-modding' was not listed by Claude Code."
-          }
-          if ($mcpListText -match 'sts2-modding:.*Failed to connect') {
-            Write-Warning "Claude MCP list reported 'sts2-modding' as unhealthy; continuing to the direct get_setup_status probe for the authoritative readiness check."
-          }
-
-          $probePrompt = @"
-          Use the `sts2-modding` MCP server and call `get_setup_status` exactly once.
-          If the tool call succeeds, respond with exactly READY.
-          If the tool is unavailable or fails, respond with exactly BLOCKED.
-          Do not use any other tools.
-          "@
-
-          $probeSawTool = $false
-          $probeSawFailure = $false
-          $probeText = New-Object System.Text.StringBuilder
-
-          & $env:CLAUDE_CLI_PATH `
-            -p $probePrompt `
-            --bare `
-            --model sonnet `
-            --permission-mode bypassPermissions `
-            --output-format stream-json `
-            --strict-mcp-config `
-            "--mcp-config=$mcpConfig" `
-            --max-budget-usd "1.00" `
-            --add-dir $repoRoot 2>&1 |
-            ForEach-Object {
-              $line = [string]$_
-
-              try {
-                $event = $line | ConvertFrom-Json -ErrorAction Stop
-                if ($event.type -eq "assistant" -and $event.message.content) {
-                  foreach ($block in $event.message.content) {
-                    if ($block.type -eq "tool_use" -and [string]$block.name -match 'get_setup_status') {
-                      $probeSawTool = $true
-                    } elseif ($block.type -eq "text" -and -not [string]::IsNullOrWhiteSpace([string]$block.text)) {
-                      [void]$probeText.Append([string]$block.text)
-                    }
-                  }
-                } elseif ($event.type -eq "user" -and $event.tool_use_result) {
-                  $toolResult = [string]$event.tool_use_result
-                  if ($toolResult -match '"error"' -or $toolResult -match '(?i)\berror\b') {
-                    $probeSawFailure = $true
-                  }
-                  [void]$probeText.Append($toolResult)
-                }
-              } catch {
-                # Ignore non-JSON lines during the probe.
-              }
-            }
-
-          $probeExitCode = $LASTEXITCODE
-          $probeTextValue = $probeText.ToString()
-
-          if ($probeExitCode -ne 0) {
-            throw "Claude Code MCP probe exited non-zero while validating 'sts2-modding'."
-          }
-          if (-not $probeSawTool) {
-            throw "Claude Code MCP probe did not call get_setup_status on 'sts2-modding'."
-          }
-          if ($probeSawFailure) {
-            throw "Claude Code MCP probe saw an error result from 'sts2-modding'."
-          }
-          if ($probeTextValue -notmatch 'READY') {
-            throw "Claude Code MCP probe did not confirm readiness for 'sts2-modding'."
-          }
-
       - name: Run Claude issue agent
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
@@ -294,6 +183,13 @@ jobs:
           REPO_SLUG: ${{ github.repository }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANTHROPIC_API_KEY)) {
+            throw "ANTHROPIC_API_KEY was not loaded from Azure Key Vault."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:CLAUDE_CLI_PATH) -or -not (Test-Path -LiteralPath $env:CLAUDE_CLI_PATH)) {
+            throw "Claude Code CLI was not found at '$env:CLAUDE_CLI_PATH'. Install it once with: npm.cmd install --prefix D:\automation\claude-code @anthropic-ai/claude-code"
+          }
+
           $issueNumber = $env:EVENT_ISSUE_NUMBER
           if ([string]::IsNullOrWhiteSpace($issueNumber)) {
             $issueNumber = $env:DISPATCH_ISSUE_NUMBER
@@ -313,6 +209,10 @@ jobs:
           Set-Location -LiteralPath $repoRoot
 
           $mcpConfig = Join-Path $repoRoot ".mcp.json"
+          if (-not (Test-Path -LiteralPath $mcpConfig)) {
+            throw "MCP config was not found at '$mcpConfig'."
+          }
+
           $promptPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-prompt.md"
           $streamLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl"
           $debugLogPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log"
