@@ -43,6 +43,7 @@ If you want a different location, set repository variable
 ## Register The Runner
 
 1. Install the GitHub Actions runner files somewhere stable such as
+   `D:\actions-runner-card-utility-stats`, `C:\actions-runner-card-utility-stats`,
    `D:\actions-runner`, `C:\actions-runner`, or `%USERPROFILE%\actions-runner`.
 2. Log into Azure locally if you want the helper script to read the PAT from Key
    Vault:
@@ -51,7 +52,8 @@ If you want a different location, set repository variable
 az login
 ```
 
-3. Run the local registration helper:
+3. Run the local registration helper from an elevated PowerShell session if you
+   want the runner installed or repaired as a Windows service:
 
 ```powershell
 pwsh -NoProfile -File .\ops\windows-worker\Register-LocalIssueAgentRunner.ps1 `
@@ -67,7 +69,8 @@ The script will:
 - register the machine as a repository-scoped runner, and
 - run it as a Windows service by default
 
-If the runner files are not under one of the default paths, pass `-RunnerRoot`.
+If the runner files are not under one of those default paths, pass
+`-RunnerRoot`.
 
 ## Workflow Expectations
 

@@ -19,6 +19,12 @@ function Write-Step {
     Write-Host "==> $Message"
 }
 
+function Test-IsAdministrator {
+    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 function Get-AzureCliPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -74,8 +80,11 @@ function Resolve-RunnerRoot {
     }
 
     $candidates = @(
+        "D:\actions-runner-card-utility-stats",
+        "C:\actions-runner-card-utility-stats",
         "D:\actions-runner",
         "C:\actions-runner",
+        (Join-Path $env:USERPROFILE "actions-runner-card-utility-stats"),
         (Join-Path $env:USERPROFILE "actions-runner")
     )
 
@@ -122,8 +131,8 @@ function Grant-NetworkServiceModifyAccess {
 
 function Get-GitHubPatValue {
     param(
-        [Parameter(Mandatory = $true)][string]$DirectPat,
-        [Parameter(Mandatory = $true)][string]$VaultName,
+        [string]$DirectPat = "",
+        [string]$VaultName = "",
         [Parameter(Mandatory = $true)][string]$SecretName
     )
 
@@ -208,29 +217,41 @@ if ($RunnerLabelsList.Count -eq 0) {
 
 $RunnerLabels = [string]::Join(",", $RunnerLabelsList)
 $RunnerName = (($RunnerNamePrefix.Trim("-"), $env:COMPUTERNAME) -join "-") -replace "[^A-Za-z0-9._-]", "-"
-$GitHubPat = Get-GitHubPatValue -DirectPat $GitHubPat -VaultName $KeyVaultName.Trim() -SecretName $GitHubPatSecretName
 $serviceNamePrefix = "actions.runner.$($RepositorySlug -replace '/', '-')."
 $configCmdPath = Join-Path $RunnerRoot "config.cmd"
 $runnerConfigPath = Join-Path $RunnerRoot ".runner"
+$isAdministrator = Test-IsAdministrator
+$existingService = Get-RunnerService -ServiceNamePrefix $serviceNamePrefix
 
 if (-not (Test-Path -LiteralPath $configCmdPath)) {
     throw "GitHub Actions runner config was not found at '$configCmdPath'. Install the runner files first."
 }
 
-if ($RunAsService) {
-    Grant-NetworkServiceModifyAccess -Path $RunnerRoot
-}
-
-$existingService = Get-RunnerService -ServiceNamePrefix $serviceNamePrefix
 if ((Test-Path -LiteralPath $runnerConfigPath) -and $null -ne $existingService) {
     if ($RunAsService) {
-        Write-Step "Runner is already configured. Ensuring service '$($existingService.Name)' is running."
-        Ensure-RunnerServiceRunning -ServiceName $existingService.Name
+        if ($existingService.Status -eq "Running") {
+            Write-Step "Runner is already configured and service '$($existingService.Name)' is already running."
+        } elseif (-not $isAdministrator) {
+            throw "Runner service '$($existingService.Name)' exists but is not running. Re-run this script from an elevated PowerShell session to manage the Windows service."
+        } else {
+            Write-Step "Runner is already configured. Ensuring service '$($existingService.Name)' is running."
+            Ensure-RunnerServiceRunning -ServiceName $existingService.Name
+        }
     } else {
         Write-Step "Runner is already configured."
     }
 
     exit 0
+}
+
+if ($RunAsService -and -not $isAdministrator) {
+    throw "Run this script from an elevated PowerShell session when configuring or repairing a Windows service-backed runner."
+}
+
+$GitHubPat = Get-GitHubPatValue -DirectPat $GitHubPat -VaultName $KeyVaultName.Trim() -SecretName $GitHubPatSecretName
+
+if ($RunAsService) {
+    Grant-NetworkServiceModifyAccess -Path $RunnerRoot
 }
 
 if ((-not (Test-Path -LiteralPath $runnerConfigPath)) -and $null -ne $existingService) {
