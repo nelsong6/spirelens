@@ -311,9 +311,9 @@ $lines.Add("| Validation artifact files | $validationArtifactCount |")
 $lines.Add('')
 $lines.Add('### Log Pointers')
 $lines.Add('')
-$lines.Add("- Event log: `$EventLogPath`")
-$lines.Add("- Summary log: `$summaryLogText`")
-$lines.Add("- Debug log: `$debugLogText`")
+$lines.Add('- Event log: `' + $EventLogPath + '`')
+$lines.Add('- Summary log: `' + $summaryLogText + '`')
+$lines.Add('- Debug log: `' + $debugLogText + '`')
 
 $markdown = ($lines -join [Environment]::NewLine) + [Environment]::NewLine
 
