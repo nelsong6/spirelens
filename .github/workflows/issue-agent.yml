@@ -391,6 +391,44 @@ jobs:
             ${{ runner.temp }}/sts2-screenshots/**/*.png
             ${{ runner.temp }}/sts2-artifacts/**/*
 
+      - name: Summarize issue-agent run
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          DISPATCH_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+          REPO_SLUG: ${{ github.repository }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $issueNumber = $env:EVENT_ISSUE_NUMBER
+          if ([string]::IsNullOrWhiteSpace($issueNumber)) {
+            $issueNumber = $env:DISPATCH_ISSUE_NUMBER
+          }
+
+          $repoRoot = $env:ISSUE_AGENT_REPO_ROOT
+          if ([string]::IsNullOrWhiteSpace($repoRoot)) {
+            $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
+          }
+
+          $scriptPath = Join-Path $repoRoot ".github\scripts\summarize-issue-agent.ps1"
+          if (-not (Test-Path -LiteralPath $scriptPath)) {
+            throw "Issue-agent summary script was not found at '$scriptPath'."
+          }
+
+          & $scriptPath `
+            -EventLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl") `
+            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-summary.log") `
+            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log") `
+            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
+            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
+            -ArtifactName "claude-issue-agent-$($env:GITHUB_RUN_ID)" `
+            -RepoSlug $env:REPO_SLUG `
+            -RunId $env:GITHUB_RUN_ID `
+            -IssueNumber $issueNumber `
+            -HeadSha $env:GITHUB_SHA `
+            -RefName $env:GITHUB_REF_NAME
+
       - name: Stop issue-agent runner build processes
         if: always()
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
