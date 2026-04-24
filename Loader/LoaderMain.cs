@@ -3,6 +3,8 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Threading;
+using BaseLib.Config;
+using CardUtilityStats.Config;
 using Godot;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -12,9 +14,10 @@ using Logger = MegaCrit.Sts2.Core.Logging.Logger;
 namespace CardUtilityStats.Loader;
 
 /// <summary>
-/// Stable bootstrap. This class never unloads — it's loaded by BaseLib once
-/// at game startup via the standard [ModInitializer] contract. Its sole job
-/// is to host the hot-reloadable Core and provide an F5 hotkey to reload.
+/// Stable bootstrap. This class never unloads — it's loaded once
+/// at game startup by the game's mod manager via the standard [ModInitializer]
+/// contract. It owns the BaseLib-backed config/runtime boundary and hosts
+/// the hot-reloadable Core with an F5 hotkey to reload.
 ///
 /// Model: BepInEx ScriptEngine pattern.
 ///
@@ -64,7 +67,7 @@ public partial class LoaderMain : Node
     private static string? _currentTempPath;
     private static Node? _inputNode;
 
-    /// <summary>BaseLib entry point — called once on game startup.</summary>
+    /// <summary>Mod entry point — called once on game startup.</summary>
     public static void Initialize()
     {
         D("Initialize entry");
@@ -86,6 +89,18 @@ public partial class LoaderMain : Node
             }
         }
         catch (Exception e) { D($"resolver wire failed: {e.Message}"); }
+
+        try
+        {
+            ModConfigRegistry.Register(ModId, new CardUtilityStatsConfig());
+            RuntimeOptionsBridge.Initialize();
+            D("config registry initialized");
+        }
+        catch (Exception e)
+        {
+            D($"config bootstrap threw: {e.GetType().Name}: {e.Message}");
+            Logger.Error($"Config bootstrap threw: {e}");
+        }
 
         try { D("about to LoadCore"); LoadCore(); D("LoadCore returned"); }
         catch (Exception e) { D($"LoadCore threw: {e.GetType().Name}: {e.Message}"); Logger.Error($"LoadCore threw: {e}"); }
@@ -153,7 +168,8 @@ public partial class LoaderMain : Node
         // (MegaCrit.Sts2.Core.Modding.ModManager.cs line 647-650)
         //
         // Godot's .NET integration uses a specific managed ALC, not Default.
-        // sts2.dll, GodotSharp, BaseLib, 0Harmony are all in that context.
+        // sts2.dll, GodotSharp, 0Harmony, BaseLib, and this stable Loader
+        // all live in that context.
         // Putting Core into Default (what we tried first) or a custom ALC
         // means Core's type references to Godot/sts2/Harmony resolve
         // cross-context, which crashes the native bridge (SIGSEGV).
