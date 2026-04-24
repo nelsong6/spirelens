@@ -39,9 +39,13 @@ Existing repo variables still used:
 
 Default Key Vault secret names expected by the runner-deploy workflow:
 
-- `card-utility-stats-github-app-id`
-- `card-utility-stats-github-app-installation-id`
-- `card-utility-stats-github-app-private-key`
+- `github-pat`
+
+Optional GitHub App secret names if you choose App auth instead of PAT:
+
+- `github-app-id`
+- `github-app-installation-id`
+- `github-app-private-key`
 
 Default Key Vault secret used by the Ansible bootstrap workflow:
 
@@ -53,7 +57,7 @@ Default Key Vault secret used by the Ansible bootstrap workflow:
 2. Point it at the existing AKS cluster that has network reachability into `vnet-card-utility-stats-dev`.
 3. Leave the defaults unless you already need different namespaces or scale-set naming:
    - controller namespace: `arc-systems`
-   - runner namespace: `arc-runners`
+   - runner namespace: `arc-runners-ansible-control`
    - runner scale set name: `ansible-control`
    - max runners: `1`
 4. Verify the workflow summary shows the controller pod and runner namespace pods as running.
@@ -63,6 +67,8 @@ The workflow installs or updates:
 - the ARC controller Helm chart
 - the ARC runner scale set Helm chart
 - the Kubernetes secret `arc-github-app` in the runner namespace
+
+Today this repo defaults to PAT-backed ARC auth because the currently installed GitHub App does not have enough permission to mint repository runner registration tokens for `nelsong6/card-utility-stats`.
 
 ## Run The Builder Bootstrap
 

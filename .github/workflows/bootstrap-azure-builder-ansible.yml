@@ -76,15 +76,16 @@ jobs:
           set -euo pipefail
 
           sudo apt-get update
-          sudo apt-get install -y ca-certificates curl git gnupg lsb-release python3 python3-pip
+          sudo apt-get install -y ca-certificates curl git gnupg lsb-release python3 python3-pip python3-venv
 
           if ! command -v az >/dev/null 2>&1; then
             curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
           fi
 
-          python3 -m pip install --user --upgrade pip
-          python3 -m pip install --user ansible pywinrm requests-ntlm requests-credssp
-          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          python3 -m venv "${RUNNER_TEMP}/ansible-venv"
+          "${RUNNER_TEMP}/ansible-venv/bin/pip" install --upgrade pip
+          "${RUNNER_TEMP}/ansible-venv/bin/pip" install ansible pywinrm requests-ntlm requests-credssp
+          echo "${RUNNER_TEMP}/ansible-venv/bin" >> "${GITHUB_PATH}"
 
       - name: Azure login
         uses: azure/login@v3

@@ -35,7 +35,7 @@ on:
       runner_namespace:
         description: Namespace for ARC runner scale set resources
         required: true
-        default: arc-runners
+        default: arc-runners-ansible-control
         type: string
       controller_release_name:
         description: Helm release name for the ARC controller
@@ -57,6 +57,11 @@ on:
         required: false
         default: ""
         type: string
+      github_pat_secret_name:
+        description: Optional Key Vault secret that stores a GitHub PAT for ARC authentication. If set, this is used instead of GitHub App credentials.
+        required: false
+        default: github-pat
+        type: string
       min_runners:
         description: Minimum idle ARC runners to keep available
         required: true
@@ -68,19 +73,19 @@ on:
         default: "1"
         type: string
       github_app_id_secret_name:
-        description: Key Vault secret that stores the GitHub App id
+        description: Key Vault secret that stores the GitHub App id when PAT auth is not used
         required: true
-        default: card-utility-stats-github-app-id
+        default: github-app-id
         type: string
       github_app_installation_id_secret_name:
-        description: Key Vault secret that stores the GitHub App installation id
+        description: Key Vault secret that stores the GitHub App installation id when PAT auth is not used
         required: true
-        default: card-utility-stats-github-app-installation-id
+        default: github-app-installation-id
         type: string
       github_app_private_key_secret_name:
-        description: Key Vault secret that stores the GitHub App private key PEM
+        description: Key Vault secret that stores the GitHub App private key PEM when PAT auth is not used
         required: true
-        default: card-utility-stats-github-app-private-key
+        default: github-app-private-key
         type: string
       arc_chart_version:
         description: Pinned ARC chart version
@@ -141,9 +146,10 @@ jobs:
           use-kubelogin: ${{ inputs.aks_use_admin_credentials && 'false' || 'true' }}
           public-fqdn: ${{ inputs.aks_use_public_fqdn }}
 
-      - name: Load GitHub App credentials from Key Vault
+      - name: Load GitHub credentials from Key Vault
         env:
           KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME }}
+          PAT_SECRET_NAME: ${{ inputs.github_pat_secret_name }}
           APP_ID_SECRET_NAME: ${{ inputs.github_app_id_secret_name }}
           APP_INSTALLATION_SECRET_NAME: ${{ inputs.github_app_installation_id_secret_name }}
           APP_PRIVATE_KEY_SECRET_NAME: ${{ inputs.github_app_private_key_secret_name }}
@@ -154,6 +160,26 @@ jobs:
           if [[ -z "${KEY_VAULT_NAME}" ]]; then
             echo "Missing repository variable KEY_VAULT_NAME." >&2
             exit 1
+          fi
+
+          if [[ -n "${PAT_SECRET_NAME}" ]]; then
+            github_pat="$(az keyvault secret show \
+              --vault-name "${KEY_VAULT_NAME}" \
+              --name "${PAT_SECRET_NAME}" \
+              --query value \
+              --output tsv)"
+
+            if [[ -z "${github_pat}" ]]; then
+              echo "GitHub PAT secret '${PAT_SECRET_NAME}' was empty." >&2
+              exit 1
+            fi
+
+            echo "::add-mask::${github_pat}"
+            {
+              echo "GITHUB_AUTH_MODE=pat"
+              echo "GITHUB_PAT=${github_pat}"
+            } >> "${GITHUB_ENV}"
+            exit 0
           fi
 
           github_app_id="$(az keyvault secret show \
@@ -181,6 +207,7 @@ jobs:
           echo "::add-mask::${github_app_installation_id}"
 
           {
+            echo "GITHUB_AUTH_MODE=app"
             echo "GITHUB_APP_ID=${github_app_id}"
             echo "GITHUB_APP_INSTALLATION_ID=${github_app_installation_id}"
           } >> "${GITHUB_ENV}"
@@ -210,10 +237,19 @@ jobs:
             --version "${{ inputs.arc_chart_version }}" \
             oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
 
-      - name: Create or update ARC GitHub App secret
+      - name: Create or update ARC GitHub auth secret
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${GITHUB_AUTH_MODE}" == "pat" ]]; then
+            kubectl create secret generic "${GITHUB_CONFIG_SECRET_NAME}" \
+              --namespace "${{ inputs.runner_namespace }}" \
+              --from-literal=github_token="${GITHUB_PAT}" \
+              --dry-run=client \
+              -o yaml | kubectl apply -f -
+            exit 0
+          fi
 
           kubectl create secret generic "${GITHUB_CONFIG_SECRET_NAME}" \
             --namespace "${{ inputs.runner_namespace }}" \
@@ -289,6 +325,7 @@ jobs:
             echo "- Runner namespace: \`${{ inputs.runner_namespace }}\`"
             echo "- Runner scale set name: \`${{ inputs.runner_scale_set_name }}\`"
             echo "- Runner helm release: \`${{ inputs.runner_release_name }}\`"
+            echo "- GitHub auth mode: \`${GITHUB_AUTH_MODE}\`"
             if [[ -n "${{ inputs.runner_group }}" ]]; then
               echo "- Runner group: \`${{ inputs.runner_group }}\`"
             fi
