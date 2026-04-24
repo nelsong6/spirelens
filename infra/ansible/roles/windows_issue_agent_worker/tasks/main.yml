@@ -145,7 +145,28 @@
   changed_when: false
 
 - name: Verify Azure CLI is available
-  ansible.windows.win_command: az version
+  ansible.windows.win_shell: |
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machinePath;$userPath;$env:Path"
+
+    $azCommand = Get-Command az -ErrorAction SilentlyContinue
+    if ($azCommand) {
+      & $azCommand.Source version
+      exit $LASTEXITCODE
+    }
+
+    $fallbacks = @(
+      "$env:ProgramFiles(x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
+      "$env:ProgramFiles\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
+      "C:\ProgramData\chocolatey\bin\az.cmd"
+    ) | Where-Object { Test-Path -LiteralPath $_ }
+
+    if ($fallbacks.Count -eq 0) {
+      throw "Azure CLI was not found in PATH or known install locations."
+    }
+
+    & $fallbacks[0] version
   changed_when: false
 
 - name: Verify dotnet is available
