@@ -16,6 +16,7 @@ windows_worker_expect_game_present: false
 windows_worker_install_github_runner_files: true
 windows_worker_install_claude_code: true
 windows_worker_install_sts2_mcp: true
+windows_worker_enable_rdp: false
 
 steam_installer_url: 'https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe'
 steam_installer_path: 'D:\automation\installers\SteamSetup.exe'

@@ -7,3 +7,4 @@
     - role: windows_issue_agent_worker
       vars:
         windows_worker_expect_game_present: false
+        windows_worker_enable_rdp: true
