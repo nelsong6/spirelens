@@ -33,6 +33,90 @@ jobs:
       - issue-agent
 
     steps:
+      - name: Prepare issue-agent runner workspace
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE
+          if ([string]::IsNullOrWhiteSpace($workspace)) {
+            throw "GITHUB_WORKSPACE is not set."
+          }
+
+          function Stop-RunnerProcesses {
+            param([Parameter(Mandatory = $true)][string]$WorkspacePath)
+
+            $processIds = New-Object 'System.Collections.Generic.HashSet[int]'
+
+            Get-Process -Name SlayTheSpire2 -ErrorAction SilentlyContinue | ForEach-Object {
+              [void]$processIds.Add($_.Id)
+            }
+
+            $hints = @(
+              $WorkspacePath,
+              $env:RUNNER_WORKSPACE,
+              "CardUtilityStats.Core.dll"
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+            Get-CimInstance Win32_Process | Where-Object {
+              $_.Name -in @('dotnet.exe', 'testhost.exe', 'vstest.console.exe')
+            } | ForEach-Object {
+              $commandLine = [string]$_.CommandLine
+              foreach ($hint in $hints) {
+                if ($commandLine -like "*$hint*") {
+                  [void]$processIds.Add([int]$_.ProcessId)
+                  break
+                }
+              }
+            }
+
+            foreach ($processId in $processIds) {
+              try {
+                $process = Get-Process -Id $processId -ErrorAction Stop
+                Write-Host "Stopping stale process $($process.ProcessName) ($processId)."
+                Stop-Process -Id $processId -Force -ErrorAction Stop
+              } catch {
+                Write-Warning "Unable to stop process ${processId}: $($_.Exception.Message)"
+              }
+            }
+
+            if ($processIds.Count -gt 0) {
+              Start-Sleep -Seconds 3
+            }
+          }
+
+          Stop-RunnerProcesses -WorkspacePath $workspace
+
+          if (-not (Test-Path -LiteralPath $workspace)) {
+            exit 0
+          }
+
+          $gitDir = Join-Path $workspace ".git"
+          if (-not (Test-Path -LiteralPath $gitDir)) {
+            Write-Host "Workspace is not a git repository. Removing orphaned contents from '$workspace'."
+            Get-ChildItem -LiteralPath $workspace -Force -ErrorAction SilentlyContinue |
+              Remove-Item -Recurse -Force -ErrorAction Stop
+            exit 0
+          }
+
+          $stalePaths = @(
+            (Join-Path $workspace "Core\\bin"),
+            (Join-Path $workspace "Core\\obj"),
+            (Join-Path $workspace "Tests\\CardUtilityStats.Core.Tests\\bin"),
+            (Join-Path $workspace "Tests\\CardUtilityStats.Core.Tests\\obj")
+          )
+
+          foreach ($path in $stalePaths) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              continue
+            }
+
+            try {
+              Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+              Write-Host "Removed stale build output '$path'."
+            } catch {
+              Write-Warning "Unable to remove stale build output '$path': $($_.Exception.Message)"
+            }
+          }
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -382,3 +466,25 @@ jobs:
             ${{ runner.temp }}/claude-issue-agent-*.log
             ${{ runner.temp }}/sts2-screenshots/**/*.png
             ${{ runner.temp }}/sts2-artifacts/**/*
+
+      - name: Stop issue-agent live processes
+        if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE
+          if ([string]::IsNullOrWhiteSpace($workspace)) {
+            $workspace = "C:\actions-runner-card-utility-stats\_work\card-utility-stats\card-utility-stats"
+          }
+
+          Get-Process -Name SlayTheSpire2 -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Stopping SlayTheSpire2 process $($_.Id) after issue-agent run."
+            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+          }
+
+          Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -in @('dotnet.exe', 'testhost.exe', 'vstest.console.exe') -and
+            [string]$_.CommandLine -like "*$workspace*"
+          } | ForEach-Object {
+            Write-Host "Stopping stale test/build process $($_.Name) ($($_.ProcessId)) after issue-agent run."
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+          }
