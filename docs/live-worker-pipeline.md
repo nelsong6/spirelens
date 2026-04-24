@@ -88,4 +88,3 @@ Not around:
 
 - [docs/issue-agent.md](./issue-agent.md)
 - [docs/laptop-issue-agent-runner.md](./laptop-issue-agent-runner.md)
-- [docs/vmss-worker-bootstrap.md](./vmss-worker-bootstrap.md)
