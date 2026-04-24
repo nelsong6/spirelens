@@ -2,7 +2,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Primary hook for per-card draw attribution. Deliberately NOT on

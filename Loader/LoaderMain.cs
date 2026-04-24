@@ -4,14 +4,14 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Threading;
 using BaseLib.Config;
-using CardUtilityStats.Config;
+using SpireLens.Config;
 using Godot;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 // Godot also has a type called Logger — explicit alias disambiguates.
 using Logger = MegaCrit.Sts2.Core.Logging.Logger;
 
-namespace CardUtilityStats.Loader;
+namespace SpireLens.Loader;
 
 /// <summary>
 /// Stable bootstrap. This class never unloads — it's loaded once
@@ -22,7 +22,7 @@ namespace CardUtilityStats.Loader;
 /// Model: BepInEx ScriptEngine pattern.
 ///
 /// On each load (including the first), we:
-///   1. Copy Core.dll from mods/CardUtilityStats/ to a temp path with a
+///   1. Copy Core.dll from mods/SpireLens/ to a temp path with a
 ///      unique per-load filename. This keeps the file in mods/ unlocked so
 ///      'dotnet build' can overwrite it while the game runs.
 ///   2. Load the temp copy via LoadFromAssemblyPath into a fresh
@@ -50,12 +50,12 @@ namespace CardUtilityStats.Loader;
 [ModInitializer(nameof(Initialize))]
 public partial class LoaderMain : Node
 {
-    public const string ModId = "CardUtilityStats";
+    public const string ModId = "SpireLens";
 
     public static Logger Logger { get; } = new($"{ModId}.Loader", LogType.Generic);
 
     // File-based diag log — survives hard crashes since File.AppendAllText flushes.
-    private static readonly string _diagLog = Path.Combine(Path.GetTempPath(), "cardutilitystats-loader-diag.log");
+    private static readonly string _diagLog = Path.Combine(Path.GetTempPath(), "spirelens-loader-diag.log");
     private static void D(string msg)
     {
         try { File.AppendAllText(_diagLog, $"{DateTime.UtcNow:o} {msg}\n"); } catch { }
@@ -92,7 +92,7 @@ public partial class LoaderMain : Node
 
         try
         {
-            ModConfigRegistry.Register(ModId, new CardUtilityStatsConfig());
+            ModConfigRegistry.Register(ModId, new SpireLensConfig());
             RuntimeOptionsBridge.Initialize();
             D("config registry initialized");
         }
@@ -137,7 +137,7 @@ public partial class LoaderMain : Node
             return;
         }
 
-        var corePath = Path.Combine(loaderDir, "CardUtilityStats.Core.dll");
+        var corePath = Path.Combine(loaderDir, "SpireLens.Core.dll");
         if (!File.Exists(corePath))
         {
             Logger.Error($"Core DLL not found at {corePath}");
@@ -150,7 +150,7 @@ public partial class LoaderMain : Node
         int n = Interlocked.Increment(ref _reloadCounter);
         var tempPath = Path.Combine(
             Path.GetTempPath(),
-            $"CardUtilityStats.Core.{n:D3}.dll");
+            $"SpireLens.Core.{n:D3}.dll");
         try
         {
             File.Copy(corePath, tempPath, overwrite: true);
@@ -184,7 +184,7 @@ public partial class LoaderMain : Node
 
         // LoadFromAssemblyPath dedupes by assembly IDENTITY (name+version), so
         // a second call with the same manifest returns the cached assembly —
-        // even if the file bytes differ. Our builds keep "CardUtilityStats.Core,
+        // even if the file bytes differ. Our builds keep "SpireLens.Core,
         // Version=1.0.0.0" each time, so that dedupe means F5 would re-run the
         // SAME code instead of our freshly-rebuilt code.
         //
@@ -194,12 +194,12 @@ public partial class LoaderMain : Node
         // identity checks can be confused, but that's exactly what happens
         // with hot reload by design.
         // Rewrite the manifest's short name to something unique per load —
-        // "CardUtilityStats.Core.{N}" — using Mono.Cecil. Without this,
+        // "SpireLens.Core.{N}" — using Mono.Cecil. Without this,
         // LoadFromStream and LoadFromAssemblyPath both throw
         //   "Assembly with same name is already loaded"
         // because .NET dedupes assemblies within an ALC by short name
         // (not by full identity). This is the BepInEx ScriptEngine trick.
-        // The renamed assembly still contains our CardUtilityStats.Core.CoreMain
+        // The renamed assembly still contains our SpireLens.Core.CoreMain
         // type at the same namespace, so the Loader's reflection lookup
         // continues to work.
         Assembly loadedAssembly;
@@ -210,7 +210,7 @@ public partial class LoaderMain : Node
             using (var inStream = new MemoryStream(bytes))
             {
                 var asm = Mono.Cecil.AssemblyDefinition.ReadAssembly(inStream);
-                asm.Name.Name = $"CardUtilityStats.Core.{n}";
+                asm.Name.Name = $"SpireLens.Core.{n}";
                 // Module name gets persisted too; keep in sync so Cecil doesn't
                 // complain on write.
                 asm.MainModule.Name = asm.Name.Name + ".dll";
@@ -218,7 +218,7 @@ public partial class LoaderMain : Node
                 asm.Write(outStream);
                 renamedBytes = outStream.ToArray();
             }
-            D($"LoadCore: renamed manifest to CardUtilityStats.Core.{n}");
+            D($"LoadCore: renamed manifest to SpireLens.Core.{n}");
             using (var ms = new MemoryStream(renamedBytes))
             {
                 loadedAssembly = godotContext.LoadFromStream(ms);
@@ -239,10 +239,10 @@ public partial class LoaderMain : Node
         _currentAssembly = loadedAssembly;
         _currentTempPath = tempPath;
 
-        var coreType = _currentAssembly.GetType("CardUtilityStats.Core.CoreMain");
+        var coreType = _currentAssembly.GetType("SpireLens.Core.CoreMain");
         if (coreType == null)
         {
-            Logger.Error("CardUtilityStats.Core.CoreMain type not found in Core assembly");
+            Logger.Error("SpireLens.Core.CoreMain type not found in Core assembly");
             return;
         }
 
@@ -287,7 +287,7 @@ public partial class LoaderMain : Node
 
         try
         {
-            var coreType = _currentAssembly.GetType("CardUtilityStats.Core.CoreMain");
+            var coreType = _currentAssembly.GetType("SpireLens.Core.CoreMain");
             var shutdownMethod = coreType?.GetMethod("Shutdown", BindingFlags.Public | BindingFlags.Static);
             shutdownMethod?.Invoke(null, null);
         }
@@ -351,7 +351,7 @@ public partial class LoaderMain : Node
             return;
         }
 
-        _inputNode = new HotReloadInputNode { Name = "CardUtilityStatsHotReload" };
+        _inputNode = new HotReloadInputNode { Name = "SpireLensHotReload" };
         tree.Root.CallDeferred(Node.MethodName.AddChild, _inputNode);
         Logger.Info("Hot-reload input listener attached (F5 to reload)");
     }

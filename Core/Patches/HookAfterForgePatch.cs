@@ -3,7 +3,7 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Track forge granted by the originating card, preserve that source across

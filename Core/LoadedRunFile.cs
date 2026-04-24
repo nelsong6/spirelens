@@ -1,4 +1,4 @@
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Result of loading a stored run file from disk.

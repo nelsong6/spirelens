@@ -3,7 +3,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Hooks;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Attribute block that vanished unused when the player's block pool is

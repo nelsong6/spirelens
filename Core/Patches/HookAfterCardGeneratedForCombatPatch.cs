@@ -2,7 +2,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Marks the synthetic deck-view Shiv overlay as available once the run has

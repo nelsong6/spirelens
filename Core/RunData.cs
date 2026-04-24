@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Serialized shape of one run's stats. Written to disk as JSON.
 /// Schema changes MUST bump <see cref="SchemaVersion"/> and add migration.
-/// See https://github.com/nelsong6/card-utility-stats/issues/4
+/// See https://github.com/nelsong6/spirelens/issues/4
 /// </summary>
 public class RunData
 {

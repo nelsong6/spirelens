@@ -4,7 +4,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Observe the post-mutation pile-change hook so redirected draw attempts can

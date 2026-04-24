@@ -1,6 +1,6 @@
 using Godot;
 
-namespace CardUtilityStats.Loader;
+namespace SpireLens.Loader;
 
 /// <summary>
 /// Godot Node that lives in the scene tree and watches for F5 keypress.

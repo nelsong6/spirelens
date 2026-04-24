@@ -2,7 +2,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat.History;
 using MegaCrit.Sts2.Core.Models;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Diagnostic-only shadow hook on <c>CombatHistory.CardDrawn</c>. Paired

@@ -1,4 +1,4 @@
-- name: Bootstrap Azure VMSS worker instance for CardUtilityStats
+- name: Bootstrap Azure VMSS worker instance for SpireLens
   hosts: vmss_workers
   gather_facts: false
   vars_files:

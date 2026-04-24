@@ -7,7 +7,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Shows our per-card stats tooltip when the user hovers a card in the deck
@@ -104,7 +104,7 @@ public static class CardHoverShowPatch
                 tree,
                 __instance,
                 displayName,
-                "CardUtilityStats",
+                "SpireLens",
                 body);
         }
         catch (System.Exception e)

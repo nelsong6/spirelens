@@ -43,7 +43,7 @@ If you want a different location, set repository variable
 ## Register The Runner
 
 1. Install the GitHub Actions runner files somewhere stable such as
-   `D:\actions-runner-card-utility-stats`, `C:\actions-runner-card-utility-stats`,
+   `D:\actions-runner-spirelens`, `C:\actions-runner-spirelens`,
    `D:\actions-runner`, `C:\actions-runner`, or `%USERPROFILE%\actions-runner`.
 2. Log into Azure locally if you want the helper script to read the PAT from Key
    Vault:
@@ -57,7 +57,7 @@ az login
 
 ```powershell
 pwsh -NoProfile -File .\ops\windows-worker\Register-LocalIssueAgentRunner.ps1 `
-  -RepositorySlug nelsong6/card-utility-stats `
+  -RepositorySlug nelsong6/spirelens `
   -KeyVaultName romaine-kv `
   -RunnerLabels issue-agent
 ```
@@ -84,7 +84,7 @@ The issue-agent workflow expects:
 The workflow itself still handles:
 
 - Azure OIDC login
-- reading Key Vault secret `card-utility-stats`
+- reading Key Vault secret `spirelens`
 - mapping that secret to `ANTHROPIC_API_KEY`
 - uploading logs, screenshots, and validation artifacts
 

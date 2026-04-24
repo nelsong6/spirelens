@@ -49,12 +49,12 @@ Optional GitHub App secret names if you choose App auth instead of PAT:
 
 Default Key Vault secret used by the Ansible bootstrap workflow:
 
-- `card-utility-stats-vm-admin-password`
+- `spirelens-vm-admin-password`
 
 ## Bring Up The Control Runner
 
 1. Run `Deploy AKS Ansible Control Runner`.
-2. Point it at the existing AKS cluster that has network reachability into `vnet-card-utility-stats-dev`.
+2. Point it at the existing AKS cluster that has network reachability into `vnet-spirelens-dev`.
 3. Leave the defaults unless you already need different namespaces or scale-set naming:
    - controller namespace: `arc-systems`
    - runner namespace: `arc-runners-ansible-control`
@@ -68,7 +68,7 @@ The workflow installs or updates:
 - the ARC runner scale set Helm chart
 - the Kubernetes secret `arc-github-app` in the runner namespace
 
-Today this repo defaults to PAT-backed ARC auth because the currently installed GitHub App does not have enough permission to mint repository runner registration tokens for `nelsong6/card-utility-stats`.
+Today this repo defaults to PAT-backed ARC auth because the currently installed GitHub App does not have enough permission to mint repository runner registration tokens for `nelsong6/spirelens`.
 
 ## Run The Builder Bootstrap
 
@@ -79,7 +79,7 @@ Recommended first invocation:
 - `runner_scale_set_name = ansible-control`
 - `builder_host = 10.42.1.4`
 - `builder_user = runneradmin`
-- `builder_password_secret_name = card-utility-stats-vm-admin-password`
+- `builder_password_secret_name = spirelens-vm-admin-password`
 - `check_mode = false`
 
 What this workflow does:

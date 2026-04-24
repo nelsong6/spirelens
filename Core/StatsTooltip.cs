@@ -3,7 +3,7 @@ using Godot;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.HoverTips;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Our hover tooltip panel, positioned below the game's built-in card-text
@@ -30,7 +30,7 @@ namespace CardUtilityStats.Core;
 ///     VBoxContainer (separation 2)
 ///       HeaderRow (Control, 28px tall)
 ///         TitleLabel (top-left)      — e.g. "Card Utility"
-///         BrandLabel (top-right)      — e.g. "CardUtilityStats"
+///         BrandLabel (top-right)      — e.g. "SpireLens"
 ///       StatsLabel (RichTextLabel, BBCode) — the data block
 ///
 /// Positioning: per-frame via SceneTree.ProcessFrame, stacking below
@@ -129,7 +129,7 @@ public static class StatsTooltip
         {
             _shadow = new NinePatchRect
             {
-                Name = "CardUtilityStatsTooltipShadow",
+                Name = "SpireLensTooltipShadow",
                 Texture = _panelTexture,
                 PatchMarginLeft = 55,
                 PatchMarginRight = 91,
@@ -146,7 +146,7 @@ public static class StatsTooltip
         // --- Panel container ---------------------------------------------
         _panel = new PanelContainer
         {
-            Name = "CardUtilityStatsTooltip",
+            Name = "SpireLensTooltip",
             CustomMinimumSize = new Vector2(PanelWidth, 0),
             ZIndex = 100,
             SelfModulate = PanelTint,
@@ -190,7 +190,7 @@ public static class StatsTooltip
         _brandLabel = new Label
         {
             Name = "BrandLabel",
-            Text = "CardUtilityStats",
+            Text = "SpireLens",
             MouseFilter = Control.MouseFilterEnum.Ignore,
             AnchorLeft = 1f, AnchorRight = 1f, AnchorTop = 0f, AnchorBottom = 0f,
             // GrowDirection.Begin = grow leftward from the right anchor.

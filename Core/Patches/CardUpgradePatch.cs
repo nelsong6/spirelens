@@ -2,7 +2,7 @@ using System;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Models;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Capture when a specific card instance gets upgraded mid-run. Every

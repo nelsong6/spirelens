@@ -26,16 +26,16 @@ When local filesystem access is helpful for drafting, validation, or temporary a
 ## Current Truths
 
 - Runtime is split into a stable loader and a hot-reloaded core.
-  - [Loader/LoaderMain.cs](D:/repos/CardUtilityStats/Loader/LoaderMain.cs:14) owns the long-lived bootstrap and `F5` reload flow.
-  - [Core/CoreMain.cs](D:/repos/CardUtilityStats/Core/CoreMain.cs:8) owns Harmony patch install/uninstall and re-entry on each reload.
+  - [Loader/LoaderMain.cs](D:/repos/SpireLens/Loader/LoaderMain.cs:14) owns the long-lived bootstrap and `F5` reload flow.
+  - [Core/CoreMain.cs](D:/repos/SpireLens/Core/CoreMain.cs:8) owns Harmony patch install/uninstall and re-entry on each reload.
 - Persistence is combat-boundary based.
-  - [Core/RunTracker.cs](D:/repos/CardUtilityStats/Core/RunTracker.cs:18) buffers live combat data in `_pendingCombat`.
+  - [Core/RunTracker.cs](D:/repos/SpireLens/Core/RunTracker.cs:18) buffers live combat data in `_pendingCombat`.
   - Nothing is promoted to the permanent run file until combat ends.
   - Reload between combats / between floors is supported and expected.
   - Mid-combat restore is intentionally out of scope.
 - The data model is additive through schema `v14`.
-  - [Core/RunData.cs](D:/repos/CardUtilityStats/Core/RunData.cs:13) is the source of truth for the current schema.
-  - [Tests/CardUtilityStats.Core.Tests/SchemaLoadingTests.cs](D:/repos/CardUtilityStats/Tests/CardUtilityStats.Core.Tests/SchemaLoadingTests.cs:1) and the checked-in fixtures pin what remains resumable.
+  - [Core/RunData.cs](D:/repos/SpireLens/Core/RunData.cs:13) is the source of truth for the current schema.
+  - [Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1) and the checked-in fixtures pin what remains resumable.
 - Card identity is per physical card when the card has stable deck identity.
   - Instance numbers never get reused within a run.
   - Combat-generated cards that do not meaningfully exist in the deck may use pooled summaries instead of fake deck-instance identities.
@@ -49,20 +49,20 @@ When local filesystem access is helpful for drafting, validation, or temporary a
 
 ## Start Here
 
-- Read [README.md](D:/repos/CardUtilityStats/README.md:1) for the product-level overview.
+- Read [README.md](D:/repos/SpireLens/README.md:1) for the product-level overview.
 - Read [docs/pull-only-workflow.md](docs/pull-only-workflow.md) for the repo's GitHub-native workflow policy.
-- Read [docs/architecture.md](D:/repos/CardUtilityStats/docs/architecture.md:1) for subsystem layout and data flow.
-- For tracking behavior, start in [Core/RunTracker.cs](D:/repos/CardUtilityStats/Core/RunTracker.cs:18).
+- Read [docs/architecture.md](D:/repos/SpireLens/docs/architecture.md:1) for subsystem layout and data flow.
+- For tracking behavior, start in [Core/RunTracker.cs](D:/repos/SpireLens/Core/RunTracker.cs:18).
 - For tooltip/UI behavior, start in:
-  - [Core/Patches/ViewStatsInjectorPatch.cs](D:/repos/CardUtilityStats/Core/Patches/ViewStatsInjectorPatch.cs:11)
-  - [Core/Patches/CardHoverTooltipPatch.cs](D:/repos/CardUtilityStats/Core/Patches/CardHoverTooltipPatch.cs:11)
+  - [Core/Patches/ViewStatsInjectorPatch.cs](D:/repos/SpireLens/Core/Patches/ViewStatsInjectorPatch.cs:11)
+  - [Core/Patches/CardHoverTooltipPatch.cs](D:/repos/SpireLens/Core/Patches/CardHoverTooltipPatch.cs:11)
 
 ## When Changing Behavior
 
 - If you add persisted fields:
   - bump `RunData.CurrentSchemaVersion`
-  - add or update fixture files under [Fixtures/RunSchema](D:/repos/CardUtilityStats/Fixtures/RunSchema/README.md:1)
-  - update [SchemaLoadingTests.cs](D:/repos/CardUtilityStats/Tests/CardUtilityStats.Core.Tests/SchemaLoadingTests.cs:1)
+  - add or update fixture files under [Fixtures/RunSchema](D:/repos/SpireLens/Fixtures/RunSchema/README.md:1)
+  - update [SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1)
 - If you change tooltip presentation:
   - preserve the compact-vs-full distinction
   - keep labels self-describing
@@ -74,8 +74,8 @@ When local filesystem access is helpful for drafting, validation, or temporary a
 ## Useful Commands
 
 - Build/tests:
-  - `dotnet test D:\repos\CardUtilityStats\Tests\CardUtilityStats.Core.Tests\CardUtilityStats.Core.Tests.csproj -c Debug`
+  - `dotnet test D:\repos\SpireLens\Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj -c Debug`
 - Focused schema tests:
-  - `dotnet test D:\repos\CardUtilityStats\Tests\CardUtilityStats.Core.Tests\CardUtilityStats.Core.Tests.csproj -c Debug --filter SchemaLoadingTests`
+  - `dotnet test D:\repos\SpireLens\Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj -c Debug --filter SchemaLoadingTests`
 - Focused tooltip tests:
-  - `dotnet test D:\repos\CardUtilityStats\Tests\CardUtilityStats.Core.Tests\CardUtilityStats.Core.Tests.csproj -c Debug --filter PoisonTooltipTests`
+  - `dotnet test D:\repos\SpireLens\Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj -c Debug --filter PoisonTooltipTests`

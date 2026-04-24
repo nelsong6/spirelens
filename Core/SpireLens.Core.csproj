@@ -15,8 +15,8 @@
         <ImplicitUsings>true</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <AssemblyName>CardUtilityStats.Core</AssemblyName>
-        <RootNamespace>CardUtilityStats.Core</RootNamespace>
+        <AssemblyName>SpireLens.Core</AssemblyName>
+        <RootNamespace>SpireLens.Core</RootNamespace>
         <NoWarn>$(NoWarn);MSB3270</NoWarn>
         <!-- Build-time unique version so the AssemblyLoadContext treats each
              rebuild as a distinct identity. Without this, LoadFromStream /
@@ -75,6 +75,6 @@
          The Loader reads it from there and copies to a temp path for loading. -->
     <Target Name="CopyCoreToModsFolderOnBuild" AfterTargets="PostBuildEvent" Condition="'$(SkipModsDeploy)' != 'true'">
         <Message Text="Copying Core .dll to mods folder." Importance="high" />
-        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)CardUtilityStats/" />
+        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)SpireLens/" />
     </Target>
 </Project>

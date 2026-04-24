@@ -43,7 +43,7 @@ Each Windows issue-agent host should provide:
 - an STS2 Modding MCP checkout wherever the local `.mcp.json` points to it
 - project `.mcp.json` configured to point at `sts2-modding`
 
-The workflow loads Azure Key Vault secret `card-utility-stats` and exposes it to Claude Code as:
+The workflow loads Azure Key Vault secret `spirelens` and exposes it to Claude Code as:
 
 - `ANTHROPIC_API_KEY`
 
@@ -114,6 +114,6 @@ The issue-agent path should not use:
 - `LiveScenarios/`
 - `ops/live-worker/`
 - filesystem request queues such as `request.json`, `ready.json`, `accepted.json`, or `result.json`
-- `D:\automation\card-utility-stats-live-bridge`
+- `D:\automation\spirelens-live-bridge`
 
 If the current MCP surface is insufficient for an issue, Claude should report the blocker on the issue instead of reviving side infrastructure.

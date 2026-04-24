@@ -11,7 +11,7 @@ on:
       state_key:
         description: Backend state key inside the Azure Blob container
         required: true
-        default: card-utility-stats/azure-vmss-romaine-life.tfstate
+        default: spirelens/azure-vmss-romaine-life.tfstate
         type: string
       apply:
         description: Apply the saved plan after planning
@@ -20,7 +20,7 @@ on:
         type: boolean
 
 concurrency:
-  group: opentofu-${{ github.event.inputs.state_key || 'card-utility-stats/azure-vmss-romaine-life.tfstate' }}
+  group: opentofu-${{ github.event.inputs.state_key || 'spirelens/azure-vmss-romaine-life.tfstate' }}
   cancel-in-progress: false
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
       TF_VAR_key_vault_subscription_id: ${{ vars.KEY_VAULT_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
       TFSTATE_SUBSCRIPTION_ID: ${{ vars.TFSTATE_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
       DEFAULT_TFVARS_FILE: infra/opentofu/azure-vmss/example.tfvars
-      DEFAULT_STATE_KEY: card-utility-stats/azure-vmss-romaine-life.tfstate
+      DEFAULT_STATE_KEY: spirelens/azure-vmss-romaine-life.tfstate
 
     steps:
       - name: Checkout repository
@@ -73,7 +73,7 @@ jobs:
             -backend-config="subscription_id=${TFSTATE_SUBSCRIPTION_ID}" \
             -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=${{ github.event.inputs.state_key || 'card-utility-stats/azure-vmss-romaine-life.tfstate' }}" \
+            -backend-config="key=${{ github.event.inputs.state_key || 'spirelens/azure-vmss-romaine-life.tfstate' }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 

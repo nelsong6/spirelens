@@ -14,7 +14,7 @@ using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Tracks the current run's stats in memory and commits them to disk at
@@ -97,7 +97,7 @@ public static class RunTracker
         RunManager.Instance.RunStarted += OnRunStarted;
         CombatManager.Instance.CombatSetUp += OnCombatSetUp;
         CombatManager.Instance.CombatEnded += OnCombatEnded;
-        CoreMain.Logger.Info("CardUtilityStats hooks wired (RunStarted, CombatSetUp, CombatEnded).");
+        CoreMain.Logger.Info("SpireLens hooks wired (RunStarted, CombatSetUp, CombatEnded).");
     }
 
     /// <summary>
@@ -111,7 +111,7 @@ public static class RunTracker
         RunManager.Instance.RunStarted -= OnRunStarted;
         CombatManager.Instance.CombatSetUp -= OnCombatSetUp;
         CombatManager.Instance.CombatEnded -= OnCombatEnded;
-        CoreMain.Logger.Info("CardUtilityStats hooks unwired.");
+        CoreMain.Logger.Info("SpireLens hooks unwired.");
     }
 
     /// <summary>Exposed read-only for diagnostics and (future) UI reads.</summary>

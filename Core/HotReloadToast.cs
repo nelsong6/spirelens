@@ -1,6 +1,6 @@
 using Godot;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Ephemeral on-screen notification for hot-reload events. Spawned by

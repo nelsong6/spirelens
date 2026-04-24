@@ -1,13 +1,13 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
-using CardUtilityStats.Core;
-using CardUtilityStats.Core.Patches;
+using SpireLens.Core;
+using SpireLens.Core.Patches;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Models;
 using Xunit;
 
-namespace CardUtilityStats.Core.Tests;
+namespace SpireLens.Core.Tests;
 
 public class BlockTooltipTests
 {

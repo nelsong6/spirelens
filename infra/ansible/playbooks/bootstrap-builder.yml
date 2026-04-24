@@ -1,4 +1,4 @@
-- name: Bootstrap Azure builder VM for CardUtilityStats
+- name: Bootstrap Azure builder VM for SpireLens
   hosts: builder
   gather_facts: false
   vars_files:

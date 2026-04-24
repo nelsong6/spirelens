@@ -47,7 +47,7 @@ Each worker image should already contain:
 
 Recommended stable paths:
 
-- `D:\repos\card-utility-stats`
+- `D:\repos\spirelens`
 - `D:\repos\sts2-modding-mcp`
 - `D:\SteamLibrary\steamapps\common\Slay the Spire 2`
 - `D:\automation\claude-code`
@@ -65,7 +65,7 @@ That label now means "runner that can process one issue-agent job."
 The runner should be able to:
 
 - use Azure OIDC through GitHub Actions
-- read Azure Key Vault secret `card-utility-stats`
+- read Azure Key Vault secret `spirelens`
 - expose that secret to Claude Code as `ANTHROPIC_API_KEY`
 
 ## Validation

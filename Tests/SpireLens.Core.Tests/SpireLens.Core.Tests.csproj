@@ -9,7 +9,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\Core\CardUtilityStats.Core.csproj" />
+        <ProjectReference Include="..\..\Core\SpireLens.Core.csproj" />
     </ItemGroup>
 
     <ItemGroup Condition="Exists('$(Sts2DataDir)')">

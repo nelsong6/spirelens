@@ -3,7 +3,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 public sealed class RuntimeOptions
 {
@@ -15,7 +15,7 @@ public sealed class RuntimeOptions
 
 public static class RuntimeOptionsProvider
 {
-    private const string BridgeTypeName = "CardUtilityStats.Loader.RuntimeOptionsBridge";
+    private const string BridgeTypeName = "SpireLens.Loader.RuntimeOptionsBridge";
     private const string GetCurrentOptionsJsonMethodName = "GetCurrentOptionsJson";
     private const string SetViewStatsToggleEnabledMethodName = "SetViewStatsToggleEnabled";
 

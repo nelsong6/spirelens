@@ -1,5 +1,5 @@
 param(
-    [string]$RepositorySlug = "nelsong6/card-utility-stats",
+    [string]$RepositorySlug = "nelsong6/spirelens",
     [string]$RepositoryUrl = "",
     [string]$KeyVaultName = "",
     [string]$GitHubPatSecretName = "github-pat",
@@ -80,11 +80,11 @@ function Resolve-RunnerRoot {
     }
 
     $candidates = @(
-        "D:\actions-runner-card-utility-stats",
-        "C:\actions-runner-card-utility-stats",
+        "D:\actions-runner-spirelens",
+        "C:\actions-runner-spirelens",
         "D:\actions-runner",
         "C:\actions-runner",
-        (Join-Path $env:USERPROFILE "actions-runner-card-utility-stats"),
+        (Join-Path $env:USERPROFILE "actions-runner-spirelens"),
         (Join-Path $env:USERPROFILE "actions-runner")
     )
 
@@ -169,7 +169,7 @@ function Invoke-GitHubPost {
     $headers = @{
         Accept                 = "application/vnd.github+json"
         Authorization          = "Bearer $Pat"
-        "User-Agent"           = "card-utility-stats-local-runner-bootstrap"
+        "User-Agent"           = "spirelens-local-runner-bootstrap"
         "X-GitHub-Api-Version" = "2022-11-28"
     }
 

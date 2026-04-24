@@ -1,9 +1,9 @@
 using System.Collections;
 using System.Reflection;
-using CardUtilityStats.Core;
+using SpireLens.Core;
 using Xunit;
 
-namespace CardUtilityStats.Core.Tests;
+namespace SpireLens.Core.Tests;
 
 public class NoxiousFumesContributionTests
 {
@@ -12,11 +12,11 @@ public class NoxiousFumesContributionTests
         ?? throw new InvalidOperationException("TryAllocateNoxiousFumesContributions not found.");
 
     private static readonly Type WindowType =
-        typeof(RunTracker).Assembly.GetType("CardUtilityStats.Core.PendingNoxiousFumesApplicationWindow", throwOnError: true)
+        typeof(RunTracker).Assembly.GetType("SpireLens.Core.PendingNoxiousFumesApplicationWindow", throwOnError: true)
         ?? throw new InvalidOperationException("PendingNoxiousFumesApplicationWindow type not found.");
 
     private static readonly Type ShareType =
-        typeof(RunTracker).Assembly.GetType("CardUtilityStats.Core.NoxiousFumesContributionShare", throwOnError: true)
+        typeof(RunTracker).Assembly.GetType("SpireLens.Core.NoxiousFumesContributionShare", throwOnError: true)
         ?? throw new InvalidOperationException("NoxiousFumesContributionShare type not found.");
 
     [Fact]

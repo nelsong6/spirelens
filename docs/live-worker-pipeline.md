@@ -1,6 +1,6 @@
 # Live Worker Pipeline
 
-Issue [#51](https://github.com/nelsong6/card-utility-stats/issues/51) is now aligned around a direct GitHub Actions + Claude + MCP model.
+Issue [#51](https://github.com/nelsong6/spirelens/issues/51) is now aligned around a direct GitHub Actions + Claude + MCP model.
 
 The old repo-managed scenario manifests, bridge-driver queue files, and in-game `active-request.json` automation path were removed because they kept pulling the agent into obsolete side infrastructure.
 
@@ -23,7 +23,7 @@ Claude should not use:
 - repo-managed scenario manifests
 - repo-owned live-driver scripts
 - filesystem request queues
-- `D:\automation\card-utility-stats-live-bridge`
+- `D:\automation\spirelens-live-bridge`
 - in-game automation contracts based on `request.json` / `ready.json` / `accepted.json` / `result.json`
 
 If the MCP surface is insufficient for a task, the correct result is a blocker report on the issue, not resurrection of old bridge machinery.
@@ -50,7 +50,7 @@ Expected live MCP endpoints when STS2 is running with the MCP bridge mods instal
 
 The issue-agent workflow:
 
-- loads Azure Key Vault secret `card-utility-stats`
+- loads Azure Key Vault secret `spirelens`
 - maps it to `ANTHROPIC_API_KEY`
 - streams Claude activity into the Actions log
 - uploads validation artifacts after every run

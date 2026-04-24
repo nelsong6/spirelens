@@ -1,6 +1,6 @@
 using MegaCrit.Sts2.Core.Logging;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Logger wrapper that is safe to reference outside a live Godot/game runtime.

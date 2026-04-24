@@ -1,7 +1,7 @@
-using CardUtilityStats.Core;
+using SpireLens.Core;
 using Xunit;
 
-namespace CardUtilityStats.Core.Tests;
+namespace SpireLens.Core.Tests;
 
 public class RunTrackerDamageMathTests
 {

@@ -1,6 +1,6 @@
 {
-  "id": "CardUtilityStats",
-  "name": "CardUtilityStats",
+  "id": "SpireLens",
+  "name": "SpireLens",
   "author": "Nelson",
   "description": "Per-card attribution stats — tracks effective damage, overkill, blocked damage, block usage, and utility closure on every card you play.",
   "version": "v0.0.0",

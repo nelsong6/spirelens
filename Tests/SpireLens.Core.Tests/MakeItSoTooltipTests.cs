@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Text;
-using CardUtilityStats.Core;
-using CardUtilityStats.Core.Patches;
+using SpireLens.Core;
+using SpireLens.Core.Patches;
 using Xunit;
 
-namespace CardUtilityStats.Core.Tests;
+namespace SpireLens.Core.Tests;
 
 public class MakeItSoTooltipTests
 {

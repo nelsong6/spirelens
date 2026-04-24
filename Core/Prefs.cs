@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Compatibility shim for the old deck-view toggle persistence path.

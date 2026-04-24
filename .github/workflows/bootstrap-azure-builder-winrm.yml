@@ -6,7 +6,7 @@ on:
       state_key:
         description: Backend state key inside the Azure Blob container
         required: true
-        default: card-utility-stats/azure-vmss-romaine-life.tfstate
+        default: spirelens/azure-vmss-romaine-life.tfstate
         type: string
       resource_group_name:
         description: Optional direct resource group override. Leave blank to read from OpenTofu state.
@@ -61,7 +61,7 @@ jobs:
             -backend-config="subscription_id=${TFSTATE_SUBSCRIPTION_ID}" \
             -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=${{ github.event.inputs.state_key || 'card-utility-stats/azure-vmss-romaine-life.tfstate' }}" \
+            -backend-config="key=${{ github.event.inputs.state_key || 'spirelens/azure-vmss-romaine-life.tfstate' }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 

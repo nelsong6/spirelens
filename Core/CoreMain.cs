@@ -1,9 +1,9 @@
 using System;
 using HarmonyLib;
-using CardUtilityStats.Core.Patches;
+using SpireLens.Core.Patches;
 using MegaCrit.Sts2.Core.Logging;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 /// <summary>
 /// Hot-reloaded core entry point. Exposes the reload contract the Loader
@@ -33,7 +33,7 @@ namespace CardUtilityStats.Core;
 /// </summary>
 public static class CoreMain
 {
-    public const string ModId = "CardUtilityStats";
+    public const string ModId = "SpireLens";
 
     // Unique per-load so reload cycles don't collide in Harmony's global patch registry.
     private static readonly string _harmonyId = $"{ModId}.{Guid.NewGuid():N}";

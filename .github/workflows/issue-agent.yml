@@ -58,7 +58,7 @@ jobs:
               $CheckoutRootPath,
               $env:RUNNER_WORKSPACE,
               "issue-agent-build",
-              "CardUtilityStats.Core.dll"
+              "SpireLens.Core.dll"
             ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 
             Get-CimInstance Win32_Process | Where-Object {
@@ -174,7 +174,7 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           $keyVaultName = '${{ vars.KEY_VAULT_NAME }}'
-          $secretName = 'card-utility-stats'
+          $secretName = 'spirelens'
 
           if ([string]::IsNullOrWhiteSpace($keyVaultName)) {
             throw "Missing repository variable KEY_VAULT_NAME."
@@ -278,7 +278,7 @@ jobs:
           - Use direct MCP/game control. Do not use or debug any legacy filesystem bridge or scenario-request queue.
           - Missing MCP capability is a tooling gap to report, not a reason to invent side automation.
           - Do not use `LiveScenarios/`, `ops/live-worker/`, `scripts/ci/run-live-scenario.ps1`, or any `request.json` / `ready.json` / `accepted.json` / `result.json` workflow.
-          - Do not read from or write to `D:\automation\card-utility-stats-live-bridge`.
+          - Do not read from or write to `D:\automation\spirelens-live-bridge`.
           - For STS2 issue-agent work, capture screenshot artifacts of the affected card or tooltip states before marking the issue complete.
           - Always include at least one screenshot.
           - Save screenshots to `$screenshotDir` and any extra validation artifacts to `$validationArtifactDir` so the workflow can upload them.
@@ -474,7 +474,7 @@ jobs:
         run: |
           $workspace = $env:GITHUB_WORKSPACE
           if ([string]::IsNullOrWhiteSpace($workspace)) {
-            $workspace = "C:\actions-runner-card-utility-stats\_work\card-utility-stats"
+            $workspace = "C:\actions-runner-spirelens\_work\spirelens"
           }
 
           $checkoutRoot = Join-Path $workspace "issue-agent-src"
@@ -484,7 +484,7 @@ jobs:
             $checkoutRoot,
             $buildRoot,
             "issue-agent-build",
-            "CardUtilityStats.Core.dll"
+            "SpireLens.Core.dll"
           ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 
           Get-CimInstance Win32_Process | Where-Object {

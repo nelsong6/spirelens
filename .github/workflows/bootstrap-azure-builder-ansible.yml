@@ -26,7 +26,7 @@ on:
       builder_password_secret_name:
         description: Key Vault secret that stores the builder VM admin password
         required: true
-        default: card-utility-stats-vm-admin-password
+        default: spirelens-vm-admin-password
         type: string
       key_vault_subscription_id:
         description: Optional subscription override for the Key Vault lookup

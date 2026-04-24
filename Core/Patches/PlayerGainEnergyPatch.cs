@@ -2,7 +2,7 @@ using System;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Players;
 
-namespace CardUtilityStats.Core.Patches;
+namespace SpireLens.Core.Patches;
 
 /// <summary>
 /// Track direct card-driven energy gain by patching the player's actual

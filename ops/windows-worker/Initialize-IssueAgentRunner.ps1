@@ -116,7 +116,7 @@ function Invoke-GitHubPost {
     $headers = @{
         Accept               = "application/vnd.github+json"
         Authorization        = "Bearer $script:GitHubPat"
-        "User-Agent"         = "card-utility-stats-vmss-bootstrap"
+        "User-Agent"         = "spirelens-vmss-bootstrap"
         "X-GitHub-Api-Version" = "2022-11-28"
     }
 

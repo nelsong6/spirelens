@@ -3,10 +3,10 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BaseLib.Config;
-using CardUtilityStats.Config;
+using SpireLens.Config;
 using Godot;
 
-namespace CardUtilityStats.Loader;
+namespace SpireLens.Loader;
 
 public sealed class RuntimeOptionsSnapshot
 {
@@ -36,37 +36,37 @@ public static class RuntimeOptionsBridge
 
     public static void SetViewStatsToggleEnabled(bool isEnabled)
     {
-        if (CardUtilityStatsConfig.ViewStatsToggleEnabled == isEnabled) return;
+        if (SpireLensConfig.ViewStatsToggleEnabled == isEnabled) return;
 
-        CardUtilityStatsConfig.ViewStatsToggleEnabled = isEnabled;
-        ModConfig.SaveDebounced<CardUtilityStatsConfig>();
+        SpireLensConfig.ViewStatsToggleEnabled = isEnabled;
+        ModConfig.SaveDebounced<SpireLensConfig>();
     }
 
     private static RuntimeOptionsSnapshot CreateSnapshot()
     {
         return new RuntimeOptionsSnapshot
         {
-            ViewStatsToggleEnabled = CardUtilityStatsConfig.ViewStatsToggleEnabled,
-            ShowRemovedCardsInDeckView = CardUtilityStatsConfig.ShowRemovedCardsInDeckView,
-            ShowHandTooltips = CardUtilityStatsConfig.ShowHandTooltips,
-            EnableDebugLogging = CardUtilityStatsConfig.EnableDebugLogging,
+            ViewStatsToggleEnabled = SpireLensConfig.ViewStatsToggleEnabled,
+            ShowRemovedCardsInDeckView = SpireLensConfig.ShowRemovedCardsInDeckView,
+            ShowHandTooltips = SpireLensConfig.ShowHandTooltips,
+            EnableDebugLogging = SpireLensConfig.EnableDebugLogging,
         };
     }
 
     private static void MigrateLegacyPrefsIfNeeded()
     {
-        if (CardUtilityStatsConfig.LegacyPrefsMigrated) return;
+        if (SpireLensConfig.LegacyPrefsMigrated) return;
 
         try
         {
-            var legacyPath = ProjectSettings.GlobalizePath("user://CardUtilityStats/prefs.json");
+            var legacyPath = ProjectSettings.GlobalizePath("user://SpireLens/prefs.json");
             if (File.Exists(legacyPath))
             {
                 var json = File.ReadAllText(legacyPath);
                 var legacyPrefs = JsonSerializer.Deserialize<LegacyPrefs>(json, LegacyPrefsOptions);
                 if (legacyPrefs != null)
                 {
-                    CardUtilityStatsConfig.ViewStatsToggleEnabled = legacyPrefs.ViewStatsTicked;
+                    SpireLensConfig.ViewStatsToggleEnabled = legacyPrefs.ViewStatsTicked;
                 }
             }
         }
@@ -75,8 +75,8 @@ public static class RuntimeOptionsBridge
             LoaderMain.Logger.Error($"RuntimeOptionsBridge migration failed: {e}");
         }
 
-        CardUtilityStatsConfig.LegacyPrefsMigrated = true;
-        ModConfig.SaveDebounced<CardUtilityStatsConfig>();
+        SpireLensConfig.LegacyPrefsMigrated = true;
+        ModConfig.SaveDebounced<SpireLensConfig>();
     }
 
     private sealed class LegacyPrefs

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace CardUtilityStats.Core;
+namespace SpireLens.Core;
 
 internal static class CardAggregatePooler
 {
