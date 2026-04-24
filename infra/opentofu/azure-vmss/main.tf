@@ -38,6 +38,7 @@ locals {
   issue_agent_runner_labels_csv           = join(",", local.issue_agent_runner_labels)
   issue_agent_runner_script_relative_path = "ops/windows-worker/Initialize-IssueAgentRunner.ps1"
   issue_agent_runner_script_source_path   = "${path.root}/../../../${local.issue_agent_runner_script_relative_path}"
+  issue_agent_runner_group                = try(trimspace(var.issue_agent_runner_group), "")
   issue_agent_runner_script_url = format(
     "https://raw.githubusercontent.com/%s/%s/%s?v=%s",
     var.issue_agent_repository_slug,
@@ -56,10 +57,10 @@ locals {
     local.issue_agent_runner_labels_csv,
     var.issue_agent_runner_name_prefix,
   )
-  issue_agent_runner_extension_command_with_group = trimspace(coalesce(var.issue_agent_runner_group, "")) == "" ? local.issue_agent_runner_extension_command : format(
+  issue_agent_runner_extension_command_with_group = local.issue_agent_runner_group == "" ? local.issue_agent_runner_extension_command : format(
     "%s -RunnerGroup \"%s\"",
     local.issue_agent_runner_extension_command,
-    trimspace(coalesce(var.issue_agent_runner_group, "")),
+    local.issue_agent_runner_group,
   )
 
   tags = merge(
