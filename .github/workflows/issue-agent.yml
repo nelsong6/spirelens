@@ -220,7 +220,7 @@ jobs:
             throw "Required MCP server 'sts2-modding' was not listed by Claude Code."
           }
           if ($mcpListText -match 'sts2-modding:.*Failed to connect') {
-            throw "Required MCP server 'sts2-modding' failed to connect. Stop and fix MCP before running the issue agent."
+            Write-Warning "Claude MCP list reported 'sts2-modding' as unhealthy; continuing to the direct get_setup_status probe for the authoritative readiness check."
           }
 
           $probePrompt = @"
