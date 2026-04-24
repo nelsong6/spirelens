@@ -14,7 +14,7 @@ builder_vm_sku    = "Standard_NV6ads_A10_v5"
 # reach GitHub and the shared Key Vault.
 create_nat_gateway                  = true
 enable_issue_agent_runner_bootstrap = true
-encryption_at_host_enabled = false
+encryption_at_host_enabled          = false
 
 # Private WinRM from the infra-aks node subnet so the Ansible control runner
 # can reach the builder VM without opening 5986 publicly.
