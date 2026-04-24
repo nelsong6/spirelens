@@ -35,9 +35,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="*" PrivateAssets="All" GeneratePathProperty="true"/>
+        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="3.0.8" PrivateAssets="All" GeneratePathProperty="true"/>
         <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="All"/>
-        <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*" />
+        <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="0.1.9" />
         <!-- Mono.Cecil: rewrites the Core assembly's manifest name per load so
              the ALC treats each reload as a distinct assembly. Without this,
              .NET dedupes by short name and hot reload silently no-ops. -->
