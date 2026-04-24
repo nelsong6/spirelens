@@ -105,15 +105,21 @@ locals {
     },
     local.vmss_image_is_specialized ? {} : {
       osProfile = {
-        adminPassword      = local.effective_admin_password
-        adminUsername      = var.admin_username
-        computerNamePrefix = local.computer_name_prefix
+        adminPassword            = local.effective_admin_password
+        adminUsername            = var.admin_username
+        allowExtensionOperations = true
+        computerNamePrefix       = local.computer_name_prefix
         windowsConfiguration = {
           enableAutomaticUpdates = true
           provisionVMAgent       = true
         }
       }
     },
+    local.vmss_image_is_specialized ? {
+      osProfile = {
+        allowExtensionOperations = true
+      }
+    } : {},
     local.vmss_security_profile == null ? {} : {
       securityProfile = local.vmss_security_profile
     },
