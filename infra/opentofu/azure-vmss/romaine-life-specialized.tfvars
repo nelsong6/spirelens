@@ -1,7 +1,7 @@
 name_prefix = "card-utility-stats-dev"
 location    = "West US 3"
 
-admin_username = "runneradmin"
+admin_username       = "runneradmin"
 computer_name_prefix = "cusvmss"
 
 # Keep the builder resource so the original seed box can be started again if
