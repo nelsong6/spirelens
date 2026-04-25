@@ -3,7 +3,6 @@ name: Issue Agent
 on:
   issues:
     types:
-      - opened
       - reopened
       - labeled
   workflow_dispatch:
@@ -26,7 +25,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
         (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
-        contains(github.event.issue.labels.*.name, 'issue-agent')
+        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
       ))
     runs-on:
       - self-hosted
@@ -202,6 +201,7 @@ jobs:
           Write-Host "::add-mask::$anthropicApiKey"
           "ANTHROPIC_API_KEY=$anthropicApiKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Run phased Claude issue agent
+        timeout-minutes: 8
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           GH_TOKEN: ${{ github.token }}
