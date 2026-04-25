@@ -343,7 +343,15 @@ function Get-CommonPromptPrefix {
 You are Claude Code running the $PhaseName phase for $RepoSlug issue #$IssueNumber.
 
 GitHub Actions triggered this job for exactly issue #$IssueNumber. Do not process any other issue.
-Use the local checkout at `$env:ISSUE_AGENT_REPO_ROOT` and read the issue with:
+Use this exact local checkout path as the repository root:
+
+``````
+$RepoRoot
+``````
+
+The shell tool is Git Bash on Windows. Do not use PowerShell-only environment syntax such as `$env:ISSUE_AGENT_REPO_ROOT` unless you are explicitly invoking `powershell`. Prefer quoted concrete paths from this prompt.
+Do not search above the repository root. Do not recurse through parent workspace folders or stale `issue-agent-src` checkouts from other runs.
+Read the issue with:
 
 ``````
 gh issue view $IssueNumber --repo $RepoSlug --comments
@@ -351,7 +359,17 @@ gh issue view $IssueNumber --repo $RepoSlug --comments
 
 All stateful Slay the Spire 2 work must go through MCP tools from the project MCP config at `$McpConfigPath`.
 Do not use raw localhost bridge calls, filesystem queues, `LiveScenarios/`, `ops/live-worker/`, or `D:\automation\spirelens-live-bridge`.
-Write your JSON and Markdown artifacts to `$ValidationArtifactDir`.
+Write your JSON and Markdown artifacts to this exact validation artifact directory:
+
+``````
+$ValidationArtifactDir
+``````
+
+Save screenshots to this exact screenshot directory:
+
+``````
+$ScreenshotDir
+``````
 JSON artifacts must be strict JSON. If you include Windows paths in JSON strings, escape backslashes as `\\` or use forward slashes; never write raw `C:\path` text with single backslashes.
 Keep Markdown concise and human-readable; it will be appended to the GitHub job summary.
 "@
@@ -376,6 +394,7 @@ $investigationPrompt = (Get-CommonPromptPrefix -PhaseName 'investigation') + @"
 INVESTIGATION RULES:
 - Do not edit files, commit, push, open PRs, run dotnet tests, or perform live gameplay validation.
 - Focus only on issue interpretation, card identity, character identity, MCP/game-state facts, and validation plan.
+- Keep searches targeted to the current checkout. Prefer `rg "Make It So|MakeItSo|MAKE_IT_SO" .` from the repository root over recursive PowerShell searches.
 - If a card is specified but ambiguous or cannot be found, abort.
 - If MCP or repo metadata cannot support the needed validation plan, abort.
 - Write `issue-agent-investigation.json` with:
