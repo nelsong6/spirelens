@@ -41,7 +41,7 @@ function Get-FileListText {
     $files = @(Get-ChildItem -LiteralPath $LiteralPath -Recurse -File -Filter $Filter -ErrorAction SilentlyContinue | Select-Object -First 25)
     if ($files.Count -eq 0) { return '_None_' }
     $items = foreach ($file in $files) {
-        $relative = [System.IO.Path]::GetRelativePath($root, $file.FullName)
+        $relative = $file.FullName.Substring($root.Length).TrimStart('\', '/')
         '- `' + $relative + '`'
     }
     $total = Count-Files -LiteralPath $LiteralPath -Filter $Filter
