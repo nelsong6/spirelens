@@ -352,6 +352,7 @@ gh issue view $IssueNumber --repo $RepoSlug --comments
 All stateful Slay the Spire 2 work must go through MCP tools from the project MCP config at `$McpConfigPath`.
 Do not use raw localhost bridge calls, filesystem queues, `LiveScenarios/`, `ops/live-worker/`, or `D:\automation\spirelens-live-bridge`.
 Write your JSON and Markdown artifacts to `$ValidationArtifactDir`.
+JSON artifacts must be strict JSON. If you include Windows paths in JSON strings, escape backslashes as `\\` or use forward slashes; never write raw `C:\path` text with single backslashes.
 Keep Markdown concise and human-readable; it will be appended to the GitHub job summary.
 "@
 }
