@@ -149,6 +149,8 @@ $lines.Add('| --- | --- |')
 $lines.Add("| Issue | [$IssueNumber]($issueUrl) |")
 $lines.Add("| Run | [$RunId]($runUrl) |")
 $lines.Add("| Artifact | $artifactText |")
+$prCell = if ([string]::IsNullOrWhiteSpace([string]$prUrl)) { '_None reported_' } else { "[$prNumber]($prUrl)" }
+$lines.Add("| PR | $prCell |")
 $lines.Add("| Result status | $(Format-Cell (Get-PropertyValue -Object $result -Name 'status')) |")
 $lines.Add("| Abort layer | $(Format-Cell (Get-PropertyValue -Object $result -Name 'abort_layer')) |")
 $lines.Add("| Abort reason | $(Format-Cell (Get-PropertyValue -Object $result -Name 'abort_reason')) |")
