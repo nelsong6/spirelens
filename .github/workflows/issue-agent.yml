@@ -23,6 +23,7 @@ jobs:
     name: Run Claude for one issue
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}
+      AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-cli-${{ github.run_id }}-${{ github.run_attempt }}
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
@@ -162,6 +163,17 @@ jobs:
             -McpConfigPath (Join-Path $repoRoot ".mcp.json") `
             -StartupTimeoutSeconds 60 `
             -ShutdownTimeoutSeconds 45
+
+      - name: Prepare isolated Azure CLI config
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_CONFIG_DIR)) {
+            throw "AZURE_CONFIG_DIR is not set."
+          }
+
+          Remove-Item -LiteralPath $env:AZURE_CONFIG_DIR -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $env:AZURE_CONFIG_DIR | Out-Null
+          Write-Host "Using isolated Azure CLI config dir: $env:AZURE_CONFIG_DIR"
 
       - name: Azure login
         uses: azure/login@v3
