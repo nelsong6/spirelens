@@ -106,15 +106,38 @@ jobs:
           fetch-depth: 0
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
 
-      - name: Resolve issue-agent GitHub token
-        id: issue-agent-token
-        uses: ./.github/actions/issue-agent-github-token
+      - name: Create issue-agent GitHub App token
+        id: issue-agent-app-token
+        if: ${{ vars.ISSUE_AGENT_APP_ID != '' && secrets.ISSUE_AGENT_APP_PRIVATE_KEY != '' }}
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.ISSUE_AGENT_APP_ID }}
           private-key: ${{ secrets.ISSUE_AGENT_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          fallback-token: ${{ github.token }}
 
+      - name: Select issue-agent GitHub token
+        id: issue-agent-token
+        env:
+          APP_TOKEN: ${{ steps.issue-agent-app-token.outputs.token }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:APP_TOKEN)) {
+            Write-Host "Using issue-agent GitHub App installation token."
+            Write-Host "::add-mask::$($env:APP_TOKEN)"
+            "token=$($env:APP_TOKEN)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "auth-mode=app-token" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            return
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:FALLBACK_TOKEN)) {
+            throw "No issue-agent GitHub App token was created and no fallback token was provided."
+          }
+
+          Write-Host "Using issue-agent GITHUB_TOKEN fallback. Configure ISSUE_AGENT_APP_ID and ISSUE_AGENT_APP_PRIVATE_KEY to switch to the app identity."
+          Write-Host "::add-mask::$($env:FALLBACK_TOKEN)"
+          "token=$($env:FALLBACK_TOKEN)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "auth-mode=github-token-fallback" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - name: Resolve issue-agent host paths
         env:
           CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
