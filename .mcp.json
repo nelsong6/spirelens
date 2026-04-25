@@ -2,9 +2,13 @@
   "mcpServers": {
     "sts2-modding": {
       "type": "stdio",
-      "command": "D:\\repos\\sts2-modding-mcp\\venv\\Scripts\\python.exe",
+      "command": "uv",
       "args": [
-        "D:\\repos\\sts2-modding-mcp\\run.py"
+        "run",
+        "--directory",
+        "D:\\repos\\spire-lens-mcp\\mcp",
+        "python",
+        "server.py"
       ],
       "env": {
         "STS2_GAME_DIR": "D:\\SteamLibrary\\steamapps\\common\\Slay the Spire 2"

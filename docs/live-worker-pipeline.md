@@ -41,10 +41,13 @@ Common local layout:
 
 The project `.mcp.json` should point Claude to `sts2-modding`.
 
-Expected live MCP endpoints when STS2 is running with the MCP bridge mods installed:
+Expected live MCP endpoint when STS2 is running with `SpireLensMcp` installed:
 
-- `localhost:21337`
-- `localhost:27020`
+- `http://localhost:15526/` — index route returns `{"status": "ok"}` when the in-game HTTP listener is healthy (used by `restart-sts2.ps1` for the readiness probe).
+- `http://localhost:15526/api/v1/singleplayer` — singleplayer state and action endpoints.
+- `http://localhost:15526/api/v1/multiplayer` — multiplayer-only endpoints, guarded against cross-mode use.
+
+The bridge is provided by [`nelsong6/spire-lens-mcp`](https://github.com/nelsong6/spire-lens-mcp) (vendored from `Gennadiyev/STS2MCP` under MIT). The Python MCP server in that repo's `mcp/` directory is what the project's `.mcp.json` invokes via `uv run`.
 
 ## Auth And Visibility
 

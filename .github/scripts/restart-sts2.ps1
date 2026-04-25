@@ -7,7 +7,7 @@ param(
     [int]$ShutdownTimeoutSeconds = 45,
     [string]$LaunchArguments = '--rendering-driver opengl3',
     [string]$BridgeHost = '127.0.0.1',
-    [int]$BridgePort = 21337
+    [int]$BridgePort = 15526
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,56 +51,20 @@ function Invoke-BridgePing {
         [int]$TimeoutMilliseconds = 2000
     )
 
-    $client = New-Object System.Net.Sockets.TcpClient
+    # SpireLens MCP exposes an HTTP server on this port; the index route
+    # answers with `{"message": "Hello from SpireLens MCP v...", "status": "ok"}`.
+    $uri = "http://${HostName}:${Port}/"
+    $timeoutSec = [int][Math]::Max(1, [Math]::Ceiling($TimeoutMilliseconds / 1000.0))
+
     try {
-        $connect = $client.BeginConnect($HostName, $Port, $null, $null)
-        if (-not $connect.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)) {
-            return @{ ok = $false; error = 'connect timed out' }
-        }
-        $client.EndConnect($connect)
-        $client.ReceiveTimeout = $TimeoutMilliseconds
-        $client.SendTimeout = $TimeoutMilliseconds
-
-        $stream = $client.GetStream()
-        $payload = [System.Text.Encoding]::UTF8.GetBytes('{"method":"ping","id":1}' + "`n")
-        $stream.Write($payload, 0, $payload.Length)
-
-        $buffer = New-Object byte[] 4096
-        $builder = New-Object System.Text.StringBuilder
-        $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
-
-        while ((Get-Date) -lt $deadline) {
-            if ($stream.DataAvailable) {
-                $read = $stream.Read($buffer, 0, $buffer.Length)
-                if ($read -le 0) {
-                    break
-                }
-                $chunk = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $read)
-                [void]$builder.Append($chunk)
-                if ($chunk.Contains("`n") -or $chunk.Contains("`r")) {
-                    break
-                }
-            } else {
-                Start-Sleep -Milliseconds 100
-            }
-        }
-
-        $text = $builder.ToString().Trim()
-        if ([string]::IsNullOrWhiteSpace($text)) {
-            return @{ ok = $false; error = 'empty bridge response' }
-        }
-
-        $json = $text | ConvertFrom-Json -ErrorAction Stop
-        $status = [string]$json.result.status
+        $response = Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec $timeoutSec -ErrorAction Stop
+        $status = [string]$response.status
         if ($status -eq 'ok') {
-            return @{ ok = $true; response = $json }
+            return @{ ok = $true; response = $response }
         }
-
-        return @{ ok = $false; error = "unexpected bridge status '$status'"; response = $json }
+        return @{ ok = $false; error = "unexpected bridge status '$status'"; response = $response }
     } catch {
         return @{ ok = $false; error = $_.Exception.Message }
-    } finally {
-        $client.Close()
     }
 }
 
