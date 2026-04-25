@@ -374,7 +374,7 @@ Set-Location -LiteralPath $RepoRoot
 $investigationPrompt = (Get-CommonPromptPrefix -PhaseName 'investigation') + @"
 
 INVESTIGATION RULES:
-- Do not edit files, commit, push, open PRs, or run implementation tests.
+- Do not edit files, commit, push, open PRs, run dotnet tests, or perform live gameplay validation.
 - Focus only on issue interpretation, card identity, character identity, MCP/game-state facts, and validation plan.
 - If a card is specified but ambiguous or cannot be found, abort.
 - If MCP or repo metadata cannot support the needed validation plan, abort.
@@ -389,6 +389,7 @@ $implementationPrompt = (Get-CommonPromptPrefix -PhaseName 'implementation') + @
 IMPLEMENTATION RULES:
 - Read `$ValidationArtifactDir\issue-agent-investigation.json` first and implement only that plan.
 - Own code changes only. Do not claim verification success.
+- Do not start gameplay, enter rooms, play cards, capture screenshots, or perform live MCP validation; leave all live MCP validation to verification.
 - If the viable solve requires dramatic changes, a new library, architecture changes, or unsafe refactors, abort.
 - If you make code changes, create a branch, commit, push, and open a PR.
 - Write `issue-agent-implementation.json` with:
