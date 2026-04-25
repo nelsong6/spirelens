@@ -20,9 +20,9 @@ function Get-Sts2GameDir {
     }
 
     $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
-    $server = $config.mcpServers.'sts2-modding'
+    $server = $config.mcpServers.'spire-lens-mcp'
     if ($null -eq $server -or $null -eq $server.env -or [string]::IsNullOrWhiteSpace([string]$server.env.STS2_GAME_DIR)) {
-        throw "MCP config '$ConfigPath' does not define mcpServers.sts2-modding.env.STS2_GAME_DIR."
+        throw "MCP config '$ConfigPath' does not define mcpServers.spire-lens-mcp.env.STS2_GAME_DIR."
     }
 
     $gameDir = [string]$server.env.STS2_GAME_DIR
@@ -51,8 +51,8 @@ function Invoke-BridgePing {
         [int]$TimeoutMilliseconds = 2000
     )
 
-    # SpireLens MCP exposes an HTTP server on this port; the index route
-    # answers with `{"message": "Hello from SpireLens MCP v...", "status": "ok"}`.
+    # SpireLensMcpBridge exposes an HTTP server on this port; the index route
+    # answers with `{"message": "Hello from SpireLensMcpBridge v...", "status": "ok"}`.
     $uri = "http://${HostName}:${Port}/"
     $timeoutSec = [int][Math]::Max(1, [Math]::Ceiling($TimeoutMilliseconds / 1000.0))
 
@@ -171,11 +171,11 @@ function Wait-Sts2Ready {
         if ($processes.Count -gt 0) {
             $ping = Invoke-BridgePing -HostName $HostName -Port $Port -TimeoutMilliseconds 2500
             if ($ping.ok) {
-                Write-Host "STS2 bridge is ready on ${HostName}:${Port}."
+                Write-Host "SpireLensMcpBridge is ready on ${HostName}:${Port}."
                 return
             }
             $lastError = [string]$ping.error
-            Write-Host "Waiting for STS2 bridge readiness: $lastError"
+            Write-Host "Waiting for SpireLensMcpBridge readiness: $lastError"
         } else {
             $lastError = 'SlayTheSpire2.exe is not running yet'
             Write-Host 'Waiting for SlayTheSpire2.exe to start.'
@@ -183,7 +183,7 @@ function Wait-Sts2Ready {
         Start-Sleep -Seconds 3
     }
 
-    throw "Timed out waiting $TimeoutSeconds second(s) for STS2 bridge readiness. Last status: $lastError"
+    throw "Timed out waiting $TimeoutSeconds second(s) for SpireLensMcpBridge readiness. Last status: $lastError"
 }
 
 $gameDir = Get-Sts2GameDir -ConfigPath $McpConfigPath
