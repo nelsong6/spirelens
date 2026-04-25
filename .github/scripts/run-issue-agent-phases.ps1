@@ -12,25 +12,26 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$PhaseTimeoutSeconds = 360
 
 $phaseDefinitions = @(
     [ordered]@{
         Name = 'investigation'
         Json = 'issue-agent-investigation.json'
         Markdown = 'issue-agent-investigation.md'
-        AllowedAbortReasons = @('card_not_found', 'card_ambiguous', 'character_not_found', 'metadata_unavailable', 'mcp_capability_missing', 'game_state_unreachable', 'validation_plan_impossible')
+        AllowedAbortReasons = @('card_not_found', 'card_ambiguous', 'character_not_found', 'metadata_unavailable', 'mcp_capability_missing', 'game_state_unreachable', 'validation_plan_impossible', 'phase_timeout')
     },
     [ordered]@{
         Name = 'implementation'
         Json = 'issue-agent-implementation.json'
         Markdown = 'issue-agent-implementation.md'
-        AllowedAbortReasons = @('change_too_large', 'requires_new_library', 'requires_architecture_change', 'unsafe_refactor', 'missing_code_context', 'conflicting_requirements', 'cannot_implement_without_guessing')
+        AllowedAbortReasons = @('change_too_large', 'requires_new_library', 'requires_architecture_change', 'unsafe_refactor', 'missing_code_context', 'conflicting_requirements', 'cannot_implement_without_guessing', 'phase_timeout')
     },
     [ordered]@{
         Name = 'verification'
         Json = 'issue-agent-verification.json'
         Markdown = 'issue-agent-verification.md'
-        AllowedAbortReasons = @('unit_tests_failed', 'live_validation_failed', 'screenshot_missing', 'screenshot_not_relevant', 'mcp_state_mismatch', 'claimed_result_not_observed', 'artifact_contract_missing')
+        AllowedAbortReasons = @('unit_tests_failed', 'live_validation_failed', 'screenshot_missing', 'screenshot_not_relevant', 'mcp_state_mismatch', 'claimed_result_not_observed', 'artifact_contract_missing', 'phase_timeout')
     }
 )
 
@@ -127,6 +128,124 @@ function Write-SyntheticRollup {
     $rollup | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $rollupPath -Encoding UTF8
 }
 
+function Write-SyntheticPhaseAbort {
+    param([hashtable]$Phase, [string]$AbortReason, [string]$Notes)
+
+    $phaseName = $Phase.Name
+    $phaseJsonPath = Join-Path $ValidationArtifactDir $Phase.Json
+    $phaseMarkdownPath = Join-Path $ValidationArtifactDir $Phase.Markdown
+    [ordered]@{
+        layer = $phaseName
+        status = 'abort'
+        abort_reason = $AbortReason
+        retryable = $true
+        human_action_required = $true
+        notes = $Notes
+    } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $phaseJsonPath -Encoding UTF8
+
+    @"
+Status: abort
+
+Abort reason: $AbortReason
+
+$Notes
+"@ | Set-Content -LiteralPath $phaseMarkdownPath -Encoding UTF8
+}
+
+function ConvertTo-WindowsCommandLineArgument {
+    param([AllowNull()][string]$Argument)
+    if ($null -eq $Argument -or $Argument.Length -eq 0) { return '""' }
+    $result = '"'
+    $backslashes = 0
+    foreach ($char in $Argument.ToCharArray()) {
+        if ($char -eq '\') { $backslashes++ }
+        elseif ($char -eq '"') {
+            $result += ('\' * (($backslashes * 2) + 1))
+            $result += '"'
+            $backslashes = 0
+        } else {
+            if ($backslashes -gt 0) { $result += ('\' * $backslashes) }
+            $result += $char
+            $backslashes = 0
+        }
+    }
+    if ($backslashes -gt 0) { $result += ('\' * ($backslashes * 2)) }
+    return $result + '"'
+}
+
+function Invoke-ProcessWithTimeout {
+    param([string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory, [string]$StdoutPath, [string]$StderrPath, [int]$TimeoutSeconds)
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.Arguments = (($Arguments | ForEach-Object { ConvertTo-WindowsCommandLineArgument $_ }) -join ' ')
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+    $null = $process.Start()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $completed = $process.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $completed) {
+        try { $process.Kill() } catch {}
+        try { $process.WaitForExit(5000) | Out-Null } catch {}
+        $stdoutTask.Wait(5000) | Out-Null
+        $stderrTask.Wait(5000) | Out-Null
+        $stdoutTask.Result | Set-Content -LiteralPath $StdoutPath -Encoding UTF8
+        $stderrTask.Result | Set-Content -LiteralPath $StderrPath -Encoding UTF8
+        return [ordered]@{ TimedOut = $true; ExitCode = $null }
+    }
+    $stdoutTask.Wait() | Out-Null
+    $stderrTask.Wait() | Out-Null
+    $stdoutTask.Result | Set-Content -LiteralPath $StdoutPath -Encoding UTF8
+    $stderrTask.Result | Set-Content -LiteralPath $StderrPath -Encoding UTF8
+    return [ordered]@{ TimedOut = $false; ExitCode = $process.ExitCode }
+}
+
+function Write-ClaudeOutputLines {
+    param([string]$Path, [string]$PhaseName)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    Get-Content -LiteralPath $Path | ForEach-Object {
+        $line = [string]$_
+        if ([string]::IsNullOrWhiteSpace($line)) { return }
+        try {
+            $event = $line | ConvertFrom-Json -ErrorAction Stop
+            if ($event.type -eq 'assistant' -and $event.message.content) {
+                foreach ($block in $event.message.content) {
+                    if ($block.type -eq 'tool_use') {
+                        $inputJson = if ($null -ne $block.input) { $block.input | ConvertTo-Json -Compress -Depth 20 } else { '{}' }
+                        $message = "$($block.name) $inputJson"
+                        Write-AgentEvent 'tool_use' $message @{ phase = $PhaseName }
+                        Add-Content -LiteralPath $SummaryLogPath -Value "${PhaseName} tool_use: $message" -Encoding UTF8
+                    } elseif ($block.type -eq 'text' -and -not [string]::IsNullOrWhiteSpace([string]$block.text)) {
+                        $text = [string]$block.text
+                        if ($text.Length -gt 1000) { $text = $text.Substring(0, 1000) + '... [truncated]' }
+                        Write-AgentEvent 'assistant_text' $text @{ phase = $PhaseName }
+                        Add-Content -LiteralPath $SummaryLogPath -Value "${PhaseName} assistant_text: $text" -Encoding UTF8
+                    }
+                }
+            } elseif ($event.type -eq 'user' -and $event.tool_use_result) {
+                $result = [string]$event.tool_use_result
+                if ($result.Length -gt 600) { $result = $result.Substring(0, 600) + '... [truncated]' }
+                Write-AgentEvent 'tool_result' $result @{ phase = $PhaseName }
+                Add-Content -LiteralPath $SummaryLogPath -Value "${PhaseName} tool_result: $result" -Encoding UTF8
+            } elseif ($event.type -eq 'result') {
+                $resultJson = $event | ConvertTo-Json -Compress -Depth 30
+                Write-AgentEvent 'result' $resultJson @{ phase = $PhaseName }
+                Add-Content -LiteralPath $SummaryLogPath -Value "${PhaseName} result: $resultJson" -Encoding UTF8
+            } else {
+                Write-AgentEvent 'raw' $line @{ phase = $PhaseName }
+            }
+        } catch {
+            Write-AgentEvent 'raw' $line @{ phase = $PhaseName }
+        }
+    }
+}
 function Assert-PhaseContract {
     param(
         [hashtable]$Phase,
@@ -168,55 +287,43 @@ function Invoke-ClaudePhase {
     Write-Host "::group::Claude issue-agent phase: $phaseName"
     Write-AgentEvent 'phase_start' "Starting $phaseName phase." @{ phase = $phaseName }
 
-    & $ClaudeCliPath `
-        -p $promptText `
-        --bare `
-        --model sonnet `
-        --permission-mode bypassPermissions `
-        --output-format stream-json `
-        --verbose `
-        --debug-file $DebugLogPath `
-        --strict-mcp-config `
-        "--mcp-config=$McpConfigPath" `
-        --max-budget-usd '15.00' `
-        --add-dir $RepoRoot 2>&1 |
-        ForEach-Object {
-            $line = [string]$_
-            try {
-                $event = $line | ConvertFrom-Json -ErrorAction Stop
-                if ($event.type -eq 'assistant' -and $event.message.content) {
-                    foreach ($block in $event.message.content) {
-                        if ($block.type -eq 'tool_use') {
-                            $inputJson = if ($null -ne $block.input) { $block.input | ConvertTo-Json -Compress -Depth 20 } else { '{}' }
-                            $message = "$($block.name) $inputJson"
-                            Write-AgentEvent 'tool_use' $message @{ phase = $phaseName }
-                            Add-Content -LiteralPath $SummaryLogPath -Value "${phaseName} tool_use: $message" -Encoding UTF8
-                        } elseif ($block.type -eq 'text' -and -not [string]::IsNullOrWhiteSpace([string]$block.text)) {
-                            $text = [string]$block.text
-                            if ($text.Length -gt 1000) { $text = $text.Substring(0, 1000) + '... [truncated]' }
-                            Write-AgentEvent 'assistant_text' $text @{ phase = $phaseName }
-                            Add-Content -LiteralPath $SummaryLogPath -Value "${phaseName} assistant_text: $text" -Encoding UTF8
-                        }
-                    }
-                } elseif ($event.type -eq 'user' -and $event.tool_use_result) {
-                    $result = [string]$event.tool_use_result
-                    if ($result.Length -gt 600) { $result = $result.Substring(0, 600) + '... [truncated]' }
-                    Write-AgentEvent 'tool_result' $result @{ phase = $phaseName }
-                    Add-Content -LiteralPath $SummaryLogPath -Value "${phaseName} tool_result: $result" -Encoding UTF8
-                } elseif ($event.type -eq 'result') {
-                    $resultJson = $event | ConvertTo-Json -Compress -Depth 30
-                    Write-AgentEvent 'result' $resultJson @{ phase = $phaseName }
-                    Add-Content -LiteralPath $SummaryLogPath -Value "${phaseName} result: $resultJson" -Encoding UTF8
-                }
-            } catch {
-                Write-AgentEvent 'raw' $line @{ phase = $phaseName }
-            }
-        }
+    $stdoutPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-$phaseName-stdout.jsonl"
+    $stderrPath = Join-Path $env:RUNNER_TEMP "claude-issue-agent-$phaseName-stderr.log"
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
 
-    $exitCode = $LASTEXITCODE
+    $invokeResult = Invoke-ProcessWithTimeout `
+        -FilePath $ClaudeCliPath `
+        -Arguments @(
+            '-p', $promptText,
+            '--bare',
+            '--model', 'sonnet',
+            '--permission-mode', 'bypassPermissions',
+            '--output-format', 'stream-json',
+            '--verbose',
+            '--debug-file', $DebugLogPath,
+            '--strict-mcp-config',
+            "--mcp-config=$McpConfigPath",
+            '--max-budget-usd', '15.00',
+            '--add-dir', $RepoRoot
+        ) `
+        -WorkingDirectory $RepoRoot `
+        -StdoutPath $stdoutPath `
+        -StderrPath $stderrPath `
+        -TimeoutSeconds $PhaseTimeoutSeconds
+
+    Write-ClaudeOutputLines -Path $stdoutPath -PhaseName $phaseName
+    Write-ClaudeOutputLines -Path $stderrPath -PhaseName $phaseName
+
+    if ($invokeResult.TimedOut) {
+        $notes = "Claude phase '$phaseName' exceeded the $PhaseTimeoutSeconds second script timeout before writing a required phase result."
+        Write-AgentEvent 'phase_timeout' $notes @{ phase = $phaseName; timeout_seconds = $PhaseTimeoutSeconds }
+        Write-SyntheticPhaseAbort -Phase $Phase -AbortReason 'phase_timeout' -Notes $notes
+    }
+
+    $exitCode = $invokeResult.ExitCode
     Write-AgentEvent 'phase_exit' "${phaseName} Claude exit code: $exitCode" @{ phase = $phaseName; exit_code = $exitCode }
     Write-Host "::endgroup::"
-    if ($exitCode -ne 0) { throw "Claude phase '$phaseName' failed with exit code $exitCode." }
+    if ((-not $invokeResult.TimedOut) -and $exitCode -ne 0) { throw "Claude phase '$phaseName' failed with exit code $exitCode." }
 
     $result = Read-JsonFile -Path $phaseJsonPath
     $status = Assert-PhaseContract -Phase $Phase -Result $result
