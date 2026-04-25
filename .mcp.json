@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "sts2-modding": {
+    "spire-lens-mcp": {
       "type": "stdio",
       "command": "uv",
       "args": [
