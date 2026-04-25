@@ -77,6 +77,56 @@ For STS2 issue-agent work, `sts2-modding` is a hard prerequisite.
 
 In this environment, stateful STS2 work should go through approved MCP tools rather than improvised side paths.
 
+
+## Phased Script Workflow
+
+The issue-agent job is script-controlled and runs Claude in three separate phases:
+
+1. Investigation: identifies the issue target, card/character facts, MCP/game-state needs, and validation plan. It cannot edit code.
+2. Implementation: applies code changes only if the investigation plan is viable and appropriately scoped.
+3. Verification: runs tests, live MCP validation, screenshots, and final evidence checks.
+
+Each phase writes both machine-readable JSON and human-readable Markdown:
+
+- `issue-agent-investigation.json` / `issue-agent-investigation.md`
+- `issue-agent-implementation.json` / `issue-agent-implementation.md`
+- `issue-agent-verification.json` / `issue-agent-verification.md`
+- `issue-agent-result.json` / `issue-agent-result.md`
+
+The script reads each phase JSON before continuing. If a phase reports `status: abort`, the script stops and the final summary reports the abort layer and reason.
+
+Allowed investigation abort reasons:
+
+- `card_not_found`
+- `card_ambiguous`
+- `character_not_found`
+- `metadata_unavailable`
+- `mcp_capability_missing`
+- `game_state_unreachable`
+- `validation_plan_impossible`
+
+Allowed implementation abort reasons:
+
+- `change_too_large`
+- `requires_new_library`
+- `requires_architecture_change`
+- `unsafe_refactor`
+- `missing_code_context`
+- `conflicting_requirements`
+- `cannot_implement_without_guessing`
+
+Allowed verification abort reasons:
+
+- `unit_tests_failed`
+- `live_validation_failed`
+- `screenshot_missing`
+- `screenshot_not_relevant`
+- `mcp_state_mismatch`
+- `claimed_result_not_observed`
+- `artifact_contract_missing`
+
+Each phase Markdown is appended to the GitHub job summary as soon as the phase finishes. The final summarizer also posts a compact rollup with phase statuses, artifact links, screenshot counts, and any PR link reported by the implementation or result JSON.
+
 ## Visibility
 
 The issue-agent workflow writes and uploads validation artifacts:
