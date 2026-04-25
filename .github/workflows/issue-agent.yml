@@ -199,7 +199,8 @@ jobs:
           "ANTHROPIC_API_KEY=$anthropicApiKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Run Claude issue agent
-        env:          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+        env:
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           GH_TOKEN: ${{ github.token }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
           DISPATCH_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
