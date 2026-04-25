@@ -44,7 +44,7 @@ The issue-agent workflow resolves the mutation token immediately after checkout:
 ```yaml
 - name: Create issue-agent GitHub App token
   id: issue-agent-app-token
-  if: ${{ vars.ISSUE_AGENT_APP_ID != '' && secrets.ISSUE_AGENT_APP_PRIVATE_KEY != '' }}
+  if: ${{ vars.ISSUE_AGENT_APP_ID != '' }}
   uses: actions/create-github-app-token@v1
   with:
     app-id: ${{ vars.ISSUE_AGENT_APP_ID }}
