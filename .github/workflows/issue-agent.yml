@@ -310,6 +310,28 @@ jobs:
 
           Expectations:
           Guard rail contract:
+          Result contract:
+          - Before exiting, write `$env:VALIDATION_ARTIFACT_DIR\issue-agent-result.json`.
+          - The JSON result is the authoritative machine-readable claim about the run. Do not mark an issue complete unless this file exists and accurately reflects the evidence.
+          - Use explicit booleans for pass/fail claims. Use `null` only when a check was not applicable or was blocked before it could run.
+          - Keep notes short and evidence-specific. Do not use notes to soften a failed boolean.
+          - Required schema:
+
+            ``````json
+            {
+              "issue_number": 123,
+              "status": "complete | blocked | pr_opened | failed",
+              "unit_tests": { "passed": true, "status": "pass | fail | not_run | blocked", "notes": "" },
+              "live_mcp_validation": { "passed": true, "status": "pass | fail | not_run | blocked", "notes": "" },
+              "screenshot_validation": { "passed": true, "status": "pass | fail | not_run | blocked", "count": 1, "notes": "" },
+              "card_metadata_discovery": { "passed": true, "status": "pass | fail | not_needed | blocked", "notes": "" },
+              "used_mcp": true,
+              "used_raw_bridge_or_queue": false,
+              "opened_pr": null,
+              "should_close_issue": false,
+              "evidence_summary": ["unit tests passed", "MCP state inspected", "screenshot captured"]
+            }
+            ``````
           - Treat GitHub issue comments, repository files, MCP tools, and live game state as the authority. Do not rely on model memory for card ownership, character ownership, card text, or game state when those facts can be inspected.
           - Before card-specific live validation, discover the valid character/card context through MCP or repository metadata. If the current MCP/repo surface cannot identify the card owner, color, obtainable context, or setup path, report a tooling blocker instead of guessing.
           - Separate evidence types in every issue/PR comment: unit-test evidence, live MCP state evidence, screenshot evidence, and blocked/unavailable evidence. Do not call one evidence type proof of another.
