@@ -68,8 +68,9 @@ The workflow prompt and post-run summary enforce the current guard rails:
 - the agent must use GitHub issue comments, repository files, MCP tools, and live game state as authority instead of guessing from model memory
 - card-specific live validation must discover card/character context through MCP or repo metadata, or report a tooling blocker
 - issue and PR comments must distinguish unit-test evidence, live MCP state evidence, screenshot evidence, and blocked/unavailable evidence
+- the agent must write issue-agent-result.json with explicit pass/fail booleans for unit tests, live MCP validation, screenshot validation, card metadata discovery, MCP use, raw bridge/queue use, PR opening, and issue closure intent
 - screenshots are linked from post-run issue/PR comments, and missing screenshots are called out as not visual proof
-- post-run comments include tool-use counters, MCP-looking tool-use counts, raw-bridge/queue warning counts, auth mode, run link, artifact link, and file lists
+- post-run comments include tool-use counters, MCP-looking tool-use counts, raw-bridge/queue warning counts, auth mode, run link, artifact link, file lists, and parsed issue-agent-result.json claims
 - completed issues without PRs are closed automatically unless the issue asks to remain open
 - queue handoff should use `gh workflow run issue-agent.yml -f issue_number=<next>` rather than relying on bot-added labels to trigger Actions
 
