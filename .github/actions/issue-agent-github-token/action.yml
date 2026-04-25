@@ -1,0 +1,62 @@
+name: Resolve issue-agent GitHub token
+description: Resolve the token used by the issue agent for GitHub mutations.
+
+inputs:
+  app-id:
+    description: GitHub App ID for the issue-agent identity. Leave empty to use fallback-token.
+    required: false
+    default: ""
+  private-key:
+    description: Private key for the issue-agent GitHub App. Leave empty to use fallback-token.
+    required: false
+    default: ""
+  owner:
+    description: Repository owner that installed the app.
+    required: true
+  fallback-token:
+    description: Token to use while the GitHub App is not configured.
+    required: true
+
+outputs:
+  token:
+    description: Token selected for GitHub CLI and agent mutations.
+    value: ${{ steps.select-token.outputs.token }}
+  auth-mode:
+    description: app-token or github-token-fallback.
+    value: ${{ steps.select-token.outputs.auth-mode }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub App installation token
+      id: app-token
+      if: ${{ inputs.app-id != '' && inputs.private-key != '' }}
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ inputs.owner }}
+
+    - name: Select issue-agent token
+      id: select-token
+      shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+      env:
+        APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        FALLBACK_TOKEN: ${{ inputs.fallback-token }}
+      run: |
+        if (-not [string]::IsNullOrWhiteSpace($env:APP_TOKEN)) {
+          Write-Host "Using issue-agent GitHub App installation token."
+          Write-Host "::add-mask::$($env:APP_TOKEN)"
+          "token=$($env:APP_TOKEN)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "auth-mode=app-token" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($env:FALLBACK_TOKEN)) {
+          throw "No issue-agent GitHub App token was created and no fallback token was provided."
+        }
+
+        Write-Host "Using issue-agent GITHUB_TOKEN fallback. Configure ISSUE_AGENT_APP_ID and ISSUE_AGENT_APP_PRIVATE_KEY to switch to the app identity."
+        Write-Host "::add-mask::$($env:FALLBACK_TOKEN)"
+        "token=$($env:FALLBACK_TOKEN)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "auth-mode=github-token-fallback" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
