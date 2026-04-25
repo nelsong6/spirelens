@@ -55,6 +55,12 @@ Required repository variables:
 - `KEY_VAULT_NAME`
 - `KEY_VAULT_SUBSCRIPTION_ID`
 
+## GitHub Mutation Identity
+
+Issue-agent GitHub mutations should move from the workflow `GITHUB_TOKEN` to a dedicated GitHub App installation token. The scaffold and rollout contract live in [issue-agent-github-app-auth.md](./issue-agent-github-app-auth.md).
+
+During transition the workflow may keep using `GITHUB_TOKEN` as a fallback, but the target identity for issue comments, labels, branches, commits, and pull requests is the dedicated issue-agent app.
+
 ## Local Host Bring-Up
 
 The active host path is now laptop-first.
