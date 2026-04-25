@@ -35,7 +35,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="3.0.8" PrivateAssets="All" GeneratePathProperty="true"/>
+        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="3.0.9" PrivateAssets="All" GeneratePathProperty="true"/>
         <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="All"/>
         <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="0.1.9" />
         <!-- Mono.Cecil: rewrites the Core assembly's manifest name per load so
