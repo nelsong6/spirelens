@@ -299,6 +299,9 @@ jobs:
           - All stateful STS2 work must go through approved MCP tools. Do not use raw TCP bridge calls, ad hoc PowerShell bridge scripts, Azure Python imports, Windows API clicking, or other non-MCP workarounds.
           - Use direct MCP/game control. Do not use or debug any legacy filesystem bridge or scenario-request queue.
           - Missing MCP capability is a tooling gap to report, not a reason to invent side automation.
+          - After building and deploying SpireLens.Core.dll, explicitly call the MCP `reload_spirelens_core` tool before screenshotting changed SpireLens behavior.
+          - If validation needs an active run and the game is at the main menu, use the MCP `start_singleplayer_run` tool, then use `enter_debug_room` when a specific room setup is needed.
+          - If `reload_spirelens_core`, `start_singleplayer_run`, or `enter_debug_room` is unavailable or fails, report that as a live-validation blocker. Do not treat a main-menu screenshot as proof of changed tooltip or in-run behavior.
           - Do not use `LiveScenarios/`, `ops/live-worker/`, `scripts/ci/run-live-scenario.ps1`, or any `request.json` / `ready.json` / `accepted.json` / `result.json` workflow.
           - Do not read from or write to `D:\automation\spirelens-live-bridge`.
           - For STS2 issue-agent work, capture screenshot artifacts of the affected card or tooltip states before marking the issue complete.
