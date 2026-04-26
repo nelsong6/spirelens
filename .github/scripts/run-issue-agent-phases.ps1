@@ -127,7 +127,10 @@ $phaseDefinitions = @(
             'Bash',
             'PowerShell'
         )
-        DisallowedTools = $AllSpireLensMcpTools
+        DisallowedTools = $AllSpireLensMcpTools + @(
+            'Bash(dotnet test *)',
+            'PowerShell(dotnet test *)'
+        )
     },
     [ordered]@{
         Name = 'verification'
@@ -383,6 +386,16 @@ function Assert-PhaseContract {
         }
     }
 
+    if ($Phase.Name -eq 'implementation' -and $status -eq 'pass') {
+        $verificationRequired = Get-PropertyValue -Object $Result -Name 'verification_required'
+        if ($null -eq $verificationRequired) {
+            throw "Implementation phase pass result must include boolean verification_required."
+        }
+        if ($verificationRequired -isnot [bool]) {
+            throw "Implementation phase wrote invalid verification_required '$verificationRequired'. Expected boolean."
+        }
+    }
+
     return $status
 }
 
@@ -558,13 +571,16 @@ $implementationPrompt = (Get-CommonPromptPrefix -PhaseName 'implementation') + @
 IMPLEMENTATION RULES:
 - Read `$ValidationArtifactDir\issue-agent-investigation.json` first and implement only that plan.
 - Own code changes only. Do not claim verification success.
+- Do not run unit tests, integration tests, live validation, or screenshot validation. Verification owns every `dotnet test`, live MCP action, and screenshot.
+- You may inspect code, edit code, run focused builds for compile sanity, and create a branch/commit/PR when code changes are needed.
+- If no code change is needed, write a pass result with `changed_files: []`, `opened_pr: null`, and `verification_required: true`; do not run tests to prove that claim.
 - Do not start gameplay, enter rooms, play cards, capture screenshots, or perform live MCP validation; leave all live MCP validation to verification.
 - If the viable solve requires dramatic changes, a new library, architecture changes, or unsafe refactors, abort.
 - If you make code changes, create a branch, commit, push, and open a PR.
 - Write `issue-agent-implementation.json` with:
-  `{ "layer":"implementation", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "changed_files":[], "opened_pr":null, "opened_pr_url":null }`
+  `{ \"layer\":\"implementation\", \"status\":\"pass|abort\", \"abort_reason\":null, \"retryable\":false, \"human_action_required\":false, \"notes\":\"\", \"changed_files\":[], \"opened_pr\":null, \"opened_pr_url\":null, \"verification_required\":true }`
 - Allowed abort reasons: change_too_large, requires_new_library, requires_architecture_change, unsafe_refactor, missing_code_context, conflicting_requirements, cannot_implement_without_guessing.
-- Write `issue-agent-implementation.md` summarizing changes, branch, commit, PR link, or abort reason.
+- Write `issue-agent-implementation.md` summarizing changes, branch, commit, PR link, no-change decision, or abort reason.
 "@
 
 $verificationPrompt = (Get-CommonPromptPrefix -PhaseName 'verification') + @"
