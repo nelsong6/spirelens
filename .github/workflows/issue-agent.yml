@@ -199,27 +199,17 @@ jobs:
             -StartupTimeoutSeconds 60 `
             -ShutdownTimeoutSeconds 45
 
-      - name: Load Anthropic API key from local runner file
-        env:
-          CONFIGURED_ANTHROPIC_KEY_PATH: ${{ vars.ISSUE_AGENT_ANTHROPIC_KEY_PATH }}
+      - name: Verify Claude subscription auth
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
-          $keyPath = $env:CONFIGURED_ANTHROPIC_KEY_PATH
-          if ([string]::IsNullOrWhiteSpace($keyPath)) {
-            $keyPath = 'C:\ProgramData\SpireLens\anthropic-api-key.txt'
+          if ([string]::IsNullOrWhiteSpace($env:CLAUDE_CLI_PATH) -or -not (Test-Path -LiteralPath $env:CLAUDE_CLI_PATH)) {
+            throw "Claude Code CLI was not found at '$env:CLAUDE_CLI_PATH'."
           }
 
-          if (-not (Test-Path -LiteralPath $keyPath)) {
-            throw "Anthropic API key file was not found at '$keyPath'. Run the Key Vault bootstrap script on this runner or set repository variable ISSUE_AGENT_ANTHROPIC_KEY_PATH."
+          & $env:CLAUDE_CLI_PATH auth status
+          if ($LASTEXITCODE -ne 0) {
+            throw "Claude Code is not authenticated for the runner user. Log in once as the interactive runner account before dispatching issue-agent jobs."
           }
-
-          $anthropicApiKey = (Get-Content -LiteralPath $keyPath -Raw).Trim()
-          if ([string]::IsNullOrWhiteSpace($anthropicApiKey)) {
-            throw "Anthropic API key file '$keyPath' is empty."
-          }
-
-          Write-Host "::add-mask::$anthropicApiKey"
-          "ANTHROPIC_API_KEY=$anthropicApiKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Run phased Claude issue agent
         timeout-minutes: 25
         env:
@@ -230,9 +220,6 @@ jobs:
           REPO_SLUG: ${{ github.repository }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:ANTHROPIC_API_KEY)) {
-            throw "ANTHROPIC_API_KEY was not loaded from the local runner file."
-          }
           if ([string]::IsNullOrWhiteSpace($env:CLAUDE_CLI_PATH) -or -not (Test-Path -LiteralPath $env:CLAUDE_CLI_PATH)) {
             throw "Claude Code CLI was not found at '$env:CLAUDE_CLI_PATH'."
           }
