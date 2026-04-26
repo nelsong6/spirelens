@@ -119,7 +119,8 @@ jobs:
           $candidates += @(
             'D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe',
             'C:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe',
-            (Join-Path $env:USERPROFILE 'automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe')
+            (Join-Path $env:USERPROFILE 'automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe'),
+            (Join-Path $env:APPDATA 'npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe')
           )
 
           $claudePath = $candidates |
