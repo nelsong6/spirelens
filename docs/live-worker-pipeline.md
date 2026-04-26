@@ -11,7 +11,7 @@ The intended flow is:
 1. GitHub issue event triggers the issue-agent workflow.
 2. GitHub Actions selects one self-hosted Windows runner labeled `issue-agent`.
 3. Claude receives the exact issue number from the event.
-4. Claude uses the project `.mcp.json` and the `sts2-modding` MCP server directly for STS2 inspection/control.
+4. Claude uses the project `.mcp.json` and the `spire-lens-mcp` MCP server directly for STS2 inspection/control.
 5. Claude comments on the issue, updates labels, opens a PR if code changes are required, and records validation artifacts for review.
 
 ## Direct MCP Rule
@@ -35,11 +35,11 @@ The active worker path is a local Windows machine, usually the laptop.
 Common local layout:
 
 - repo checkout wherever GitHub Actions places `GITHUB_WORKSPACE`
-- STS2 Modding MCP checkout at any stable local path referenced by `.mcp.json`
+- SpireLens MCP checkout at any stable local path referenced by `.mcp.json`
 - Claude Code at one of the documented default locations or repository variable
   `ISSUE_AGENT_CLAUDE_CLI_PATH`
 
-The project `.mcp.json` should point Claude to `sts2-modding`.
+The project `.mcp.json` should point Claude to `spire-lens-mcp`.
 
 Expected live MCP endpoint when STS2 is running with `SpireLensMcp` installed:
 
@@ -53,8 +53,8 @@ The bridge is provided by [`nelsong6/spire-lens-mcp`](https://github.com/nelsong
 
 The issue-agent workflow:
 
-- loads Azure Key Vault secret `spirelens`
-- maps it to `ANTHROPIC_API_KEY`
+- verifies the interactive runner account with `claude auth status`
+- uses the local Claude Code subscription login
 - streams Claude activity into the Actions log
 - uploads validation artifacts after every run
 
@@ -78,7 +78,7 @@ That runner should still be built around:
 - GitHub Actions runner
 - Claude Code
 - STS2 install
-- STS2 Modding MCP
+- SpireLens MCP
 - project checkout + `.mcp.json`
 
 Not around:
