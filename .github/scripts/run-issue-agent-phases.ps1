@@ -358,7 +358,7 @@ gh issue view $IssueNumber --repo $RepoSlug --comments
 ``````
 
 All stateful Slay the Spire 2 work must go through MCP tools from the project MCP config at `$McpConfigPath`.
-Do not use raw localhost bridge calls, filesystem queues, `LiveScenarios/`, `ops/live-worker/`, or `D:\automation\spirelens-live-bridge`.
+All screenshot evidence must be captured through the `capture_screenshot` MCP tool. Do not use shell, PowerShell, `CopyFromScreen`, `PrimaryScreen`, `System.Drawing`, raw localhost bridge calls, filesystem queues, `LiveScenarios/`, `ops/live-worker/`, or `D:\automation\spirelens-live-bridge`.
 Write your JSON and Markdown artifacts to this exact validation artifact directory:
 
 ``````
@@ -430,8 +430,10 @@ dotnet build "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug "
 dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --no-build "-p:Sts2DataDir=`$sts2DataDir"
 ``````
 
-- Save screenshots to `$ScreenshotDir`.
-- If you cannot obtain meaningful screenshot evidence, abort with screenshot_missing or screenshot_not_relevant.
+- Capture screenshots only through the `capture_screenshot` MCP tool.
+- Use the full STS2 game window/client area returned by `capture_screenshot` as canonical screenshot evidence. Crops or tighter views may be additional evidence only, not replacements.
+- Do not use shell, PowerShell, `CopyFromScreen`, `PrimaryScreen`, `System.Drawing`, or arbitrary desktop capture for screenshot evidence. If `capture_screenshot` is unavailable or does not return a saved PNG path plus dimensions, abort with screenshot_missing.
+- If the saved screenshot is not meaningful evidence for the validation claim, abort with screenshot_not_relevant.
 - Write `issue-agent-verification.json` with:
   `{ "layer":"verification", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "unit_tests":{"passed":null,"status":"not_run","notes":""}, "live_mcp_validation":{"passed":null,"status":"not_run","notes":""}, "screenshot_validation":{"passed":null,"status":"not_run","count":0,"notes":""}, "used_mcp":null, "used_raw_bridge_or_queue":false }`
 - Allowed abort reasons: unit_tests_failed, live_validation_failed, screenshot_missing, screenshot_not_relevant, mcp_state_mismatch, claimed_result_not_observed, artifact_contract_missing.
