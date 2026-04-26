@@ -40,20 +40,11 @@ Each Windows issue-agent host should provide:
   variable `ISSUE_AGENT_CLAUDE_CLI_PATH` or one of the documented default
   locations
 - a normal Actions checkout for this repo under `GITHUB_WORKSPACE`
-- an STS2 Modding MCP checkout wherever the local `.mcp.json` points to it
-- project `.mcp.json` configured to point at `sts2-modding`
+- a SpireLens MCP checkout wherever the local `.mcp.json` points to it
+- project `.mcp.json` configured to point at `spire-lens-mcp`
+- Claude Code authenticated once as the interactive runner account
 
-The workflow loads Azure Key Vault secret `spirelens` and exposes it to Claude Code as:
-
-- `ANTHROPIC_API_KEY`
-
-Required repository variables:
-
-- `ARM_CLIENT_ID`
-- `ARM_TENANT_ID`
-- `ARM_SUBSCRIPTION_ID`
-- `KEY_VAULT_NAME`
-- `KEY_VAULT_SUBSCRIPTION_ID`
+The workflow verifies `claude auth status` before launching the phased agent. It does not load an Anthropic API key from a runner file.
 
 ## Local Host Bring-Up
 
@@ -66,11 +57,11 @@ to register the machine as the repository runner.
 
 ## MCP Requirement
 
-For STS2 issue-agent work, `sts2-modding` is a hard prerequisite.
+For STS2 issue-agent work, `spire-lens-mcp` is a hard prerequisite.
 
-- `.mcp.json` must declare `sts2-modding`
-- Claude must be able to list and connect to `sts2-modding` before the issue agent starts
-- `sts2-modding` must pass a minimal no-side-effect readiness probe before the main task begins
+- `.mcp.json` must declare `spire-lens-mcp`
+- Claude must be able to list and connect to `spire-lens-mcp` before the issue agent starts
+- `spire-lens-mcp` must pass a minimal no-side-effect readiness probe before the main task begins
 - if any of those checks fail, stop immediately and report a blocker
 - do not fall back to raw TCP bridge calls, ad hoc PowerShell bridge scripts, Azure Python imports, Windows API clicking, or other non-MCP workarounds
 - missing MCP capability is a tooling gap to report, not a reason to invent side automation
@@ -143,8 +134,8 @@ These are uploaded as Actions artifacts after every run, even on failure, so the
 
 For STS2 issue-agent work:
 
-- capture screenshot artifacts of the affected card or tooltip states before marking the issue complete
-- always include at least one screenshot
+- capture screenshot artifacts through the `capture_screenshot` MCP tool before marking the issue complete
+- always include at least one full STS2 game-window screenshot
 - if the issue is about a specific card, include at least one screenshot showing that card's stats working in a representative in-run test case
 - document the test case used for the screenshot artifacts: what was set up, what was exercised, and what each screenshot is intended to prove
 - capture screenshots after the behavior is working, not just during setup
@@ -157,7 +148,7 @@ For STS2 issue-agent work:
 
 ## Direct Control Rule
 
-For STS2 work, Claude should use direct MCP/game control through `sts2-modding`.
+For STS2 work, Claude should use direct MCP/game control through `spire-lens-mcp`.
 
 The issue-agent path should not use:
 
