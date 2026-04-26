@@ -164,6 +164,22 @@ jobs:
           }
 
           uv run --directory (Join-Path $mcpRoot "mcp") python -m py_compile server.py
+
+          $gameDir = "D:\SteamLibrary\steamapps\common\Slay the Spire 2"
+          $buildScript = Join-Path $mcpRoot "build.ps1"
+          if (-not (Test-Path -LiteralPath $buildScript)) {
+            throw "SpireLens MCP build script was not found at '$buildScript'."
+          }
+
+          & $buildScript -GameDir $gameDir -Configuration Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "SpireLens MCP build failed."
+          }
+
+          $modsDir = Join-Path $gameDir "mods"
+          New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
+          Copy-Item -LiteralPath (Join-Path $mcpRoot "out\SpireLensMcp\SpireLensMcp.dll") -Destination (Join-Path $modsDir "SpireLensMcp.dll") -Force
+          Copy-Item -LiteralPath (Join-Path $mcpRoot "mod_manifest.json") -Destination (Join-Path $modsDir "SpireLensMcp.json") -Force
       - name: Restart STS2 for clean issue-agent baseline
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
