@@ -209,7 +209,7 @@ function New-ClaudeEventTranscript {
     $transcript = New-Object System.Collections.Generic.List[string]
     $transcript.Add('# Claude Event Transcript')
     $transcript.Add('')
-    $transcript.Add("Source: `$EventLogPath")
+    $transcript.Add("Source: $EventLogPath")
     $transcript.Add('')
 
     if ([string]::IsNullOrWhiteSpace($EventLogPath) -or -not (Test-Path -LiteralPath $EventLogPath)) {
@@ -241,13 +241,13 @@ function New-ClaudeEventTranscript {
                     $body = New-Object System.Collections.Generic.List[string]
                     try {
                         $resultEvent = $message | ConvertFrom-Json -ErrorAction Stop
-                        $body.Add("- Error: `$($resultEvent.is_error)")
-                        $body.Add("- Turns: `$($resultEvent.num_turns)")
-                        $body.Add("- Cost: `$($resultEvent.total_cost_usd)")
+                        $body.Add("- Error: $($resultEvent.is_error)")
+                        $body.Add("- Turns: $($resultEvent.num_turns)")
+                        $body.Add("- Cost: $($resultEvent.total_cost_usd)")
                         if ($resultEvent.permission_denials) {
                             $body.Add('- Permission denials:')
                             foreach ($denial in $resultEvent.permission_denials) {
-                                $body.Add("  - `$($denial.tool_name)` input: `$(ConvertTo-CompactJson $denial.tool_input)")
+                                $body.Add("  - $($denial.tool_name) input: $(ConvertTo-CompactJson $denial.tool_input)")
                             }
                         }
                         if (-not [string]::IsNullOrWhiteSpace([string]$resultEvent.result)) {
@@ -270,10 +270,10 @@ function New-ClaudeEventTranscript {
             'system' {
                 $servers = if ($event.mcp_servers) { (($event.mcp_servers | ForEach-Object { "$($_.name)=$($_.status)" }) -join ', ') } else { '_none reported_' }
                 Add-TranscriptSection -Lines $transcript -Title 'System' -Body @(
-                    "- Session: `$($event.session_id)",
-                    "- Model: `$($event.model)",
-                    "- CWD: `$($event.cwd)",
-                    "- MCP servers: `$servers"
+                    "- Session: $($event.session_id)",
+                    "- Model: $($event.model)",
+                    "- CWD: $($event.cwd)",
+                    "- MCP servers: $servers"
                 )
             }
             'rate_limit_event' { Add-TranscriptSection -Lines $transcript -Title 'Rate Limit' -Body @('```json', (ConvertTo-CompactJson $event.rate_limit_info), '```') }
@@ -283,8 +283,8 @@ function New-ClaudeEventTranscript {
                         Add-TranscriptSection -Lines $transcript -Title 'Assistant' -Body @([string]$block.text)
                     } elseif ($block.type -eq 'tool_use') {
                         Add-TranscriptSection -Lines $transcript -Title 'Tool Use' -Body @(
-                            "- Tool: `$($block.name)",
-                            "- Input: `$(ConvertTo-CompactJson $block.input)"
+                            "- Tool: $($block.name)",
+                            "- Input: $(ConvertTo-CompactJson $block.input)"
                         )
                     }
                 }
@@ -299,13 +299,13 @@ function New-ClaudeEventTranscript {
             }
             'result' {
                 $body = New-Object System.Collections.Generic.List[string]
-                $body.Add("- Error: `$($event.is_error)")
-                $body.Add("- Turns: `$($event.num_turns)")
-                $body.Add("- Cost: `$($event.total_cost_usd)")
+                $body.Add("- Error: $($event.is_error)")
+                $body.Add("- Turns: $($event.num_turns)")
+                $body.Add("- Cost: $($event.total_cost_usd)")
                 if ($event.permission_denials) {
                     $body.Add('- Permission denials:')
                     foreach ($denial in $event.permission_denials) {
-                        $body.Add("  - `$($denial.tool_name)` input: `$(ConvertTo-CompactJson $denial.tool_input)")
+                        $body.Add("  - $($denial.tool_name) input: $(ConvertTo-CompactJson $denial.tool_input)")
                     }
                 }
                 if (-not [string]::IsNullOrWhiteSpace([string]$event.result)) {
