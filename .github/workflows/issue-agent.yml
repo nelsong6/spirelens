@@ -180,6 +180,12 @@ jobs:
           $modsDir = Join-Path $gameDir "mods"
           New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
 
+          $staleMcpFolder = Join-Path $modsDir "SpireLensMcp"
+          if (Test-Path -LiteralPath $staleMcpFolder) {
+            Write-Host "Removing stale folder-style SpireLens MCP install at '$staleMcpFolder'."
+            Remove-Item -LiteralPath $staleMcpFolder -Recurse -Force -ErrorAction Stop
+          }
+
           $gameDirWithSlash = $gameDir.TrimEnd('\') + '\'
           Get-CimInstance Win32_Process | Where-Object {
             $_.Name -in @('SlayTheSpire2.exe', 'crashpad_handler.exe') -and
