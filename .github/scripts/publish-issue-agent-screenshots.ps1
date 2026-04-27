@@ -48,11 +48,12 @@ $baseUrl = Normalize-ContainerUrl -Value $ContainerUrl
 $files = @(Get-ChildItem -LiteralPath $ScreenshotDir -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue | Select-Object -First $Limit)
 
 foreach ($file in $files) {
-    $relative = $file.FullName.Substring($root.Length).TrimStart('\\', '/') -replace '\\', '/'
+    $relative = $file.FullName.Substring($root.Length) -replace '\\', '/'
+    $relative = $relative.TrimStart('/')
     if ([string]::IsNullOrWhiteSpace($relative)) { $relative = $file.Name }
 
     $blobName = "$RunId/$relative"
-    $blobUrl = "$baseUrl/$(Join-UrlPath -Segments @($RunId) )/$(Join-UrlPath -Segments ($relative -split '/'))"
+    $blobUrl = "$baseUrl/$(Join-UrlPath -Segments @($RunId))/$(Join-UrlPath -Segments ($relative -split '/'))"
 
     try {
         az storage blob upload `
