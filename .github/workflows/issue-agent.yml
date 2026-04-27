@@ -58,7 +58,8 @@ jobs:
           $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
           & $scriptPath `
             -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
-            -InstallMcp
+            -InstallMcp `
+            -StartSts2
 
       - name: Verify Claude subscription auth
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -154,8 +155,7 @@ jobs:
         run: |
           $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
           & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
-            -InstallMcp
+            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
 
       - name: Verify Claude subscription auth
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
