@@ -318,11 +318,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "SpireLens loader build/deploy failed." }
           dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
           if ($LASTEXITCODE -ne 0) { throw "SpireLens core build/deploy failed." }
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\restart-sts2.ps1") `
-            -Mode Restart `
+
+      - name: Prepare STS2 scenario save
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\prepare-issue-agent-scenario.ps1") `
+            -TestPlanPath (Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-test-plan.json") `
             -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StartupTimeoutSeconds 60 `
-            -ShutdownTimeoutSeconds 45
+            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
+            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
+            -IssueNumber $env:ISSUE_NUMBER
 
       - name: Verify Claude subscription auth
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
