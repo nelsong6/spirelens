@@ -130,8 +130,12 @@ $phaseDefinitions = @(
         DisallowedTools = $SingleplayerMcpTools + $MultiplayerMcpTools + @(
             'Bash(gh issue view *--comments*)',
             'Bash(gh api *)',
+            'Read(*.claude*)',
+            'Read(*Claude*memory*)',
             'Edit',
             'NotebookEdit',
+            'Read(*.claude*)',
+            'Read(*Claude*memory*)',
             'WebFetch',
             'WebSearch',
             'Agent',
@@ -163,6 +167,8 @@ $phaseDefinitions = @(
         DisallowedTools = $SingleplayerMcpTools + $MultiplayerMcpTools + @(
             'Bash(dotnet test *)',
             'PowerShell(dotnet test *)',
+            'Read(*.claude*)',
+            'Read(*Claude*memory*)',
             'Bash(gh issue view *--comments*)',
             'PowerShell(gh issue view *--comments*)',
             'Bash(gh api *)',
@@ -221,6 +227,8 @@ $phaseDefinitions = @(
         DisallowedTools = $MultiplayerMcpTools + @(
             'Edit',
             'NotebookEdit',
+            'Read(*.claude*)',
+            'Read(*Claude*memory*)',
             'Bash(gh *)',
             'PowerShell(gh *)',
             'Bash(git add *)',
@@ -862,7 +870,7 @@ $RepoRoot
 ``````
 
 The shell tool is Git Bash on Windows. Do not use PowerShell-only environment syntax such as `$env:ISSUE_AGENT_REPO_ROOT` unless you are explicitly invoking `powershell`. Prefer quoted concrete paths from this prompt.
-Do not search above the repository root. Do not recurse through parent workspace folders or stale `issue-agent-src` checkouts from other runs.
+Do not search above the repository root. Do not recurse through parent workspace folders or stale `issue-agent-src` checkouts from other runs. Do not read Claude memory, Claude project memory, `.claude` directories, user home assistant state, or any ambient memory outside the explicit repo checkout and validation artifact directory.
 $issueReadInstruction
 
 Use only the MCP tools allowed for this phase from the project MCP config at `$McpConfigPath`.
