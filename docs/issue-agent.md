@@ -24,10 +24,10 @@ Issue-agent labels are:
 
 The processing model is intentionally simple:
 
-1. GitHub issue event fires.
+1. GitHub issue event fires, or a human manually dispatches the workflow for one issue number.
 2. GitHub Actions starts one workflow job on a self-hosted runner labeled `issue-agent`.
-3. Claude is launched for that exact issue number only.
-4. Claude owns the issue work: code changes, comments, labels, tests, and PR creation.
+3. The job launches fresh Claude Code invocations for the issue-agent phases.
+4. Claude owns the issue work through the phase contract: investigation, implementation, verification, comments, labels, tests, screenshots, and PR creation.
 
 There is no second script that chooses issues, reads structured result files, or drains a local queue.
 
@@ -68,32 +68,30 @@ For STS2 issue-agent work, `spire-lens-mcp` is a hard prerequisite.
 
 In this environment, stateful STS2 work should go through approved MCP tools rather than improvised side paths.
 
-
 ## Phased Script Workflow
 
-The issue-agent workflow is split into visible GitHub Actions jobs:
+The issue-agent workflow is one visible GitHub Actions job. Inside that job, the runner script launches separate Claude Code processes for each phase:
 
-1. `investigate`
-2. `implement`
-3. `verify`
-4. `summarize`
+1. Investigation
+2. Implementation
+3. Verification
 
-The first three jobs each launch a fresh Claude Code process with a different prompt, tool allowlist, timeout, and budget. Each job uploads its phase artifacts, and the next job downloads only the prior receipts it needs.
+This keeps the Actions page easy to follow while still preserving the important split: each phase has a fresh context, narrower tool permissions, its own timeout, its own budget, and explicit JSON/Markdown handoff artifacts.
 
-Claude runs in three separate phases:
+Claude runs in three separate invocations:
 
 1. Investigation: identifies the issue target, card/character facts, MCP/game-state needs, and validation plan. It cannot edit code.
 2. Implementation: applies code changes only if the investigation plan is viable and appropriately scoped.
 3. Verification: runs tests, live MCP validation, screenshots, and final evidence checks.
 
-Each phase writes both machine-readable JSON and human-readable Markdown, which become the job-to-job handoff artifacts:
+Each phase writes both machine-readable JSON and human-readable Markdown:
 
 - `issue-agent-investigation.json` / `issue-agent-investigation.md`
 - `issue-agent-implementation.json` / `issue-agent-implementation.md`
 - `issue-agent-verification.json` / `issue-agent-verification.md`
 - `issue-agent-result.json` / `issue-agent-result.md`
 
-The workflow reads each phase JSON before continuing. If investigation or implementation reports `status: abort`, downstream phase jobs are skipped and the final summary reports the abort layer and reason. If verification aborts, the summary still publishes the PR link, screenshots gathered so far, and the specific verifier failure.
+The runner reads each phase JSON before continuing. If investigation or implementation reports `status: abort`, later phases are skipped and the final summary reports the abort layer and reason. If verification aborts, the summary still publishes the PR link, screenshots gathered so far, and the specific verifier failure.
 
 Allowed investigation abort reasons:
 
@@ -125,7 +123,7 @@ Allowed verification abort reasons:
 - `claimed_result_not_observed`
 - `artifact_contract_missing`
 
-Each phase Markdown is appended to that phase job summary as soon as the phase finishes. The final summarizer job downloads every available phase artifact and posts a compact rollup with phase statuses, per-phase costs, grand total cost, artifact links, screenshot counts, and any PR link reported by the implementation or result JSON.
+Each phase Markdown is appended to the job summary as soon as the phase finishes. The final summary step posts a compact rollup with phase statuses, per-phase costs, grand total cost, artifact links, screenshot counts, and any PR link reported by the implementation or result JSON.
 
 ## Visibility
 
