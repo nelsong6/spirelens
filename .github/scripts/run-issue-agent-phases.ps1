@@ -127,7 +127,9 @@ $phaseDefinitions = @(
             'Edit',
             'NotebookEdit',
             'Agent',
-            'Task'
+            'Task',
+            'TaskOutput',
+            'TaskStop'
         )
     },
     [ordered]@{
@@ -165,7 +167,9 @@ $phaseDefinitions = @(
             'Bash(git switch *)',
             'PowerShell(git switch *)',
             'Agent',
-            'Task'
+            'Task',
+            'TaskOutput',
+            'TaskStop'
         )
     },
     [ordered]@{
@@ -203,7 +207,9 @@ $phaseDefinitions = @(
             'Bash(git switch *)',
             'PowerShell(git switch *)',
             'Agent',
-            'Task'
+            'Task',
+            'TaskOutput',
+            'TaskStop'
         )
     }
 )
@@ -788,6 +794,7 @@ Do not read the GitHub issue or issue comments in this phase. Use the JSON/Markd
 You are Claude Code running the $PhaseName phase for $RepoSlug issue #$IssueNumber.
 
 GitHub Actions triggered this job for exactly issue #$IssueNumber. Do not process any other issue.
+Do not delegate to subagents, Explore agents, Task agents, or any other secondary agent. Each phase must do its own bounded work with its allowed tools so the logs, costs, and failure reasons stay auditable.
 Use this exact local checkout path as the repository root:
 
 ``````
@@ -845,6 +852,7 @@ INVESTIGATION RULES:
 - For every issue-specified card, call `lookup_card` before writing the investigation result. If lookup returns `not_found`, abort with card_not_found. If lookup returns `ambiguous`, abort with card_ambiguous. Do not infer ownership from training data.
 - For every issue-specified character, call `lookup_character` before writing the investigation result. If lookup returns `not_found` or `ambiguous`, abort with character_not_found or card_ambiguous as appropriate.
 - Keep searches targeted to the current checkout for code context only. Prefer `rg "Make It So|MakeItSo|MAKE_IT_SO" .` from the repository root over recursive PowerShell searches.
+- Do not use an Explore/subagent/Task to find code context. If targeted `rg`/`Grep`/`Read` cannot identify the surface quickly, abort with `validation_plan_impossible` instead of delegating.
 - If MCP catalog metadata or repo code context cannot support the needed validation plan, abort.
 - Write `issue-agent-investigation.json` with:
   `{ "layer":"investigation", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "card":{}, "character":{}, "card_metadata_discovery":{"passed":null,"status":"not_run","notes":""}, "validation_plan":[], "required_evidence":[{"id":"unit-tests","kind":"unit_test","required":true,"must_show":"specific tests that prove the changed behavior"},{"id":"live-target-visible","kind":"screenshot","required":true,"must_show":"target card/UI/tooltip state visibly proving the issue claim","target_visible_required":true,"text_visible_required":false,"allowed_fallback":null}] }`
