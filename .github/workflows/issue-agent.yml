@@ -17,11 +17,11 @@ permissions:
   pull-requests: write
 
 env:
-  ISSUE_AGENT_ARTIFACT_PREFIX: issue-agent-phase
+  ISSUE_AGENT_ARTIFACT_NAME: issue-agent-artifacts
 
 jobs:
-  investigate:
-    name: Investigate test primitives
+  issue-agent:
+    name: Run phased issue agent
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
@@ -33,10 +33,7 @@ jobs:
       - windows
       - issue-agent
     env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-investigation
-    outputs:
-      phase_status: ${{ steps.phase_result.outputs.phase_status }}
-      abort_reason: ${{ steps.phase_result.outputs.abort_reason }}
+      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Checkout repository
@@ -45,7 +42,7 @@ jobs:
           fetch-depth: 0
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
 
-      - name: Prepare investigation host
+      - name: Prepare issue-agent host
         env:
           CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -64,8 +61,8 @@ jobs:
             throw "Claude Code is not authenticated for the runner user."
           }
 
-      - name: Run investigation phase
-        timeout-minutes: 10
+      - name: Run phased issue agent
+        timeout-minutes: 42
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           GH_TOKEN: ${{ github.token }}
@@ -84,354 +81,15 @@ jobs:
             -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
             -ClaudeCliPath $env:CLAUDE_CLI_PATH `
             -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-investigation-events.jsonl") `
-            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-investigation-debug.log") `
-            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-investigation-summary.log") `
+            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl") `
+            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log") `
+            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-summary.log") `
             -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
             -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -PhaseName investigation
-
-      - name: Read investigation result
-        id: phase_result
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-investigation.json"
-          $status = "missing"
-          $abortReason = ""
-          if (Test-Path -LiteralPath $path) {
-            $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $status = [string]$json.status
-            $abortReason = [string]$json.abort_reason
-          }
-          "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Upload investigation artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ISSUE_AGENT_ARTIFACT_PREFIX }}-investigation-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/claude-issue-agent-investigation-*.jsonl
-            ${{ runner.temp }}/claude-issue-agent-investigation-*.log
-            ${{ runner.temp }}/sts2-artifacts/**/*
-
-      - name: Stop STS2 after investigation
-        if: always()
-        continue-on-error: true
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\restart-sts2.ps1") `
-            -Mode Stop `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -ShutdownTimeoutSeconds 45
-
-  implement:
-    name: Implement code change
-    needs: investigate
-    if: needs.investigate.outputs.phase_status == 'pass'
-    runs-on:
-      - self-hosted
-      - windows
-      - issue-agent
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-implementation
-    outputs:
-      phase_status: ${{ steps.phase_result.outputs.phase_status }}
-      abort_reason: ${{ steps.phase_result.outputs.abort_reason }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Prepare implementation host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
-
-      - name: Download investigation artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.ISSUE_AGENT_ARTIFACT_PREFIX }}-investigation-${{ github.run_id }}
-          path: ${{ runner.temp }}/previous-artifacts
-
-      - name: Restore investigation handoff
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $target = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
-          New-Item -ItemType Directory -Force -Path $target | Out-Null
-          Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP "previous-artifacts") -Recurse -File |
-            Where-Object { $_.Name -like "issue-agent-investigation.*" } |
-            Copy-Item -Destination $target -Force
-
-      - name: Verify Claude subscription auth
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & $env:CLAUDE_CLI_PATH auth status
-          if ($LASTEXITCODE -ne 0) {
-            throw "Claude Code is not authenticated for the runner user."
-          }
-
-      - name: Run implementation phase
-        timeout-minutes: 12
-        env:
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
-          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
-          DISPATCH_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $issueNumber = $env:EVENT_ISSUE_NUMBER
-          if ([string]::IsNullOrWhiteSpace($issueNumber)) { $issueNumber = $env:DISPATCH_ISSUE_NUMBER }
-          if ([string]::IsNullOrWhiteSpace($issueNumber)) { throw "No issue number was provided." }
-
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\run-issue-agent-phases.ps1") `
-            -IssueNumber $issueNumber `
-            -RepoSlug $env:REPO_SLUG `
-            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
-            -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-events.jsonl") `
-            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-debug.log") `
-            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-summary.log") `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -PhaseName implementation
-
-      - name: Read implementation result
-        id: phase_result
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
-          $status = "missing"
-          $abortReason = ""
-          if (Test-Path -LiteralPath $path) {
-            $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $status = [string]$json.status
-            $abortReason = [string]$json.abort_reason
-          }
-          "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Upload implementation artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ISSUE_AGENT_ARTIFACT_PREFIX }}-implementation-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/claude-issue-agent-implementation-*.jsonl
-            ${{ runner.temp }}/claude-issue-agent-implementation-*.log
-            ${{ runner.temp }}/sts2-artifacts/**/*
-
-  verify:
-    name: Verify in STS2
-    needs:
-      - investigate
-      - implement
-    if: needs.implement.outputs.phase_status == 'pass'
-    runs-on:
-      - self-hosted
-      - windows
-      - issue-agent
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-verification
-    outputs:
-      phase_status: ${{ steps.phase_result.outputs.phase_status }}
-      abort_reason: ${{ steps.phase_result.outputs.abort_reason }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Prepare verification host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
-            -InstallMcp `
-            -StartSts2
-
-      - name: Download prior phase artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ${{ env.ISSUE_AGENT_ARTIFACT_PREFIX }}-*-${{ github.run_id }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/previous-artifacts
-
-      - name: Restore prior handoff and checkout PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $target = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
-          New-Item -ItemType Directory -Force -Path $target | Out-Null
-          Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP "previous-artifacts") -Recurse -File |
-            Where-Object { $_.Name -like "issue-agent-*.*" } |
-            Copy-Item -Destination $target -Force
-
-          $implementation = Join-Path $target "issue-agent-implementation.json"
-          if (Test-Path -LiteralPath $implementation) {
-            $json = Get-Content -LiteralPath $implementation -Raw | ConvertFrom-Json
-            if ($null -ne $json.opened_pr -and -not [string]::IsNullOrWhiteSpace([string]$json.opened_pr)) {
-              Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-              gh pr checkout ([string]$json.opened_pr) --repo $env:REPO_SLUG
-            }
-          }
-
-      - name: Verify Claude subscription auth
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & $env:CLAUDE_CLI_PATH auth status
-          if ($LASTEXITCODE -ne 0) {
-            throw "Claude Code is not authenticated for the runner user."
-          }
-
-      - name: Run verification phase
-        timeout-minutes: 18
-        env:
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
-          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
-          DISPATCH_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $issueNumber = $env:EVENT_ISSUE_NUMBER
-          if ([string]::IsNullOrWhiteSpace($issueNumber)) { $issueNumber = $env:DISPATCH_ISSUE_NUMBER }
-          if ([string]::IsNullOrWhiteSpace($issueNumber)) { throw "No issue number was provided." }
-
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\run-issue-agent-phases.ps1") `
-            -IssueNumber $issueNumber `
-            -RepoSlug $env:REPO_SLUG `
-            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
-            -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-events.jsonl") `
-            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-debug.log") `
-            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-summary.log") `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -PhaseName verification
-
-      - name: Read verification result
-        id: phase_result
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-verification.json"
-          $status = "missing"
-          $abortReason = ""
-          if (Test-Path -LiteralPath $path) {
-            $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $status = [string]$json.status
-            $abortReason = [string]$json.abort_reason
-          }
-          "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Upload verification artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ISSUE_AGENT_ARTIFACT_PREFIX }}-verification-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/claude-issue-agent-verification-*.jsonl
-            ${{ runner.temp }}/claude-issue-agent-verification-*.log
-            ${{ runner.temp }}/sts2-screenshots/**/*.png
-            ${{ runner.temp }}/sts2-artifacts/**/*
-
-      - name: Stop STS2 after verification
-        if: always()
-        continue-on-error: true
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\restart-sts2.ps1") `
-            -Mode Stop `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -ShutdownTimeoutSeconds 45
-
-  summarize:
-    name: Summarize phase results
-    needs:
-      - investigate
-      - implement
-      - verify
-    if: always() && needs.investigate.result != 'skipped'
-    runs-on:
-      - self-hosted
-      - windows
-      - issue-agent
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-summary
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Prepare summary host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
-
-      - name: Download phase artifacts
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: ${{ env.ISSUE_AGENT_ARTIFACT_PREFIX }}-*-${{ github.run_id }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/downloaded-phase-artifacts
-
-      - name: Consolidate phase artifacts
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $downloaded = Join-Path $env:RUNNER_TEMP "downloaded-phase-artifacts"
-          $validation = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
-          $screenshots = Join-Path $env:RUNNER_TEMP "sts2-screenshots"
-          $events = Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl"
-          $summary = Join-Path $env:RUNNER_TEMP "claude-issue-agent-summary.log"
-          $debug = Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log"
-          New-Item -ItemType Directory -Force -Path $validation, $screenshots | Out-Null
-          Remove-Item -LiteralPath $events, $summary, $debug -ErrorAction SilentlyContinue
-
-          Get-ChildItem -LiteralPath $downloaded -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($_.Name -like "issue-agent-*.json" -or $_.Name -like "issue-agent-*.md") {
-              Copy-Item -LiteralPath $_.FullName -Destination $validation -Force
-            } elseif ($_.Extension -eq ".png") {
-              Copy-Item -LiteralPath $_.FullName -Destination $screenshots -Force
-            } elseif ($_.Name -like "*-events.jsonl") {
-              Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $events -Encoding UTF8
-            } elseif ($_.Name -like "*-summary.log") {
-              Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $summary -Encoding UTF8
-            } elseif ($_.Name -like "*-debug.log") {
-              Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $debug -Encoding UTF8
-            }
-          }
+            -PhaseName all
 
       - name: Summarize issue-agent run
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -448,9 +106,30 @@ jobs:
             -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log") `
             -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
             -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -ArtifactName "issue-agent phase artifacts for run $($env:GITHUB_RUN_ID)" `
+            -ArtifactName "issue-agent artifacts for run $($env:GITHUB_RUN_ID)" `
             -RepoSlug $env:REPO_SLUG `
             -RunId $env:GITHUB_RUN_ID `
             -IssueNumber $issueNumber `
             -HeadSha $env:GITHUB_SHA `
             -RefName $env:GITHUB_REF_NAME
+
+      - name: Upload issue-agent artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ISSUE_AGENT_ARTIFACT_NAME }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/claude-issue-agent-*.jsonl
+            ${{ runner.temp }}/claude-issue-agent-*.log
+            ${{ runner.temp }}/sts2-screenshots/**/*.png
+            ${{ runner.temp }}/sts2-artifacts/**/*
+
+      - name: Stop STS2
+        if: always()
+        continue-on-error: true
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\restart-sts2.ps1") `
+            -Mode Stop `
+            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
+            -ShutdownTimeoutSeconds 45
