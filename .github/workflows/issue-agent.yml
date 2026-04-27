@@ -287,6 +287,13 @@ jobs:
             Copy-Item -Destination (Join-Path $env:RUNNER_TEMP "sts2-artifacts") -Force
 
 
+      - name: Check pre-verification contract
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\assert-issue-agent-preverification-contract.ps1") `
+            -TestPlanPath (Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-test-plan.json") `
+            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts")
+
       - name: Prepare issue-agent host
         env:
           CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
