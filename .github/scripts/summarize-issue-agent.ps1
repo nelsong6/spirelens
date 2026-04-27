@@ -443,15 +443,11 @@ $lines.Add("| Head SHA | $HeadSha |")
 $lines.Add("| Ref | $RefName |")
 $lines.Add('| Persistent local logs | `' + $persistentRoot + '` |')
 $lines.Add('')
-$phaseCostRows = New-Object System.Collections.Generic.List[string]
+$phaseBuckets = @{}
 foreach ($phaseName in $phaseNames) {
-    $phaseCostRows.Add("| $phaseName | $0.0000 | 0 | 0 | 0 | 0 | 0 |")
+    $phaseBuckets[$phaseName] = [ordered]@{ Cost = 0.0; Turns = 0; Input = 0; Output = 0; CacheCreate = 0; CacheRead = 0 }
 }
 if (-not [string]::IsNullOrWhiteSpace($EventLogPath) -and (Test-Path -LiteralPath $EventLogPath)) {
-    $phaseBuckets = @{}
-    foreach ($phaseName in $phaseNames) {
-        $phaseBuckets[$phaseName] = [ordered]@{ Cost = 0.0; Turns = 0; Input = 0; Output = 0; CacheCreate = 0; CacheRead = 0 }
-    }
     Get-Content -LiteralPath $EventLogPath -ErrorAction SilentlyContinue | ForEach-Object {
         try {
             $record = $_ | ConvertFrom-Json -ErrorAction Stop
@@ -470,41 +466,38 @@ if (-not [string]::IsNullOrWhiteSpace($EventLogPath) -and (Test-Path -LiteralPat
         } catch {
         }
     }
-    $phaseCostRows.Clear()
-    foreach ($phaseName in $phaseNames) {
-        $bucket = $phaseBuckets[$phaseName]
-        $phaseCostRows.Add("| $phaseName | $(Format-Usd $bucket.Cost) | $($bucket.Turns) | $($bucket.Input) | $($bucket.Output) | $($bucket.CacheCreate) | $($bucket.CacheRead) |")
-    }
 }
 
-$lines.Add('### Phase Results')
+$lines.Add('### Phases')
 $lines.Add('')
-$lines.Add('| Phase | Status | Abort reason | Retryable | Human action | Markdown |')
-$lines.Add('| --- | --- | --- | --- | --- | --- |')
 foreach ($phaseName in $phaseNames) {
     $phase = $phaseResults[$phaseName]
+    $costBucket = $phaseBuckets[$phaseName]
+    $toolBucket = $toolSummary.phases[$phaseName]
+    if ($null -eq $toolBucket) { $toolBucket = New-ToolMetricBucket }
     $mdName = "issue-agent-$phaseName.md"
     $mdState = if (Test-Path -LiteralPath (Join-Path $ValidationArtifactDir $mdName)) { '`' + $mdName + '`' } else { '_missing_' }
-    $lines.Add("| $phaseName | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'status')) | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'abort_reason')) | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'retryable')) | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'human_action_required')) | $mdState |")
+
+    $lines.Add("#### $phaseName")
+    $lines.Add('')
+    $lines.Add('| Field | Value |')
+    $lines.Add('| --- | --- |')
+    $lines.Add("| Status | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'status')) |")
+    $lines.Add("| Abort reason | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'abort_reason')) |")
+    $lines.Add("| Retryable | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'retryable')) |")
+    $lines.Add("| Human action | $(Format-Cell (Get-PropertyValue -Object $phase -Name 'human_action_required')) |")
+    $lines.Add("| Markdown | $mdState |")
+    $lines.Add("| Cost | $(Format-Usd $costBucket.Cost) |")
+    $lines.Add("| Turns | $($costBucket.Turns) |")
+    $lines.Add("| Tokens | input $($costBucket.Input), output $($costBucket.Output), cache create $($costBucket.CacheCreate), cache read $($costBucket.CacheRead) |")
+    $lines.Add("| Tool calls | $($toolBucket.tool_uses) calls, $($toolBucket.tool_results) results |")
+    $lines.Add("| Failed tool calls | $($toolBucket.failed_tool_results) |")
+    $lines.Add("| Permission denials | $($toolBucket.permission_denials) |")
+    $lines.Add("| Failure categories | $(Format-Cell (Format-FailureCategories $toolBucket.failure_categories)) |")
+    $lines.Add('')
 }
-$lines.Add('')
-$lines.Add('### Claude Cost By Phase')
-$lines.Add('')
-$lines.Add('| Phase | Cost | Turns | Input | Output | Cache create | Cache read |')
-$lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: |')
-foreach ($phaseCostRow in $phaseCostRows) { $lines.Add($phaseCostRow) }
-$lines.Add('')
-$lines.Add('### Tool Calls By Phase')
-$lines.Add('')
-$lines.Add('| Phase | Tool calls | Tool results | Failed tool calls | Permission denials | Failure categories |')
-$lines.Add('| --- | ---: | ---: | ---: | ---: | --- |')
-foreach ($phaseName in $phaseNames) {
-    $bucket = $toolSummary.phases[$phaseName]
-    if ($null -eq $bucket) { $bucket = New-ToolMetricBucket }
-    $lines.Add("| $phaseName | $($bucket.tool_uses) | $($bucket.tool_results) | $($bucket.failed_tool_results) | $($bucket.permission_denials) | $(Format-Cell (Format-FailureCategories $bucket.failure_categories)) |")
-}
-$lines.Add('')
-$lines.Add('### Evidence')
+
+$lines.Add('### Overall Evidence')
 $lines.Add('')
 $lines.Add('| Metric | Value |')
 $lines.Add('| --- | ---: |')
