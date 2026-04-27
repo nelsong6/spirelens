@@ -91,12 +91,10 @@ public static class CardHoverShowPatch
             // key. If they match → dict lookup must succeed.
             CoreMain.LogDebug($"hover: id={cardModel.Id} rawTitle='{rawTitle}' instance={instanceNum} displayName='{displayName}' hash={cardModel.GetHashCode()} deckVersionNull={cardModel.DeckVersion == null}");
 
-            // Hand hovers during combat get a compact stats view — the
-            // player's in tactical-decision mode and doesn't want a wall
-            // of text on top of their cards. Everywhere else (deck view,
-            // graveyard, draw pile, compendium) gets the full breakdown
-            // because it's an inspection moment.
-            bool compact = __instance is NHandCardHolder;
+            // Hand hovers stay compact by default. Issue-agent validation and
+            // power users can opt into the full breakdown for hand tooltips.
+            bool compact = __instance is NHandCardHolder
+                && !RuntimeOptionsProvider.Current.UseVerboseHandStats;
             var body = BuildBodyBBCode(cardModel, displayName, compact);
             // Reuse the gold title slot for the hovered card's instance name
             // on every surface. That's the highest-signal identity marker,

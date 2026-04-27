@@ -10,6 +10,7 @@ public sealed class RuntimeOptions
     public bool ViewStatsToggleEnabled { get; set; }
     public bool ShowRemovedCardsInDeckView { get; set; } = true;
     public bool ShowHandTooltips { get; set; } = true;
+    public bool UseVerboseHandStats { get; set; }
     public bool EnableDebugLogging { get; set; }
 }
 
@@ -18,6 +19,7 @@ public static class RuntimeOptionsProvider
     private const string BridgeTypeName = "SpireLens.Loader.RuntimeOptionsBridge";
     private const string GetCurrentOptionsJsonMethodName = "GetCurrentOptionsJson";
     private const string SetViewStatsToggleEnabledMethodName = "SetViewStatsToggleEnabled";
+    private const string SetVerboseHandStatsEnabledMethodName = "SetVerboseHandStatsEnabled";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,9 +29,11 @@ public static class RuntimeOptionsProvider
     private static Type? _bridgeType;
     private static MethodInfo? _getCurrentOptionsJsonMethod;
     private static MethodInfo? _setViewStatsToggleEnabledMethod;
+    private static MethodInfo? _setVerboseHandStatsEnabledMethod;
     private static bool _loggedMissingBridge;
     private static bool _loggedRefreshFailure;
     private static bool _loggedToggleFailure;
+    private static bool _loggedVerboseHandStatsFailure;
 
     public static RuntimeOptions Current { get; private set; } = new();
 
@@ -78,6 +82,26 @@ public static class RuntimeOptionsProvider
         Refresh();
     }
 
+    public static void SetVerboseHandStatsEnabled(bool isEnabled)
+    {
+        try
+        {
+            var setVerboseMethod = ResolveSetVerboseHandStatsEnabledMethod();
+            setVerboseMethod?.Invoke(null, new object?[] { isEnabled });
+            _loggedVerboseHandStatsFailure = false;
+        }
+        catch (Exception e)
+        {
+            if (!_loggedVerboseHandStatsFailure)
+            {
+                CoreMain.Logger.Warn($"RuntimeOptionsProvider.SetVerboseHandStatsEnabled failed: {e.Message}");
+                _loggedVerboseHandStatsFailure = true;
+            }
+        }
+
+        Refresh();
+    }
+
     private static MethodInfo? ResolveGetCurrentOptionsJsonMethod()
     {
         _getCurrentOptionsJsonMethod ??= ResolveBridgeType()?.GetMethod(
@@ -92,6 +116,14 @@ public static class RuntimeOptionsProvider
             SetViewStatsToggleEnabledMethodName,
             BindingFlags.Public | BindingFlags.Static);
         return _setViewStatsToggleEnabledMethod;
+    }
+
+    private static MethodInfo? ResolveSetVerboseHandStatsEnabledMethod()
+    {
+        _setVerboseHandStatsEnabledMethod ??= ResolveBridgeType()?.GetMethod(
+            SetVerboseHandStatsEnabledMethodName,
+            BindingFlags.Public | BindingFlags.Static);
+        return _setVerboseHandStatsEnabledMethod;
     }
 
     private static Type? ResolveBridgeType()

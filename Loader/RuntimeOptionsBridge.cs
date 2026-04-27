@@ -13,6 +13,7 @@ public sealed class RuntimeOptionsSnapshot
     public bool ViewStatsToggleEnabled { get; set; }
     public bool ShowRemovedCardsInDeckView { get; set; } = true;
     public bool ShowHandTooltips { get; set; } = true;
+    public bool UseVerboseHandStats { get; set; }
     public bool EnableDebugLogging { get; set; }
 }
 
@@ -42,6 +43,14 @@ public static class RuntimeOptionsBridge
         ModConfig.SaveDebounced<SpireLensConfig>();
     }
 
+    public static void SetVerboseHandStatsEnabled(bool isEnabled)
+    {
+        if (SpireLensConfig.UseVerboseHandStats == isEnabled) return;
+
+        SpireLensConfig.UseVerboseHandStats = isEnabled;
+        ModConfig.SaveDebounced<SpireLensConfig>();
+    }
+
     private static RuntimeOptionsSnapshot CreateSnapshot()
     {
         return new RuntimeOptionsSnapshot
@@ -49,6 +58,7 @@ public static class RuntimeOptionsBridge
             ViewStatsToggleEnabled = SpireLensConfig.ViewStatsToggleEnabled,
             ShowRemovedCardsInDeckView = SpireLensConfig.ShowRemovedCardsInDeckView,
             ShowHandTooltips = SpireLensConfig.ShowHandTooltips,
+            UseVerboseHandStats = SpireLensConfig.UseVerboseHandStats,
             EnableDebugLogging = SpireLensConfig.EnableDebugLogging,
         };
     }

@@ -12,6 +12,8 @@ public sealed class SpireLensConfig : SimpleModConfig
     [ConfigSection("Tooltips")]
     public static bool ShowHandTooltips { get; set; } = true;
 
+    public static bool UseVerboseHandStats { get; set; }
+
     [ConfigSection("Diagnostics")]
     public static bool EnableDebugLogging { get; set; }
 
