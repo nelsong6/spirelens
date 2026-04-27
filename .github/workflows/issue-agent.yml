@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   test-plan:
-    name: "LLM: Plan validation evidence"
+    name: "Plan validation evidence"
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
@@ -67,7 +67,7 @@ jobs:
           & $env:CLAUDE_CLI_PATH auth status
           if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
 
-      - name: Run test plan phase
+      - name: "LLM: Run test plan phase"
         timeout-minutes: 10
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
@@ -123,7 +123,7 @@ jobs:
           throw "Test plan did not pass. status=${{ steps.test_plan_result.outputs.phase_status }} abort_reason=${{ steps.test_plan_result.outputs.abort_reason }}"
 
   implementation:
-    name: "LLM: Implement code change"
+    name: "Implement code change"
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
@@ -163,7 +163,7 @@ jobs:
           & $env:CLAUDE_CLI_PATH auth status
           if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
 
-      - name: Run implementation phase
+      - name: "LLM: Run implementation phase"
         timeout-minutes: 12
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
@@ -242,7 +242,7 @@ jobs:
           throw "Implementation did not pass. status=${{ steps.implementation_result.outputs.phase_status }} abort_reason=${{ steps.implementation_result.outputs.abort_reason }}"
 
   verification:
-    name: "LLM: Verify in STS2"
+    name: "Verify in STS2"
     needs:
       - test-plan
       - implementation
@@ -331,7 +331,7 @@ jobs:
           & $env:CLAUDE_CLI_PATH auth status
           if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
 
-      - name: Run verification phase
+      - name: "LLM: Run verification phase"
         timeout-minutes: 18
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
