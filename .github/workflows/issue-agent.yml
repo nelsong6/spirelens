@@ -80,10 +80,42 @@ jobs:
           Write-RunsOnOutput -Name 'test_plan_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-test-plan')
           Write-RunsOnOutput -Name 'implementation_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-implementation')
           Write-RunsOnOutput -Name 'verification_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-verification')
-  test-plan:
-    name: "Plan validation evidence"
+  claim-issue:
+    name: "Mark issue-agent run active"
     needs: route
     if: needs.route.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue_number }}
+      REPO_SLUG: ${{ github.repository }}
+    steps:
+      - name: Replace queue label with running label
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ISSUE_NUMBER}" ]; then
+            echo "No issue number provided; skipping label claim."
+            exit 0
+          fi
+
+          if ! gh api "repos/${REPO_SLUG}/labels/issue-agent-running" >/dev/null 2>&1; then
+            gh api --method POST "repos/${REPO_SLUG}/labels" \
+              -f name='issue-agent-running' \
+              -f color='1d76db' \
+              -f description='Issue-agent run in progress' >/dev/null
+          fi
+
+          gh api --method POST "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels" \
+            -f labels[]='issue-agent-running' >/dev/null
+          gh api --method DELETE "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels/issue-agent" >/dev/null 2>&1 || true
+
+  test-plan:
+    name: "Plan validation evidence"
+    needs:
+      - route
+      - claim-issue
+    if: needs.route.result == 'success' && needs.claim-issue.result == 'success'
     runs-on: ${{ fromJson(needs.route.outputs.test_plan_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-test-plan
@@ -173,8 +205,10 @@ jobs:
 
   implementation:
     name: "Implement code change"
-    needs: route
-    if: needs.route.result == 'success'
+    needs:
+      - route
+      - claim-issue
+    if: needs.route.result == 'success' && needs.claim-issue.result == 'success'
     runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-implementation
@@ -285,8 +319,10 @@ jobs:
 
   screenshot-storage-outputs:
     name: "Read screenshot storage outputs"
-    needs: route
-    if: needs.route.result == 'success'
+    needs:
+      - route
+      - claim-issue
+    if: needs.route.result == 'success' && needs.claim-issue.result == 'success'
     uses: nelsong6/pipeline-templates/.github/workflows/tofu-outputs-template.yml@main
     permissions:
       contents: read

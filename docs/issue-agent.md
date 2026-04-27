@@ -14,8 +14,8 @@ The issue-agent workflow is triggered by the GitHub issue event, and GitHub pass
 
 Issue-agent labels are:
 
-- `issue-agent`
-- `issue-agent-running`
+- `issue-agent` means runnable / queued. The workflow removes this label when it claims the issue.
+- `issue-agent-running` means an issue-agent run is active for this issue.
 - `issue-agent-blocked`
 - `issue-agent-complete`
 - `issue-agent-pr-open`
