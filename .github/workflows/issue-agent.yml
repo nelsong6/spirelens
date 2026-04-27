@@ -152,6 +152,22 @@ jobs:
           "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      - name: Deploy implementation to STS2
+        if: steps.implementation.outputs.phase_status == 'pass'
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
+          $sts2DataDir = "D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64"
+          dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          if ($LASTEXITCODE -ne 0) { throw "SpireLens loader build/deploy failed." }
+          dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          if ($LASTEXITCODE -ne 0) { throw "SpireLens core build/deploy failed." }
+          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\restart-sts2.ps1") `
+            -Mode Restart `
+            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
+            -StartupTimeoutSeconds 60 `
+            -ShutdownTimeoutSeconds 45
+
       - name: "LLM: Verify in STS2"
         if: steps.implementation.outputs.phase_status == 'pass'
         timeout-minutes: 18
