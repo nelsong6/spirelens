@@ -142,7 +142,7 @@ The issue-agent workflow writes and uploads validation artifacts:
 - screenshots saved under `sts2-screenshots/`
 - additional validation artifacts saved under `sts2-artifacts/`
 
-These are uploaded as Actions artifacts after every run, even on failure, so the post-run Claude trace and live validation evidence are visible from another machine.
+These are uploaded as Actions artifacts after every run, even on failure, so the post-run Claude trace and live validation evidence are visible from another machine. The workflow intentionally leaves STS2 running at the final validation state so a human can inspect the game after the Actions job finishes.
 
 ## Screenshot Validation
 
@@ -153,7 +153,7 @@ For STS2 issue-agent work:
 - if the issue is about a specific card, include at least one screenshot showing that card's stats working in a representative in-run test case
 - document the test case used for the screenshot artifacts: what was set up, what was exercised, and what each screenshot is intended to prove
 - capture screenshots after the behavior is working, not just during setup
-- for tooltip-related changes, capture the affected tooltip states and use judgment about which views materially need coverage
+- for tooltip-related changes, capture the affected tooltip states in the relevant hand, deck, draw pile, discard pile, exhaust pile, rewards, selection, or other card surface; use judgment about which views materially need coverage
 - if multiple materially distinct views changed, such as compact hand-hover and fuller deck-view tooltip states, capture each affected view when that is the clearest way to prove the change
 - use judgment on how many screenshots to include, but do not exceed 10 screenshots for a single issue or pull request
 - if adequate proof would require more than 10 screenshots, split the work into smaller branches or pull requests instead of overloading one

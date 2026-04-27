@@ -293,14 +293,5 @@ jobs:
             ${{ runner.temp }}/sts2-screenshots/**/*.png
             ${{ runner.temp }}/sts2-artifacts/**/*
 
-      - name: Stop STS2
-        if: always()
-        continue-on-error: true
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\restart-sts2.ps1") `
-            -Mode Stop `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -ShutdownTimeoutSeconds 45
 
 
