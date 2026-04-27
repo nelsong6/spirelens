@@ -391,6 +391,18 @@ $costSummary = Get-ClaudeCostSummary -Path $EventLogPath
 $toolSummary = Get-ClaudeToolCallSummary -Path $EventLogPath -PhaseNames $phaseNames
 $toolMetricsPath = Join-Path $ValidationArtifactDir 'issue-agent-tool-metrics.json'
 $toolSummary | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $toolMetricsPath -Encoding UTF8
+$failedToolThreshold = 0
+if (-not [string]::IsNullOrWhiteSpace($env:ISSUE_AGENT_FAILED_TOOL_CALL_WARNING_THRESHOLD)) {
+    try { $failedToolThreshold = [int]$env:ISSUE_AGENT_FAILED_TOOL_CALL_WARNING_THRESHOLD } catch { $failedToolThreshold = 0 }
+}
+$failedToolGatePath = Join-Path $ValidationArtifactDir 'issue-agent-tool-quality-gate.json'
+$failedToolGate = [ordered]@{
+    status = if ([int]$toolSummary.total.failed_tool_results -gt $failedToolThreshold) { 'warning' } else { 'pass' }
+    failed_tool_calls = [int]$toolSummary.total.failed_tool_results
+    warning_threshold = $failedToolThreshold
+    phases = $toolSummary.phases
+}
+$failedToolGate | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $failedToolGatePath -Encoding UTF8
 Copy-IfExists -LiteralPath $toolMetricsPath -Destination $persistentRoot
 $runUrl = if (-not [string]::IsNullOrWhiteSpace($RepoSlug) -and -not [string]::IsNullOrWhiteSpace($RunId)) { "https://github.com/$RepoSlug/actions/runs/$RunId" } else { '_Unavailable_' }
 $artifactUrl = if ($runUrl -ne '_Unavailable_') { "$runUrl/artifacts" } else { '_Unavailable_' }
@@ -470,6 +482,12 @@ $lines.Add('| Phase | Cost | Turns | Input | Output | Cache create | Cache read 
 $lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: |')
 foreach ($phaseCostRow in $phaseCostRows) { $lines.Add($phaseCostRow) }
 $lines.Add('')
+$linesif (([int]$toolSummary.total.failed_tool_results) -gt $failedToolThreshold) {
+    $lines.Add('### Failed Tool Call Warning')
+    $lines.Add('')
+    $lines.Add("Failed tool calls exceeded threshold $failedToolThreshold. Treat this as a flow-quality issue even if the run otherwise completed.")
+    $lines.Add('')
+}
 $lines.Add('### Tool Calls By Phase')
 $lines.Add('')
 $lines.Add('| Phase | Tool calls | Tool results | Failed tool calls | Permission denials | Failure categories |')
