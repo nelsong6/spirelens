@@ -124,6 +124,8 @@ $phaseDefinitions = @(
             'Bash(git grep *)'
         ) + $CatalogMcpTools
         DisallowedTools = $SingleplayerMcpTools + $MultiplayerMcpTools + @(
+            'Bash(gh issue view *--comments*)',
+            'Bash(gh api *)',
             'Edit',
             'NotebookEdit',
             'WebFetch',
