@@ -163,6 +163,8 @@ $phaseDefinitions = @(
         DisallowedTools = $SingleplayerMcpTools + $MultiplayerMcpTools + @(
             'Bash(dotnet test *)',
             'PowerShell(dotnet test *)',
+            'Read(C:\Users\*\.claude\*)',
+            'Read(C:\Users\*\.claude\**)',
             'Bash(gh issue view *--comments*)',
             'PowerShell(gh issue view *--comments*)',
             'Bash(gh api *)',
@@ -855,6 +857,7 @@ You are Claude Code running the $PhaseName phase for $RepoSlug issue #$IssueNumb
 
 GitHub Actions triggered this job for exactly issue #$IssueNumber. Do not process any other issue.
 Do not delegate to subagents, Explore agents, Task agents, or any other secondary agent. Each phase must do its own bounded work with its allowed tools so the logs, costs, and failure reasons stay auditable.
+Do not read Claude memory files or any `.claude` directory. Use only this prompt, the issue body or handoff artifacts allowed for this phase, and files inside the repository root.
 Use this exact local checkout path as the repository root:
 
 ``````
@@ -934,7 +937,7 @@ IMPLEMENTATION RULES:
 - Own code changes only. Do not claim verification success.
 - For every issue-specified card or character, call MCP catalog lookup tools before editing. Abort rather than guessing card ids, ownership, or ambiguity.
 - Do not run unit tests, integration tests, live validation, or screenshot validation. Verification owns every `dotnet test`, live MCP action, and screenshot.
-- You may inspect code, edit code, and run focused builds for compile sanity only. The workflow wrapper owns branch, commit, push, and PR creation after verification passes.
+- You may inspect code, edit code, and run focused builds for compile sanity only. For this repo, compile sanity means `dotnet build "Core/SpireLens.Core.csproj" -c Debug` and, when tests were edited or referenced, `dotnet build "Tests/SpireLens.Core.Tests/SpireLens.Core.Tests.csproj" -c Debug`. Do not build the root `SpireLens.csproj` as a compile sanity check, and do not use `--no-restore`; the root Godot project can require generated `.godot/mono/temp` assets that are not present yet. The workflow wrapper owns the broader build, branch, commit, push, and PR creation after verification passes.
 - If no code change is needed, write a pass result with `changed_files: []`, `opened_pr: null`, and `verification_required: true`; do not run tests to prove that claim.
 - Do not start gameplay, enter rooms, play cards, capture screenshots, or perform live MCP validation; leave all live MCP validation to verification.
 - If the viable solve requires dramatic changes, a new library, architecture changes, or unsafe refactors, abort.
