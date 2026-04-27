@@ -241,6 +241,17 @@ $phaseDefinitions = @(
     }
 )
 
+function Get-ToolFailureCategory {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    if ($Text -match '(?i)permission to use .* has been denied|permission_denied|permission denied|not allowed to use tool|disallowed') { return 'permission_denied' }
+    if ($Text -match '(?i)\b(500|internal server error)\b') { return 'server_error' }
+    if ($Text -match '(?i)\b(timed out|timeout)\b') { return 'timeout' }
+    if ($Text -match '(?im)^\s*(error|exception|traceback):') { return 'tool_error' }
+    if ($Text -match '(?i)\b(exit code [1-9]\d*|failed|exception|traceback|unauthorized|forbidden|not found)\b') { return 'tool_error' }
+    return $null
+}
 function Write-AgentEvent {
     param(
         [Parameter(Mandatory = $true)][string]$Kind,
@@ -482,8 +493,15 @@ function Write-ClaudeOutputLine {
         } elseif ($event.type -eq 'user' -and $event.tool_use_result) {
             $result = [string]$event.tool_use_result
             if ($result.Length -gt 600) { $result = $result.Substring(0, 600) + '... [truncated]' }
-            Write-AgentEvent 'tool_result' $result @{ phase = $PhaseName }
-            Add-Content -LiteralPath $SummaryLogPath -Value "${PhaseName} tool_result: $result" -Encoding UTF8
+            $failureCategory = Get-ToolFailureCategory -Text $result
+            $toolResultData = [ordered]@{
+                phase = $PhaseName
+                failed = -not [string]::IsNullOrWhiteSpace($failureCategory)
+                failure_category = $failureCategory
+            }
+            Write-AgentEvent 'tool_result' $result $toolResultData
+            $statusLabel = if ($toolResultData.failed) { " failed[$failureCategory]" } else { '' }
+            Add-Content -LiteralPath $SummaryLogPath -Value "${PhaseName} tool_result$($statusLabel): $result" -Encoding UTF8
         } elseif ($event.type -eq 'result') {
             $resultJson = $event | ConvertTo-Json -Compress -Depth 30
             Write-AgentEvent 'result' $resultJson @{ phase = $PhaseName }
