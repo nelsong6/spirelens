@@ -445,6 +445,8 @@ jobs:
 
       - name: Azure login for screenshot publishing
         if: always()
+        env:
+          AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-issue-agent
         uses: azure/login@v2
         with:
           client-id: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).github_uploader_client_id }}
@@ -454,6 +456,7 @@ jobs:
       - name: Publish screenshot previews
         if: always()
         env:
+          AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-issue-agent
           AZURE_SCREENSHOT_STORAGE_ACCOUNT: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).storage_account_name }}
           AZURE_SCREENSHOT_CONTAINER: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).container_name }}
           AZURE_SCREENSHOT_CONTAINER_URL: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).container_url }}
