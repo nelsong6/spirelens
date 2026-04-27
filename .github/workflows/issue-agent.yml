@@ -10,6 +10,10 @@ on:
       issue_number:
         description: Issue number to hand to Claude
         required: true
+      runner_label:
+        description: Optional issue-agent-runner-* label to route all issue-agent jobs
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -25,18 +29,62 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test-plan:
-    name: "Plan validation evidence"
+  route:
+    name: "Route issue-agent runner"
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
         (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
         (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
       ))
-    runs-on:
-      - self-hosted
-      - windows
-      - issue-agent-test-plan
+    runs-on: ubuntu-latest
+    outputs:
+      test_plan_runs_on: ${{ steps.route.outputs.test_plan_runs_on }}
+      implementation_runs_on: ${{ steps.route.outputs.implementation_runs_on }}
+      verification_runs_on: ${{ steps.route.outputs.verification_runs_on }}
+    steps:
+      - name: Resolve runner labels
+        id: route
+        shell: pwsh
+        env:
+          ROUTE_LABEL_PREFIX: issue-agent-runner-
+          DISPATCH_RUNNER_LABEL: ${{ github.event.inputs.runner_label || '' }}
+          ISSUE_LABELS_JSON: ${{ toJSON(github.event.issue.labels.*.name) }}
+        run: |
+          $routeLabel = [string]$env:DISPATCH_RUNNER_LABEL
+          if ([string]::IsNullOrWhiteSpace($routeLabel)) {
+            $issueLabels = @()
+            if (-not [string]::IsNullOrWhiteSpace($env:ISSUE_LABELS_JSON) -and $env:ISSUE_LABELS_JSON -ne 'null') {
+              $issueLabels = @($env:ISSUE_LABELS_JSON | ConvertFrom-Json)
+            }
+            $routeLabels = @($issueLabels | Where-Object { [string]$_ -like "$($env:ROUTE_LABEL_PREFIX)*" })
+            if ($routeLabels.Count -gt 1) {
+              throw "Expected at most one $($env:ROUTE_LABEL_PREFIX)* label, found: $($routeLabels -join ', ')"
+            }
+            if ($routeLabels.Count -eq 1) { $routeLabel = [string]$routeLabels[0] }
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($routeLabel) -and $routeLabel -notlike "$($env:ROUTE_LABEL_PREFIX)*") {
+            throw "Runner route label must be empty or start with '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
+          }
+
+          function Write-RunsOnOutput {
+            param([string]$Name, [string[]]$Labels)
+            $resolved = @($Labels)
+            if (-not [string]::IsNullOrWhiteSpace($routeLabel)) { $resolved += $routeLabel }
+            $json = $resolved | ConvertTo-Json -Compress
+            "$Name=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "$Name=$json"
+          }
+
+          Write-RunsOnOutput -Name 'test_plan_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-test-plan')
+          Write-RunsOnOutput -Name 'implementation_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-implementation')
+          Write-RunsOnOutput -Name 'verification_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-verification')
+  test-plan:
+    name: "Plan validation evidence"
+    needs: route
+    if: needs.route.result == 'success'
+    runs-on: ${{ fromJson(needs.route.outputs.test_plan_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-test-plan
       ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue_number }}
@@ -125,16 +173,9 @@ jobs:
 
   implementation:
     name: "Implement code change"
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issues' && (
-        (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
-        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
-      ))
-    runs-on:
-      - self-hosted
-      - windows
-      - issue-agent-implementation
+    needs: route
+    if: needs.route.result == 'success'
+    runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-implementation
       ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue_number }}
@@ -244,12 +285,8 @@ jobs:
 
   screenshot-storage-outputs:
     name: "Read screenshot storage outputs"
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issues' && (
-        (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
-        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
-      ))
+    needs: route
+    if: needs.route.result == 'success'
     uses: nelsong6/pipeline-templates/.github/workflows/tofu-outputs-template.yml@main
     permissions:
       contents: read
@@ -261,14 +298,12 @@ jobs:
   verification:
     name: "Verify in STS2"
     needs:
+      - route
       - test-plan
       - implementation
       - screenshot-storage-outputs
-    if: needs.test-plan.result == 'success' && needs.implementation.result == 'success' && needs.screenshot-storage-outputs.result == 'success'
-    runs-on:
-      - self-hosted
-      - windows
-      - issue-agent-verification
+    if: needs.route.result == 'success' && needs.test-plan.result == 'success' && needs.implementation.result == 'success' && needs.screenshot-storage-outputs.result == 'success'
+    runs-on: ${{ fromJson(needs.route.outputs.verification_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-verification
       ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue_number }}
