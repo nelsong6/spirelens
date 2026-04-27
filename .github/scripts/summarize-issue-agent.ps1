@@ -49,6 +49,8 @@ function Get-FileListText {
     return ($items -join [Environment]::NewLine)
 }
 
+$script:ScreenshotPublishWarnings = New-Object System.Collections.Generic.List[string]
+
 function Publish-ScreenshotImages {
     param([string]$LiteralPath)
     $published = New-Object System.Collections.Generic.List[string]
@@ -60,18 +62,16 @@ function Publish-ScreenshotImages {
 
     $files = @(Get-ChildItem -LiteralPath $LiteralPath -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue | Select-Object -First 10)
     foreach ($file in $files) {
+        $relative = $file.FullName.Substring($root.Length).TrimStart('\', '/') -replace '\\', '/'
+        if ([string]::IsNullOrWhiteSpace($relative)) { $relative = $file.Name }
+        $repoPath = ".github/issue-agent-screenshots/$RunId/$relative"
         try {
-            $relative = $file.FullName.Substring($root.Length).TrimStart('\', '/') -replace '\\', '/'
-            if ([string]::IsNullOrWhiteSpace($relative)) { $relative = $file.Name }
-            $repoPath = ".github/issue-agent-screenshots/$RunId/$relative"
             $encodedContent = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($file.FullName))
 
             $existingSha = $null
-            try {
-                $existing = & gh api "repos/$RepoSlug/contents/$repoPath`?ref=$RefName" 2>$null | ConvertFrom-Json -ErrorAction Stop
-                $existingSha = $existing.sha
-            } catch {
-                $existingSha = $null
+            $existingJson = & gh api "repos/$RepoSlug/contents/$repoPath`?ref=$RefName" 2>$null
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingJson)) {
+                try { $existingSha = ($existingJson | ConvertFrom-Json -ErrorAction Stop).sha } catch { $existingSha = $null }
             }
 
             $body = [ordered]@{
@@ -84,21 +84,26 @@ function Publish-ScreenshotImages {
             $tmp = [System.IO.Path]::GetTempFileName()
             try {
                 $body | ConvertTo-Json -Compress | Set-Content -LiteralPath $tmp -Encoding UTF8
-                & gh api -X PUT "repos/$RepoSlug/contents/$repoPath" --input $tmp 2>$null | Out-Null
+                $putOutput = & gh api -X PUT "repos/$RepoSlug/contents/$repoPath" --input $tmp 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "gh api upload failed: $putOutput" }
             } finally {
                 Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
             }
 
+            $verifyJson = & gh api "repos/$RepoSlug/contents/$repoPath`?ref=$RefName" 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "uploaded screenshot could not be verified: $verifyJson" }
+
             $imageUrl = "https://raw.githubusercontent.com/$RepoSlug/$RefName/$repoPath"
             $published.Add("![$relative]($imageUrl)") | Out-Null
         } catch {
-            Write-Warning "Unable to publish screenshot '$($file.FullName)': $($_.Exception.Message)"
+            $warning = "Unable to publish screenshot '$relative': $($_.Exception.Message)"
+            $script:ScreenshotPublishWarnings.Add($warning) | Out-Null
+            Write-Warning $warning
         }
     }
 
     return $published
-}
-function Get-ExitCodeText {
+}function Get-ExitCodeText {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return '_Unknown_' }
     $exitLine = Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue |
@@ -508,6 +513,12 @@ if ($publishedScreenshotImages.Count -gt 0) {
     $lines.Add('### Screenshot Previews')
     $lines.Add('')
     foreach ($imageMarkdown in $publishedScreenshotImages) { $lines.Add($imageMarkdown) }
+    $lines.Add('')
+}
+if ($script:ScreenshotPublishWarnings.Count -gt 0) {
+    $lines.Add('### Screenshot Publish Warnings')
+    $lines.Add('')
+    foreach ($warning in $script:ScreenshotPublishWarnings) { $lines.Add("- $warning") }
     $lines.Add('')
 }
 $lines.Add('### Validation Artifact Files')
