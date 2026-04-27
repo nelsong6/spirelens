@@ -179,6 +179,18 @@ jobs:
 
           $modsDir = Join-Path $gameDir "mods"
           New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
+
+          $gameDirWithSlash = $gameDir.TrimEnd('\') + '\'
+          Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -in @('SlayTheSpire2.exe', 'crashpad_handler.exe') -and
+            -not [string]::IsNullOrWhiteSpace([string]$_.ExecutablePath) -and
+            ([string]$_.ExecutablePath).StartsWith($gameDirWithSlash, [System.StringComparison]::OrdinalIgnoreCase)
+          } | ForEach-Object {
+            Write-Host "Stopping STS2 process before installing MCP: $($_.Name) pid=$($_.ProcessId)."
+            Stop-Process -Id ([int]$_.ProcessId) -Force -ErrorAction SilentlyContinue
+          }
+          Start-Sleep -Seconds 2
+
           Copy-Item -LiteralPath (Join-Path $mcpRoot "out\SpireLensMcp\SpireLensMcp.dll") -Destination (Join-Path $modsDir "SpireLensMcp.dll") -Force
           Copy-Item -LiteralPath (Join-Path $mcpRoot "mod_manifest.json") -Destination (Join-Path $modsDir "SpireLensMcp.json") -Force
       - name: Restart STS2 for clean issue-agent baseline
