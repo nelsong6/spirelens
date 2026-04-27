@@ -1,131 +1,43 @@
 name: OpenTofu Issue-Agent Screenshot Storage
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/opentofu/issue-agent-screenshot-storage/**'
+      - '.github/workflows/opentofu-issue-agent-screenshot-storage.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/opentofu/issue-agent-screenshot-storage/**'
+      - '.github/workflows/opentofu-issue-agent-screenshot-storage.yml'
   workflow_dispatch:
-    inputs:
-      command:
-        description: OpenTofu command to run
-        type: choice
-        required: true
-        default: plan
-        options:
-          - plan
-          - apply
-      backend_resource_group_name:
-        description: Optional resource group containing the OpenTofu state storage account. Leave blank to discover it.
-        required: false
-        default: ""
-      backend_container_name:
-        description: Blob container containing OpenTofu state
-        required: true
-        default: tfstate
-      state_key:
-        description: Backend state key
-        required: true
-        default: spirelens/issue-agent-screenshot-storage.tfstate
-      location:
-        description: Azure region for screenshot storage resources
-        required: true
-        default: eastus
-      resource_group_name:
-        description: Resource group to create for screenshot storage resources
-        required: true
-        default: rg-spirelens-issue-agent-evidence
-      retention_days:
-        description: Screenshot retention in days; 0 disables lifecycle deletion
-        required: true
-        default: "90"
+
+concurrency:
+  group: opentofu-spirelens-issue-agent-screenshot-storage
+  cancel-in-progress: false
 
 permissions:
   contents: read
   id-token: write
-
-env:
-  TF_IN_AUTOMATION: "true"
-  ARM_USE_OIDC: "true"
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-  TFSTATE_SUBSCRIPTION_ID: ${{ vars.TFSTATE_SUBSCRIPTION_ID }}
-  TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
-  TOFU_DIR: infra/opentofu/issue-agent-screenshot-storage
+  pull-requests: write
 
 jobs:
-  opentofu:
-    name: ${{ inputs.command }} screenshot storage
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Azure login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.ARM_CLIENT_ID }}
-          tenant-id: ${{ vars.ARM_TENANT_ID }}
-          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: 1.8.8
-
-      - name: OpenTofu fmt
-        working-directory: ${{ env.TOFU_DIR }}
-        run: tofu fmt -check -recursive
-
-      - name: Resolve backend resource group
-        id: backend
-        shell: bash
-        run: |
-          if [ -n "${{ inputs.backend_resource_group_name }}" ]; then
-            echo "resource_group_name=${{ inputs.backend_resource_group_name }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          rg=$(az storage account list \
-            --subscription "${{ vars.TFSTATE_SUBSCRIPTION_ID }}" \
-            --query "[?name=='${{ vars.TFSTATE_STORAGE_ACCOUNT }}'].resourceGroup | [0]" \
-            -o tsv)
-          if [ -z "$rg" ]; then
-            echo "Unable to resolve resource group for storage account ${{ vars.TFSTATE_STORAGE_ACCOUNT }}" >&2
-            exit 1
-          fi
-          echo "resource_group_name=$rg" >> "$GITHUB_OUTPUT"
-
-      - name: OpenTofu init
-        working-directory: ${{ env.TOFU_DIR }}
-        run: |
-          tofu init \
-            -backend-config="resource_group_name=${{ steps.backend.outputs.resource_group_name }}" \
-            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ inputs.backend_container_name }}" \
-            -backend-config="key=${{ inputs.state_key }}" \
-            -backend-config="subscription_id=${{ vars.TFSTATE_SUBSCRIPTION_ID }}" \
-            -backend-config="tenant_id=${{ vars.ARM_TENANT_ID }}" \
-            -backend-config="client_id=${{ vars.ARM_CLIENT_ID }}" \
-            -backend-config="use_oidc=true" \
-            -backend-config="use_azuread_auth=true"
-
-      - name: OpenTofu validate
-        working-directory: ${{ env.TOFU_DIR }}
-        run: tofu validate
-
-      - name: OpenTofu plan
-        working-directory: ${{ env.TOFU_DIR }}
-        run: |
-          tofu plan \
-            -out=tfplan \
-            -var="location=${{ inputs.location }}" \
-            -var="resource_group_name=${{ inputs.resource_group_name }}" \
-            -var="retention_days=${{ inputs.retention_days }}"
-
-      - name: OpenTofu apply
-        if: inputs.command == 'apply'
-        working-directory: ${{ env.TOFU_DIR }}
-        run: tofu apply -auto-approve tfplan
-
-      - name: Show outputs
-        if: inputs.command == 'apply'
-        working-directory: ${{ env.TOFU_DIR }}
-        run: tofu output
+  plan-apply:
+    name: Plan / Apply screenshot storage
+    uses: nelsong6/pipeline-templates/.github/workflows/tofu-plan-apply-template.yml@main
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    with:
+      working_directory: infra/opentofu/issue-agent-screenshot-storage
+      backend_resource_group: infra
+      backend_storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      backend_container: tfstate
+      backend_key: spirelens/issue-agent-screenshot-storage.tfstate
+      tofu_version: '1.9.0'
+      tofu_vars: >-
+        -var="location=eastus"
+        -var="resource_group_name=rg-spirelens-issue-agent-evidence"
+        -var="retention_days=90"
