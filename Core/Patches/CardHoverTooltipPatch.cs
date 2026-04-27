@@ -675,10 +675,10 @@ public static class CardHoverShowPatch
         int threshold)
     {
         if (currentCounter.HasValue && threshold > 0)
-            Row3(sb, "Skill counter", $"{currentCounter.Value}/{threshold}", "");
+            Row3(sb, "Skills this turn", $"{currentCounter.Value}/{threshold}", "");
 
         if (!compact && agg.TimesSummonedToHand > 0)
-            Row3(sb, "Summoned to hand", agg.TimesSummonedToHand.ToString(), "");
+            Row3(sb, "Times triggered", agg.TimesSummonedToHand.ToString(), "");
     }
     private static string GetInlineIconStatLabel(string iconPath, string suffix)
     {
