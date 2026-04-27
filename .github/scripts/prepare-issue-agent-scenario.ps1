@@ -111,14 +111,25 @@ async def materialize_install():
 
 async def validate_load():
     existing = read_json(output_path) if output_path.exists() else {"status": "pass"}
+    setup = read_json(setup_path)
+    # Launching through Steam can leave the remote mirror populated while the
+    # AppData working save is absent. Install again after the bridge is ready so
+    # the in-game saved-run loader and validator see the same current_run.save.
+    live_installed = parse_tool_json(await server.install_save_as_current(setup["scenario_name"], "scenario"), "install_save_as_current")
     validate = parse_tool_json(await server.validate_current_run_save(), "validate_current_run_save")
     loaded = parse_tool_json(await server.load_current_run_save(), "load_current_run_save")
-    state = parse_tool_json(await server.get_game_state("json"), "get_game_state")
+    state = None
+    for _ in range(20):
+        state = parse_tool_json(await server.get_game_state("json"), "get_game_state")
+        if state.get("state_type") not in (None, "menu", "unknown"):
+            break
+        await asyncio.sleep(0.5)
+    existing["live_installed"] = live_installed
     existing["validated"] = validate
     existing["loaded"] = loaded
     existing["game_state"] = state
-    existing["state_type"] = state.get("state_type")
-    existing["loaded_character_id"] = state.get("character_id") or state.get("player", {}).get("character_id")
+    existing["state_type"] = state.get("state_type") if state else None
+    existing["loaded_character_id"] = (state or {}).get("character_id") or (state or {}).get("player", {}).get("character_id")
     write_json(existing)
 
 
@@ -178,7 +189,7 @@ try {
 
     $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
     if ([string]$result.status -ne 'pass') { throw "Scenario setup did not pass." }
-    if ([string]::IsNullOrWhiteSpace([string]$result.state_type) -or [string]$result.state_type -eq 'menu') {
+    if ([string]::IsNullOrWhiteSpace([string]$result.state_type) -or [string]$result.state_type -in @('menu', 'unknown')) {
         throw "Scenario loaded into unexpected state_type='$($result.state_type)'."
     }
 
