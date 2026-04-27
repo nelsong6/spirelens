@@ -32,14 +32,33 @@ function Normalize-ContainerUrl {
     return $Value.TrimEnd('/')
 }
 
+function Add-PublishWarning {
+    param([string]$Message)
+    $script:warnings.Add($Message) | Out-Null
+    Write-Warning $Message
+}
+
+function Write-PreviewMarkdown {
+    $previewLines = New-Object System.Collections.Generic.List[string]
+    foreach ($imageMarkdown in $published) { $previewLines.Add($imageMarkdown) | Out-Null }
+    if ($warnings.Count -gt 0) {
+        if ($previewLines.Count -gt 0) { $previewLines.Add('') | Out-Null }
+        $previewLines.Add('> Screenshot publish warning: one or more screenshot previews could not be published. Use the uploaded artifacts as fallback evidence.') | Out-Null
+        foreach ($warning in $warnings) { $previewLines.Add("> $warning") | Out-Null }
+    }
+
+    $previewLines | Set-Content -LiteralPath $PreviewMarkdownPath -Encoding UTF8
+}
+
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PreviewMarkdownPath) | Out-Null
 Remove-Item -LiteralPath $PreviewMarkdownPath -Force -ErrorAction SilentlyContinue
 
 $published = New-Object System.Collections.Generic.List[string]
+$warnings = New-Object System.Collections.Generic.List[string]
 
 if ([string]::IsNullOrWhiteSpace($ScreenshotDir) -or -not (Test-Path -LiteralPath $ScreenshotDir)) {
-    Write-Warning "Screenshot directory not found: $ScreenshotDir"
-    Set-Content -LiteralPath $PreviewMarkdownPath -Value '' -Encoding UTF8
+    Add-PublishWarning "Screenshot directory not found: $ScreenshotDir"
+    Write-PreviewMarkdown
     return
 }
 
@@ -56,7 +75,7 @@ foreach ($file in $files) {
     $blobUrl = "$baseUrl/$(Join-UrlPath -Segments @($RunId))/$(Join-UrlPath -Segments ($relative -split '/'))"
 
     try {
-        az storage blob upload `
+        $uploadOutput = & az storage blob upload `
             --auth-mode login `
             --account-name $StorageAccountName `
             --container-name $ContainerName `
@@ -64,7 +83,8 @@ foreach ($file in $files) {
             --file $file.FullName `
             --overwrite true `
             --content-type image/png `
-            --only-show-errors | Out-Null
+            --only-show-errors 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Azure blob upload failed: $uploadOutput" }
 
         $response = Invoke-WebRequest -Uri $blobUrl -Method Head -UseBasicParsing -TimeoutSec 20
         if ([int]$response.StatusCode -lt 200 -or [int]$response.StatusCode -ge 300) {
@@ -74,8 +94,8 @@ foreach ($file in $files) {
         $published.Add("![$relative]($blobUrl)") | Out-Null
         Write-Host "Published screenshot preview: $blobUrl"
     } catch {
-        Write-Warning "Unable to publish screenshot '$($file.FullName)': $($_.Exception.Message)"
+        Add-PublishWarning "Unable to publish screenshot '$relative': $($_.Exception.Message)"
     }
 }
 
-$published | Set-Content -LiteralPath $PreviewMarkdownPath -Encoding UTF8
+Write-PreviewMarkdown
