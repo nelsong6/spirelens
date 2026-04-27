@@ -1,0 +1,191 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$TestPlanPath,
+    [Parameter(Mandatory = $true)]
+    [string]$McpConfigPath,
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$ValidationArtifactDir,
+    [Parameter(Mandatory = $true)]
+    [string]$IssueNumber
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Write-SetupArtifact {
+    param([hashtable]$Data)
+    New-Item -ItemType Directory -Force -Path $ValidationArtifactDir | Out-Null
+    $path = Join-Path $ValidationArtifactDir 'issue-agent-scenario-setup.json'
+    $Data | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $path -Encoding UTF8
+    return $path
+}
+
+function Get-McpServerConfig {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { throw "MCP config not found: $Path" }
+    $config = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $server = $config.mcpServers.'spire-lens-mcp'
+    if ($null -eq $server) { throw "MCP config does not define spire-lens-mcp." }
+    return $server
+}
+
+function Get-McpDirectory {
+    param([object]$Server)
+    $args = @($Server.args)
+    for ($i = 0; $i -lt $args.Count - 1; $i++) {
+        if ([string]$args[$i] -eq '--directory') { return [string]$args[$i + 1] }
+    }
+    throw "Unable to find '--directory' in spire-lens-mcp args."
+}
+
+function Invoke-McpPython {
+    param(
+        [string]$McpDirectory,
+        [string]$Mode,
+        [string]$SetupPath,
+        [string]$OutputPath
+    )
+
+    $python = @'
+import asyncio
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+mode = sys.argv[1]
+setup_path = Path(sys.argv[2])
+output_path = Path(sys.argv[3])
+server_path = Path.cwd() / "server.py"
+spec = importlib.util.spec_from_file_location("spire_lens_mcp_server", server_path)
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+
+
+def read_json(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(data):
+    output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def parse_tool_json(text, tool_name):
+    try:
+        data = json.loads(text)
+    except Exception as exc:
+        raise RuntimeError(f"{tool_name} returned non-JSON: {text[:500]}") from exc
+    if data.get("status") == "error":
+        raise RuntimeError(f"{tool_name} failed: {data}")
+    return data
+
+
+async def materialize_install():
+    setup = read_json(setup_path)
+    kwargs = {
+        "base_name": setup["base_save_name"],
+        "scenario_name": setup["scenario_name"],
+        "deck": setup.get("deck"),
+        "add_cards": setup.get("add_cards"),
+        "remove_cards": setup.get("remove_cards"),
+        "relics": setup.get("relics"),
+        "add_relics": setup.get("add_relics"),
+        "remove_relics": setup.get("remove_relics"),
+        "gold": setup.get("gold"),
+        "current_hp": setup.get("current_hp"),
+        "max_hp": setup.get("max_hp"),
+        "max_energy": setup.get("max_energy"),
+        "next_normal_encounter": setup.get("next_normal_encounter"),
+    }
+    materialized = parse_tool_json(await server.materialize_scenario_save(**kwargs), "materialize_scenario_save")
+    installed = parse_tool_json(await server.install_save_as_current(setup["scenario_name"], "scenario"), "install_save_as_current")
+    write_json({
+        "status": "pass",
+        "mode": mode,
+        "scenario_setup": setup,
+        "materialized": materialized,
+        "installed": installed,
+    })
+
+
+async def validate_load():
+    existing = read_json(output_path) if output_path.exists() else {"status": "pass"}
+    validate = parse_tool_json(await server.validate_current_run_save(), "validate_current_run_save")
+    loaded = parse_tool_json(await server.load_current_run_save(), "load_current_run_save")
+    state = parse_tool_json(await server.get_game_state("json"), "get_game_state")
+    existing["validated"] = validate
+    existing["loaded"] = loaded
+    existing["game_state"] = state
+    existing["state_type"] = state.get("state_type")
+    existing["loaded_character_id"] = state.get("character_id") or state.get("player", {}).get("character_id")
+    write_json(existing)
+
+
+if mode == "materialize_install":
+    asyncio.run(materialize_install())
+elif mode == "validate_load":
+    asyncio.run(validate_load())
+else:
+    raise SystemExit(f"unknown mode: {mode}")
+'@
+
+    $scriptPath = Join-Path $env:TEMP ('prepare-issue-agent-scenario-' + [guid]::NewGuid().ToString() + '.py')
+    try {
+        $python | Set-Content -LiteralPath $scriptPath -Encoding UTF8
+        & uv run --directory $McpDirectory python $scriptPath $Mode $SetupPath $OutputPath
+        if ($LASTEXITCODE -ne 0) { throw "MCP Python helper failed in mode '$Mode'." }
+    } finally {
+        Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$artifact = [ordered]@{
+    layer = 'scenario_setup'
+    status = 'abort'
+    abort_reason = $null
+    retryable = $true
+    human_action_required = $false
+    notes = ''
+    issue_number = [int]$IssueNumber
+}
+
+try {
+    if (-not (Test-Path -LiteralPath $TestPlanPath)) { throw "Test plan artifact not found: $TestPlanPath" }
+    $testPlan = Get-Content -LiteralPath $TestPlanPath -Raw | ConvertFrom-Json
+    $setup = $testPlan.scenario_setup
+    if ($null -eq $setup) {
+        throw "Test plan did not include scenario_setup. Refusing to spend verification LLM time without a deterministic scenario."
+    }
+    foreach ($required in @('base_save_name', 'scenario_name', 'deck')) {
+        if ($null -eq $setup.PSObject.Properties[$required] -or [string]::IsNullOrWhiteSpace([string]$setup.$required)) {
+            throw "scenario_setup.$required is required."
+        }
+    }
+
+    $setupPath = Join-Path $ValidationArtifactDir 'issue-agent-scenario-setup-input.json'
+    New-Item -ItemType Directory -Force -Path $ValidationArtifactDir | Out-Null
+    $setup | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $setupPath -Encoding UTF8
+
+    $server = Get-McpServerConfig -Path $McpConfigPath
+    $mcpDirectory = Get-McpDirectory -Server $server
+    $outputPath = Join-Path $ValidationArtifactDir 'issue-agent-scenario-setup.json'
+
+    & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Stop -McpConfigPath $McpConfigPath -ShutdownTimeoutSeconds 45
+    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'materialize_install' -SetupPath $setupPath -OutputPath $outputPath
+    & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
+    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'validate_load' -SetupPath $setupPath -OutputPath $outputPath
+
+    $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
+    if ([string]$result.status -ne 'pass') { throw "Scenario setup did not pass." }
+    if ([string]::IsNullOrWhiteSpace([string]$result.state_type) -or [string]$result.state_type -eq 'menu') {
+        throw "Scenario loaded into unexpected state_type='$($result.state_type)'."
+    }
+
+    Write-Host "Scenario setup ready: $($setup.scenario_name), state_type=$($result.state_type)."
+} catch {
+    $artifact.abort_reason = 'scenario_setup_failed'
+    $artifact.notes = $_.Exception.Message
+    $path = Write-SetupArtifact -Data $artifact
+    Write-Error "Issue-agent scenario setup failed. Wrote $path. $($_.Exception.Message)"
+}
