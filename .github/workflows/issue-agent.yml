@@ -18,6 +18,7 @@ permissions:
 
 env:
   ISSUE_AGENT_ARTIFACT_NAME: issue-agent-artifacts
+  ISSUE_AGENT_RUN_LABEL: issue-agent-run
 
 concurrency:
   group: spirelens-issue-agent
@@ -29,8 +30,8 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
-        (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
-        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
+        (github.event.action == 'labeled' && github.event.label.name == env.ISSUE_AGENT_RUN_LABEL) ||
+        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, env.ISSUE_AGENT_RUN_LABEL))
       ))
     runs-on:
       - self-hosted
@@ -127,8 +128,8 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
-        (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
-        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
+        (github.event.action == 'labeled' && github.event.label.name == env.ISSUE_AGENT_RUN_LABEL) ||
+        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, env.ISSUE_AGENT_RUN_LABEL))
       ))
     runs-on:
       - self-hosted
