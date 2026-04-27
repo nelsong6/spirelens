@@ -113,6 +113,98 @@ function Get-ExitCodeText {
     }
 }
 
+function Get-ToolFailureCategory {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    if ($Text -match '(?i)permission to use .* has been denied|permission_denied|permission denied|not allowed to use tool|disallowed') { return 'permission_denied' }
+    if ($Text -match '(?i)\b(500|internal server error)\b') { return 'server_error' }
+    if ($Text -match '(?i)\b(timed out|timeout)\b') { return 'timeout' }
+    if ($Text -match '(?im)^\s*(error|exception|traceback):') { return 'tool_error' }
+    if ($Text -match '(?i)\b(exit code [1-9]\d*|failed|exception|traceback|unauthorized|forbidden|not found)\b') { return 'tool_error' }
+    return $null
+}
+
+function New-ToolMetricBucket {
+    return [ordered]@{
+        tool_uses = 0
+        tool_results = 0
+        failed_tool_results = 0
+        permission_denials = 0
+        failure_categories = [ordered]@{}
+    }
+}
+
+function Add-ToolMetricFailure {
+    param([object]$Bucket, [string]$Category)
+    if ([string]::IsNullOrWhiteSpace($Category)) { return }
+    $Bucket.failed_tool_results++
+    if ($null -eq $Bucket.failure_categories[$Category]) { $Bucket.failure_categories[$Category] = 0 }
+    $Bucket.failure_categories[$Category]++
+}
+
+function Get-ClaudeToolCallSummary {
+    param([string]$Path, [string[]]$PhaseNames)
+
+    $summary = [ordered]@{
+        total = New-ToolMetricBucket
+        phases = [ordered]@{}
+    }
+    foreach ($phaseName in $PhaseNames) { $summary.phases[$phaseName] = New-ToolMetricBucket }
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $summary }
+
+    Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $record = $_ | ConvertFrom-Json -ErrorAction Stop
+            $phaseName = [string](Get-NestedPropertyValue -Object $record -Path @('data', 'phase'))
+            if ([string]::IsNullOrWhiteSpace($phaseName)) { $phaseName = 'unknown' }
+            if ($null -eq $summary.phases[$phaseName]) { $summary.phases[$phaseName] = New-ToolMetricBucket }
+            $phaseBucket = $summary.phases[$phaseName]
+            if ($record.kind -eq 'tool_use') {
+                $summary.total.tool_uses++
+                $phaseBucket.tool_uses++
+                return
+            }
+            if ($record.kind -eq 'tool_result') {
+                $summary.total.tool_results++
+                $phaseBucket.tool_results++
+                $category = [string](Get-NestedPropertyValue -Object $record -Path @('data', 'failure_category'))
+                $failed = Get-NestedPropertyValue -Object $record -Path @('data', 'failed')
+                if ([string]::IsNullOrWhiteSpace($category)) { $category = Get-ToolFailureCategory -Text ([string]$record.message) }
+                if (($failed -is [bool] -and $failed) -or -not [string]::IsNullOrWhiteSpace($category)) {
+                    Add-ToolMetricFailure -Bucket $summary.total -Category $category
+                    Add-ToolMetricFailure -Bucket $phaseBucket -Category $category
+                }
+                return
+            }
+            if ($record.kind -eq 'result' -and -not [string]::IsNullOrWhiteSpace([string]$record.message)) {
+                $resultEvent = $record.message | ConvertFrom-Json -ErrorAction Stop
+                $denials = @($resultEvent.permission_denials)
+                if ($denials.Count -gt 0) {
+                    $summary.total.permission_denials += $denials.Count
+                    $phaseBucket.permission_denials += $denials.Count
+                    foreach ($denial in $denials) {
+                        Add-ToolMetricFailure -Bucket $summary.total -Category 'permission_denied'
+                        Add-ToolMetricFailure -Bucket $phaseBucket -Category 'permission_denied'
+                    }
+                }
+            }
+        } catch {
+        }
+    }
+    return $summary
+}
+
+function Format-FailureCategories {
+    param([object]$Categories)
+    if ($null -eq $Categories) { return '' }
+    $items = @()
+    foreach ($property in $Categories.PSObject.Properties) {
+        if ($null -ne $property.Value -and [int]$property.Value -gt 0) { $items += "$($property.Name): $($property.Value)" }
+    }
+    if ($items.Count -eq 0) { return '' }
+    return ($items -join ', ')
+}
 function Get-ClaudeCostSummary {
     param([string]$Path)
 
@@ -349,7 +441,7 @@ Copy-IfExists -LiteralPath $DebugLogPath -Destination $persistentRoot
 Copy-DirectoryIfExists -LiteralPath $ScreenshotDir -Destination $persistentRoot
 Copy-DirectoryIfExists -LiteralPath $ValidationArtifactDir -Destination $persistentRoot
 
-$phaseNames = @('investigation', 'implementation', 'verification')
+$phaseNames = @('test_plan', 'implementation', 'verification')
 $phaseResults = [ordered]@{}
 foreach ($phaseName in $phaseNames) {
     $phaseResults[$phaseName] = Read-JsonOrNull -Path (Join-Path $ValidationArtifactDir "issue-agent-$phaseName.json")
@@ -368,6 +460,10 @@ $publishedScreenshotImages = Publish-ScreenshotImages -LiteralPath $ScreenshotDi
 $validationArtifactCount = Count-Files -LiteralPath $ValidationArtifactDir
 $exitCodeText = Get-ExitCodeText -Path $EventLogPath
 $costSummary = Get-ClaudeCostSummary -Path $EventLogPath
+$toolSummary = Get-ClaudeToolCallSummary -Path $EventLogPath -PhaseNames $phaseNames
+$toolMetricsPath = Join-Path $ValidationArtifactDir 'issue-agent-tool-metrics.json'
+$toolSummary | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $toolMetricsPath -Encoding UTF8
+Copy-IfExists -LiteralPath $toolMetricsPath -Destination $persistentRoot
 $runUrl = if (-not [string]::IsNullOrWhiteSpace($RepoSlug) -and -not [string]::IsNullOrWhiteSpace($RunId)) { "https://github.com/$RepoSlug/actions/runs/$RunId" } else { '_Unavailable_' }
 $artifactUrl = if ($runUrl -ne '_Unavailable_') { "$runUrl/artifacts" } else { '_Unavailable_' }
 $artifactText = if (-not [string]::IsNullOrWhiteSpace($ArtifactName)) { "[$ArtifactName]($artifactUrl)" } else { '_Unavailable_' }
@@ -389,6 +485,8 @@ $lines.Add("| Abort reason | $(Format-Cell (Get-PropertyValue -Object $result -N
 $lines.Add("| Claude exit | $exitCodeText |")
 $lines.Add("| Claude cost | $(Format-Usd $costSummary.TotalCostUsd) |")
 $lines.Add("| Claude turns | $($costSummary.Turns) |")
+$lines.Add("| Tool calls | $($toolSummary.total.tool_uses) |")
+$lines.Add("| Failed tool calls | $($toolSummary.total.failed_tool_results) |")
 $lines.Add("| Head SHA | $HeadSha |")
 $lines.Add("| Ref | $RefName |")
 $lines.Add('| Persistent local logs | `' + $persistentRoot + '` |')
@@ -444,6 +542,16 @@ $lines.Add('| Phase | Cost | Turns | Input | Output | Cache create | Cache read 
 $lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: |')
 foreach ($phaseCostRow in $phaseCostRows) { $lines.Add($phaseCostRow) }
 $lines.Add('')
+$lines.Add('### Tool Calls By Phase')
+$lines.Add('')
+$lines.Add('| Phase | Tool calls | Tool results | Failed tool calls | Permission denials | Failure categories |')
+$lines.Add('| --- | ---: | ---: | ---: | ---: | --- |')
+foreach ($phaseName in $phaseNames) {
+    $bucket = $toolSummary.phases[$phaseName]
+    if ($null -eq $bucket) { $bucket = New-ToolMetricBucket }
+    $lines.Add("| $phaseName | $($bucket.tool_uses) | $($bucket.tool_results) | $($bucket.failed_tool_results) | $($bucket.permission_denials) | $(Format-Cell (Format-FailureCategories $bucket.failure_categories)) |")
+}
+$lines.Add('')
 $lines.Add('### Evidence')
 $lines.Add('')
 $lines.Add('| Metric | Value |')
@@ -451,6 +559,10 @@ $lines.Add('| --- | ---: |')
 $lines.Add("| Screenshot artifacts | $screenshotCount |")
 $lines.Add("| Validation artifact files | $validationArtifactCount |")
 $lines.Add("| Claude result events | $($costSummary.Results) |")
+$lines.Add("| Tool calls | $($toolSummary.total.tool_uses) |")
+$lines.Add("| Tool results | $($toolSummary.total.tool_results) |")
+$lines.Add("| Failed tool calls | $($toolSummary.total.failed_tool_results) |")
+$lines.Add("| Permission denials | $($toolSummary.total.permission_denials) |")
 $lines.Add("| Input tokens | $($costSummary.InputTokens) |")
 $lines.Add("| Output tokens | $($costSummary.OutputTokens) |")
 $lines.Add("| Cache creation tokens | $($costSummary.CacheCreationInputTokens) |")
