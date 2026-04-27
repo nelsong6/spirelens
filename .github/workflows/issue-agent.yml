@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
   issues: write
   pull-requests: write
 
@@ -241,12 +242,29 @@ jobs:
         run: |
           throw "Implementation did not pass. status=${{ steps.implementation_result.outputs.phase_status }} abort_reason=${{ steps.implementation_result.outputs.abort_reason }}"
 
+  screenshot-storage-outputs:
+    name: "Read screenshot storage outputs"
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && (
+        (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
+        (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
+      ))
+    uses: nelsong6/pipeline-templates/.github/workflows/tofu-outputs-template.yml@main
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      storage_container: tfstate
+      state_key: spirelens/issue-agent-screenshot-storage.tfstate
   verification:
     name: "Verify in STS2"
     needs:
       - test-plan
       - implementation
-    if: needs.test-plan.result == 'success' && needs.implementation.result == 'success'
+      - screenshot-storage-outputs
+    if: needs.test-plan.result == 'success' && needs.implementation.result == 'success' && needs.screenshot-storage-outputs.result == 'success'
     runs-on:
       - self-hosted
       - windows
@@ -425,11 +443,35 @@ jobs:
             $json | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
           }
 
+      - name: Azure login for screenshot publishing
+        if: always()
+        uses: azure/login@v2
+        with:
+          client-id: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).github_uploader_client_id }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Publish screenshot previews
+        if: always()
+        env:
+          AZURE_SCREENSHOT_STORAGE_ACCOUNT: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).storage_account_name }}
+          AZURE_SCREENSHOT_CONTAINER: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).container_name }}
+          AZURE_SCREENSHOT_CONTAINER_URL: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).container_url }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\publish-issue-agent-screenshots.ps1") `
+            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
+            -PreviewMarkdownPath (Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-screenshot-previews.md") `
+            -StorageAccountName $env:AZURE_SCREENSHOT_STORAGE_ACCOUNT `
+            -ContainerName $env:AZURE_SCREENSHOT_CONTAINER `
+            -ContainerUrl $env:AZURE_SCREENSHOT_CONTAINER_URL `
+            -RunId $env:GITHUB_RUN_ID
       - name: Summarize issue-agent run
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO_SLUG: ${{ github.repository }}
+          ISSUE_AGENT_SCREENSHOT_PREVIEWS_PATH: ${{ runner.temp }}/sts2-artifacts/issue-agent-screenshot-previews.md
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP "sts2-artifacts") | Out-Null
