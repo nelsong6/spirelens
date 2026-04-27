@@ -145,11 +145,12 @@ $phaseDefinitions = @(
             'Edit',
             'Glob',
             'Grep',
+            'ToolSearch',
             'TodoWrite',
             'Bash',
             'PowerShell'
-        )
-        DisallowedTools = $AllSpireLensMcpTools + @(
+        ) + $CatalogMcpTools
+        DisallowedTools = $SingleplayerMcpTools + $MultiplayerMcpTools + @(
             'Bash(dotnet test *)',
             'PowerShell(dotnet test *)',
             'Bash(gh *)',
@@ -542,13 +543,13 @@ function Apply-VerificationEvidenceGuard {
     $status = [string](Get-PropertyValue -Object $Result -Name 'status')
     if ($status -ne 'pass') { return $Result }
 
-    $investigationPath = Join-Path $ValidationArtifactDir 'issue-agent-test-plan.json'
-    if (-not (Test-Path -LiteralPath $investigationPath)) {
+    $testPlanPath = Join-Path $ValidationArtifactDir 'issue-agent-test-plan.json'
+    if (-not (Test-Path -LiteralPath $testPlanPath)) {
         return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'artifact_contract_missing' -GuardNote 'Verification cannot pass because the test-plan evidence contract is missing.'
     }
 
-    $investigation = Read-JsonFile -Path $investigationPath
-    $requiredEvidence = ConvertTo-Array (Get-PropertyValue -Object $investigation -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false }
+    $testPlan = Read-JsonFile -Path $testPlanPath
+    $requiredEvidence = ConvertTo-Array (Get-PropertyValue -Object $testPlan -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false }
     if ($requiredEvidence.Count -eq 0) {
         return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'artifact_contract_missing' -GuardNote 'Verification cannot pass because test planning did not declare required_evidence. The verifier needs an explicit evidence contract before it can pass.'
     }
@@ -805,7 +806,7 @@ The shell tool is Git Bash on Windows. Do not use PowerShell-only environment sy
 Do not search above the repository root. Do not recurse through parent workspace folders or stale `issue-agent-src` checkouts from other runs.
 $issueReadInstruction
 
-Use MCP tools from the project MCP config at `$McpConfigPath` for all STS2 surfaces.
+Use only the MCP tools allowed for this phase from the project MCP config at `$McpConfigPath`.
 - Use `lookup_card`, `lookup_character`, `list_characters`, and `get_catalog_summary` for game metadata discovery. Do not rely on model memory for card ownership, character ownership, ids, or ambiguity checks.
 - Use live gameplay MCP tools for game state and in-game actions.
 - Use `capture_screenshot` for screenshot evidence.
@@ -851,12 +852,12 @@ TEST PLANNING RULES:
 - Focus only on issue interpretation, card identity, character identity, scenario recipe, and evidence contract. Do not inspect proposed code edits; test planning must be independent of implementation.
 - For every issue-specified card, call `lookup_card` before writing the test plan result. If lookup returns `not_found`, abort with card_not_found. If lookup returns `ambiguous`, abort with card_ambiguous. Do not infer ownership from training data.
 - For every issue-specified character, call `lookup_character` before writing the test plan result. If lookup returns `not_found` or `ambiguous`, abort with character_not_found or card_ambiguous as appropriate.
-- Keep searches targeted to the current checkout for code context only. Prefer `rg "Make It So|MakeItSo|MAKE_IT_SO" .` from the repository root over recursive PowerShell searches.
-- Do not use an Explore/subagent/Task to find code context. If targeted `rg`/`Grep`/`Read` cannot identify the surface quickly, abort with `validation_plan_impossible` instead of delegating.
-- If MCP catalog metadata or repo code context cannot support the needed validation plan, abort.
+- Do not inspect implementation files unless needed to identify an existing test command or fixture name; scenario/evidence planning must remain independent of code edits.
+- Do not use an Explore/subagent/Task. If the issue, MCP catalog metadata, and existing test command hints are not enough to produce a validation plan quickly, abort with `validation_plan_impossible` instead of delegating.
+- If MCP catalog metadata cannot support the needed validation plan, abort.
 - Write `issue-agent-test-plan.json` with:
   `{ "layer":"test_plan", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "card":{}, "character":{}, "card_metadata_discovery":{"passed":null,"status":"not_run","notes":""}, "validation_plan":[], "required_evidence":[{"id":"unit-tests","kind":"unit_test","required":true,"must_show":"specific tests that prove the changed behavior"},{"id":"live-target-visible","kind":"screenshot","required":true,"must_show":"target card/UI/tooltip state visibly proving the issue claim","target_visible_required":true,"text_visible_required":false,"allowed_fallback":null}] }`
-- `required_evidence` is the acceptance contract for verification. Include every proof required before a PR may open. If the issue asks for multiple visible UI claims, the required screenshot evidence must name all of them; do not collapse a two-part request into proof for only one row. For Make It So trigger progress/count wording, the screenshot must show both the trigger-progress row text and the trigger-count row text, unless the investigation aborts as validation_plan_impossible with a concrete reason. For tooltip, label, wording, or text/UI issues, include a screenshot evidence item with `text_visible_required:true` and `must_show` naming the exact text or tooltip state. When more than one label/row is requested, put all requested labels/rows in `must_show`. Unit tests may be required too, but they are not a substitute for required visual evidence unless the issue is explicitly non-visual and you set `allowed_fallback` with a concrete reason.
+- `required_evidence` is the acceptance contract for verification. Include every proof required before a PR may open. If the issue asks for multiple visible UI claims, the required screenshot evidence must name all of them; do not collapse a two-part request into proof for only one row. For Make It So trigger progress/count wording, the screenshot must show both the trigger-progress row text and the trigger-count row text, unless test planning aborts as validation_plan_impossible with a concrete reason. For tooltip, label, wording, or text/UI issues, include a screenshot evidence item with `text_visible_required:true` and `must_show` naming the exact text or tooltip state. When more than one label/row is requested, put all requested labels/rows in `must_show`. Unit tests may be required too, but they are not a substitute for required visual evidence unless the issue is explicitly non-visual and you set `allowed_fallback` with a concrete reason.
 - Allowed abort reasons: card_not_found, card_ambiguous, character_not_found, metadata_unavailable, mcp_capability_missing, game_state_unreachable, validation_plan_impossible.
 - Write `issue-agent-test-plan.md` summarizing facts found, scenario recipe, missing facts, and the validation plan.
 "@
@@ -884,7 +885,7 @@ $verificationPrompt = (Get-CommonPromptPrefix -PhaseName 'verification') + @"
 VERIFICATION RULES:
 - Read `issue-agent-test-plan.json` and `issue-agent-implementation.json` first. Treat `issue-agent-test-plan.json.required_evidence` as a hard acceptance contract. Do not pass unless every required evidence item is satisfied in `evidence_results`.
 - Own tests, live MCP validation, screenshot capture, and final evidence only. This phase is sealed from GitHub mutation: no issue comments, labels, branches, commits, pushes, or PRs.
-- Use this Windows validation sequence unless investigation says it is not applicable:
+- Use this Windows validation sequence unless the test plan says it is not applicable:
 
 ``````powershell
 `$sts2DataDir = "D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64"
@@ -900,7 +901,7 @@ dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --
 - If the saved screenshot is not meaningful evidence for the validation claim, abort with screenshot_not_relevant. For a named card, tooltip, or UI issue, screenshots must show the target card, tooltip, or changed UI state. If the relevant evidence lives in draw pile, discard pile, exhaust pile, deck view, card selection, rewards, or another non-hand surface, navigate to that surface through MCP when available and capture the target-visible screenshot there. If MCP cannot make the required card text/tooltip visible, abort with target_evidence_missing and say which view or pile was unreachable; do not pass on hand screenshots, unit tests, repeated tooltip attempts, or adjacent state.
 - Write `issue-agent-verification.json` with:
   `{ "layer":"verification", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "unit_tests":{"passed":null,"status":"not_run","notes":""}, "live_mcp_validation":{"passed":null,"status":"not_run","notes":""}, "screenshot_validation":{"passed":null,"status":"not_run","count":0,"target_visible":false,"notes":""}, "evidence_results":[{"evidence_id":"","kind":"unit_test|screenshot|live_mcp|manual_blocker","passed":false,"artifact_paths":[],"target_visible":false,"text_visible":false,"observed_text":"","notes":""}], "used_mcp":null, "used_raw_bridge_or_queue":false }`
-- For each `required_evidence` item from investigation, write exactly one matching `evidence_results` item. Screenshot evidence must include artifact_paths. If the contract requires tooltip/text evidence, set `text_visible:true` only when the screenshot itself shows the required text and copy the visible words into `observed_text`. If the text/tooltip cannot be made visible, abort with target_evidence_missing; do not pass by saying unit tests cover it.
+- For each `required_evidence` item from the test plan, write exactly one matching `evidence_results` item. Screenshot evidence must include artifact_paths. If the contract requires tooltip/text evidence, set `text_visible:true` only when the screenshot itself shows the required text and copy the visible words into `observed_text`. If the text/tooltip cannot be made visible, abort with target_evidence_missing; do not pass by saying unit tests cover it.
 - Allowed abort reasons: unit_tests_failed, live_validation_failed, screenshot_missing, screenshot_not_relevant, target_evidence_missing, mcp_state_mismatch, game_state_unreachable, claimed_result_not_observed, artifact_contract_missing.
 - Also write rollup `issue-agent-result.json` with issue_number, status, abort_layer, abort_reason, retryable, human_action_required, layers, unit_tests, live_mcp_validation, screenshot_validation, card_metadata_discovery, used_mcp, used_raw_bridge_or_queue, opened_pr, opened_pr_url, should_close_issue, and evidence_summary.
 - Write `issue-agent-verification.md` summarizing pass/fail evidence.
