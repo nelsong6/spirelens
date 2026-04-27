@@ -121,8 +121,13 @@ async def validate_load():
     state = None
     for _ in range(20):
         state = parse_tool_json(await server.get_game_state("json"), "get_game_state")
-        if state.get("state_type") not in (None, "menu", "unknown"):
-            break
+        state_type = state.get("state_type")
+        if state_type not in (None, "menu", "unknown"):
+            if state_type != "monster":
+                break
+            battle = state.get("battle") or {}
+            if battle.get("enemies"):
+                break
         await asyncio.sleep(0.5)
     existing["live_installed"] = live_installed
     existing["validated"] = validate
@@ -191,6 +196,12 @@ try {
     if ([string]$result.status -ne 'pass') { throw "Scenario setup did not pass." }
     if ([string]::IsNullOrWhiteSpace([string]$result.state_type) -or [string]$result.state_type -in @('menu', 'unknown')) {
         throw "Scenario loaded into unexpected state_type='$($result.state_type)'."
+    }
+    if ([string]$result.state_type -eq 'monster') {
+        $battle = $result.game_state.battle
+        if ($null -eq $battle -or $null -eq $battle.enemies -or @($battle.enemies).Count -eq 0) {
+            throw "Scenario reached monster state before active battle details were available."
+        }
     }
 
     Write-Host "Scenario setup ready: $($setup.scenario_name), state_type=$($result.state_type)."
