@@ -157,7 +157,7 @@ For STS2 issue-agent work:
 - document the test case used for the screenshot artifacts: what was set up, what was exercised, and what each screenshot is intended to prove
 - capture screenshots after the behavior is working, not just during setup
 - for tooltip-related changes, capture the affected tooltip states in the relevant hand, deck, draw pile, discard pile, exhaust pile, rewards, selection, or other card surface; the screenshot evidence item should set `text_visible_required:true`, and verification must copy the visible text into `observed_text`
-- for SpireLens card-stat tooltip proof, use the MCP route `set_spirelens_view_stats_enabled(true)` -> `show_card_tooltip(surface, card_index, card_id)` -> `capture_screenshot` so the screenshot shows the target card tooltip text directly
+- for SpireLens card-stat tooltip proof, use the MCP route `bridge_health` -> `set_spirelens_view_stats_enabled(true)` -> `list_visible_cards(surface)` -> `show_card_tooltip(surface, card_index, card_id)` -> `capture_screenshot` so the screenshot shows the target card tooltip text directly
 - if multiple materially distinct views changed, such as compact hand-hover and fuller deck-view tooltip states, capture each affected view when that is the clearest way to prove the change
 - use judgment on how many screenshots to include, but do not exceed 10 screenshots for a single issue or pull request
 - if adequate proof would require more than 10 screenshots, split the work into smaller branches or pull requests instead of overloading one
