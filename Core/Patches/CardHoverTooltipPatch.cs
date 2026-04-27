@@ -51,7 +51,8 @@ public static class CardHoverShowPatch
         // Gate on our checkbox state. If it's not even injected yet (no deck
         // view opened this session) or unchecked, do nothing.
         var tickbox = ViewStatsInjectorPatch.LastInjectedTickbox;
-        if (tickbox == null || !tickbox.IsTicked) return;
+        var viewStatsEnabled = tickbox?.IsTicked ?? RuntimeOptionsProvider.Current.ViewStatsToggleEnabled;
+        if (!viewStatsEnabled) return;
 
         try
         {
