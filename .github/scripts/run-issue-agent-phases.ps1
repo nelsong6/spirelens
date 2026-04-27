@@ -22,7 +22,8 @@ $CatalogMcpTools = @(
     'mcp__spire-lens-mcp__lookup_character',
     'mcp__spire-lens-mcp__list_cards',
     'mcp__spire-lens-mcp__list_characters',
-    'mcp__spire-lens-mcp__get_catalog_summary'
+    'mcp__spire-lens-mcp__get_catalog_summary',
+    'mcp__spire-lens-mcp__get_validation_capabilities'
 )
 
 $SingleplayerMcpTools = @(
@@ -31,6 +32,8 @@ $SingleplayerMcpTools = @(
     'mcp__spire-lens-mcp__bridge_health',
     'mcp__spire-lens-mcp__reload_spirelens_core',
     'mcp__spire-lens-mcp__set_spirelens_view_stats_enabled',
+    'mcp__spire-lens-mcp__open_card_pile',
+    'mcp__spire-lens-mcp__close_card_pile',
     'mcp__spire-lens-mcp__list_visible_cards',
     'mcp__spire-lens-mcp__show_card_tooltip',
     'mcp__spire-lens-mcp__start_singleplayer_run',
@@ -911,7 +914,8 @@ TEST PLANNING RULES:
 - When you need support cards for a scenario deck, use `list_cards` with exact arguments `owner`, `type`, `query`, and/or `limit`; for example `list_cards({ "owner": "REGENT", "type": "Skill", "limit": 20 })`. Do not guess support card names one by one with repeated `lookup_card` calls. If `list_cards` cannot return enough real cards for the recipe, abort with `validation_plan_impossible` or `metadata_unavailable`.
 - Do not inspect implementation files unless needed to identify an existing test command or fixture name; scenario/evidence planning must remain independent of code edits.
 - Do not use an Explore/subagent/Task. If the issue, MCP catalog metadata, and existing test command hints are not enough to produce a validation plan quickly, abort with `validation_plan_impossible` instead of delegating.
-- If MCP catalog metadata cannot support the needed validation plan, abort.
+- Before writing screenshot or live-validation evidence, call get_validation_capabilities and use its returned surfaces/options as the source of truth for what verification can open, tooltip, and screenshot. Do not assume an unavailable view exists, and do not omit an available view such as deck, draw_pile, discard_pile, exhaust_pile, or verbose hand stats when it is the right evidence surface.
+- If MCP catalog metadata or validation capabilities cannot support the needed validation plan, abort.
 - Write `issue-agent-test-plan.json` with:
   `{ "layer":"test_plan", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "card":{}, "character":{}, "card_metadata_discovery":{"passed":null,"status":"not_run","notes":""}, "validation_plan":[], "scenario_setup":{"base_save_name":"base_<character>","scenario_name":"issue_<issue>_<short_card>","deck":["TARGET_CARD_ID","REAL_SUPPORT_CARD_ID"],"add_cards":null,"remove_cards":null,"relics":null,"add_relics":null,"remove_relics":null,"gold":null,"current_hp":null,"max_hp":null,"max_energy":null,"next_normal_encounter":"FUZZY_WURM_CRAWLER_WEAK","notes":"small deterministic deck that satisfies the evidence plan"}, "required_evidence":[{"id":"unit-tests","kind":"unit_test","required":true,"must_show":"specific tests that prove the changed behavior"},{"id":"live-target-visible","kind":"screenshot","required":true,"must_show":"target card/UI/tooltip state visibly proving the issue claim","target_visible_required":true,"text_visible_required":false,"allowed_fallback":null}] }`
 - `scenario_setup` is the deterministic pre-verification save recipe. Choose the correct `base_save_name` from the verified character identity, such as `base_regent`, `base_ironclad`, `base_silent`, `base_defect`, or `base_necrobinder`. Use a complete small `deck` of real card ids that lets normal gameplay reach the evidence state quickly; for Make It So, use `list_cards({ "owner": "REGENT", "type": "Skill", "limit": 20 })`, include `MAKE_IT_SO` plus three real Regent Skill card ids from that response, and set enough energy/max_energy to play them. Do not tell verification to use dev-console `fight`/`card` commands for card availability; card availability must come from this save recipe.
@@ -1000,6 +1004,7 @@ if (Test-Path -LiteralPath $resultMarkdown) {
 }
 
 Write-AgentEvent 'exit' 'Phased issue-agent script completed.'
+
 
 
 
