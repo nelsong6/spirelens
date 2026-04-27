@@ -116,7 +116,6 @@ jobs:
         timeout-minutes: 12
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
           REPO_SLUG: ${{ github.repository }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -158,7 +157,6 @@ jobs:
         timeout-minutes: 18
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
           REPO_SLUG: ${{ github.repository }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -195,6 +193,58 @@ jobs:
           "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      - name: Create pull request
+        id: create_pr
+        if: steps.verification.outputs.phase_status == 'pass'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_SLUG: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
+          $artifactDir = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
+          $implementationPath = Join-Path $artifactDir "issue-agent-implementation.json"
+          $resultPath = Join-Path $artifactDir "issue-agent-result.json"
+          $implementation = $null
+          if (Test-Path -LiteralPath $implementationPath) {
+            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
+          }
+
+          $changed = git status --porcelain
+          if ([string]::IsNullOrWhiteSpace($changed)) {
+            "pr_url=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "pr_number=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "No repository changes after verified issue-agent run; skipping PR creation."
+            return
+          }
+
+          $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)"
+          $title = if ($implementation -and $implementation.pr_title) { [string]$implementation.pr_title } else { "Issue #$($env:ISSUE_NUMBER) agent changes" }
+          $body = if ($implementation -and $implementation.pr_body) { [string]$implementation.pr_body } else { "Automated issue-agent changes for #$($env:ISSUE_NUMBER). Verification passed before this PR was opened by the workflow wrapper." }
+          $bodyPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-body.md"
+          $body | Set-Content -LiteralPath $bodyPath -Encoding UTF8
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b $branch
+          git add --all
+          git commit -m "Issue #$($env:ISSUE_NUMBER) agent changes"
+          git push --set-upstream origin $branch
+          $prUrl = gh pr create --repo $env:REPO_SLUG --base main --head $branch --title $title --body-file $bodyPath
+          $prNumber = ($prUrl -split '/')[-1]
+          "pr_url=$prUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "pr_number=$prNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          foreach ($jsonPath in @($implementationPath, $resultPath)) {
+            if (-not (Test-Path -LiteralPath $jsonPath)) { continue }
+            $json = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
+            if ($null -eq $json.PSObject.Properties['opened_pr']) { $json | Add-Member -NotePropertyName opened_pr -NotePropertyValue $null }
+            if ($null -eq $json.PSObject.Properties['opened_pr_url']) { $json | Add-Member -NotePropertyName opened_pr_url -NotePropertyValue $null }
+            $json.opened_pr = $prNumber
+            $json.opened_pr_url = $prUrl
+            $json | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+          }
       - name: Summarize issue-agent run
         if: always()
         env:
@@ -252,3 +302,5 @@ jobs:
             -Mode Stop `
             -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
             -ShutdownTimeoutSeconds 45
+
+

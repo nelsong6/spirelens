@@ -138,7 +138,21 @@ $phaseDefinitions = @(
         )
         DisallowedTools = $AllSpireLensMcpTools + @(
             'Bash(dotnet test *)',
-            'PowerShell(dotnet test *)'
+            'PowerShell(dotnet test *)',
+            'Bash(gh *)',
+            'PowerShell(gh *)',
+            'Bash(git add *)',
+            'PowerShell(git add *)',
+            'Bash(git branch *)',
+            'PowerShell(git branch *)',
+            'Bash(git checkout *)',
+            'PowerShell(git checkout *)',
+            'Bash(git commit *)',
+            'PowerShell(git commit *)',
+            'Bash(git push *)',
+            'PowerShell(git push *)',
+            'Bash(git switch *)',
+            'PowerShell(git switch *)'
         )
     },
     [ordered]@{
@@ -160,7 +174,21 @@ $phaseDefinitions = @(
         ) + $CatalogMcpTools + $SingleplayerMcpTools
         DisallowedTools = $MultiplayerMcpTools + @(
             'Edit',
-            'NotebookEdit'
+            'NotebookEdit',
+            'Bash(gh *)',
+            'PowerShell(gh *)',
+            'Bash(git add *)',
+            'PowerShell(git add *)',
+            'Bash(git branch *)',
+            'PowerShell(git branch *)',
+            'Bash(git checkout *)',
+            'PowerShell(git checkout *)',
+            'Bash(git commit *)',
+            'PowerShell(git commit *)',
+            'Bash(git push *)',
+            'PowerShell(git push *)',
+            'Bash(git switch *)',
+            'PowerShell(git switch *)'
         )
     }
 )
@@ -679,22 +707,22 @@ IMPLEMENTATION RULES:
 - Read `$ValidationArtifactDir\issue-agent-investigation.json` first and implement only that plan.
 - Own code changes only. Do not claim verification success.
 - Do not run unit tests, integration tests, live validation, or screenshot validation. Verification owns every `dotnet test`, live MCP action, and screenshot.
-- You may inspect code, edit code, run focused builds for compile sanity, and create a branch/commit/PR when code changes are needed.
+- You may inspect code, edit code, and run focused builds for compile sanity only. The workflow wrapper owns branch, commit, push, and PR creation after verification passes.
 - If no code change is needed, write a pass result with `changed_files: []`, `opened_pr: null`, and `verification_required: true`; do not run tests to prove that claim.
 - Do not start gameplay, enter rooms, play cards, capture screenshots, or perform live MCP validation; leave all live MCP validation to verification.
 - If the viable solve requires dramatic changes, a new library, architecture changes, or unsafe refactors, abort.
-- If you make code changes, create a branch, commit, push, and open a PR.
+- Do not create branches, commit, push, open PRs, comment on issues, edit labels, or perform any other GitHub mutation.
 - Write `issue-agent-implementation.json` with:
-  `{ \"layer\":\"implementation\", \"status\":\"pass|abort\", \"abort_reason\":null, \"retryable\":false, \"human_action_required\":false, \"notes\":\"\", \"changed_files\":[], \"opened_pr\":null, \"opened_pr_url\":null, \"verification_required\":true }`
+  `{ \"layer\":\"implementation\", \"status\":\"pass|abort\", \"abort_reason\":null, \"retryable\":false, \"human_action_required\":false, \"notes\":\"\", \"changed_files\":[], \"opened_pr\":null, \"opened_pr_url\":null, \"pr_title\":null, \"pr_body\":null, \"verification_required\":true }`
 - Allowed abort reasons: change_too_large, requires_new_library, requires_architecture_change, unsafe_refactor, missing_code_context, conflicting_requirements, cannot_implement_without_guessing.
-- Write `issue-agent-implementation.md` summarizing changes, branch, commit, PR link, no-change decision, or abort reason.
+- Write `issue-agent-implementation.md` summarizing changes, suggested PR title/body if useful, no-change decision, or abort reason. Do not mention a created branch, commit, or PR because this phase must not create them.
 "@
 
 $verificationPrompt = (Get-CommonPromptPrefix -PhaseName 'verification') + @"
 
 VERIFICATION RULES:
 - Read `issue-agent-investigation.json` and `issue-agent-implementation.json` first.
-- Own tests, live MCP validation, screenshot capture, and final evidence only.
+- Own tests, live MCP validation, screenshot capture, and final evidence only. This phase is sealed from GitHub mutation: no issue comments, labels, branches, commits, pushes, or PRs.
 - Use this Windows validation sequence unless investigation says it is not applicable:
 
 ``````powershell
@@ -714,7 +742,7 @@ dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --
 - Also write rollup `issue-agent-result.json` with issue_number, status, abort_layer, abort_reason, retryable, human_action_required, layers, unit_tests, live_mcp_validation, screenshot_validation, card_metadata_discovery, used_mcp, used_raw_bridge_or_queue, opened_pr, opened_pr_url, should_close_issue, and evidence_summary.
 - Write `issue-agent-verification.md` summarizing pass/fail evidence.
 - Write `issue-agent-result.md` as a compact final rollup including any PR URL from implementation.
-- If complete, remove `issue-agent` and add `issue-agent-complete`. If blocked, remove `issue-agent` and add `issue-agent-blocked`.
+- Do not remove or add labels, post comments, create branches, commit, push, or open PRs. The workflow wrapper handles GitHub updates after this phase writes evidence.
 "@
 
 $phaseResults = @{}
@@ -748,6 +776,9 @@ if (Test-Path -LiteralPath $resultMarkdown) {
 }
 
 Write-AgentEvent 'exit' 'Phased issue-agent script completed.'
+
+
+
 
 
 

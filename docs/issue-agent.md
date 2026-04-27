@@ -28,7 +28,7 @@ The processing model is intentionally simple:
 2. GitHub Actions starts one workflow job on a self-hosted runner labeled `issue-agent`.
 3. That one job exposes investigation, implementation, and verification as separate visible Actions steps.
 4. Each phase step launches a fresh Claude Code invocation with its own prompt, tool permissions, timeout, budget, logs, and handoff artifacts.
-5. Claude owns the issue work through the phase contract: investigation, implementation, verification, comments, labels, tests, screenshots, and PR creation.
+5. Claude owns the issue work through the phase contract: investigation, implementation, verification, tests, screenshots, and evidence. GitHub mutations are wrapper-owned after phase artifacts are written.
 
 There is no second script that chooses issues, reads structured result files, or drains a local queue.
 
@@ -76,15 +76,17 @@ The issue-agent workflow is one GitHub Actions job with separate visible phase s
 1. `Investigate test primitives`
 2. `Implement code change`
 3. `Verify in STS2`
-4. `Summarize issue-agent run`
+4. `Create pull request`
+5. `Summarize issue-agent run`
 
 This keeps the Actions page easy to follow without turning the flow into several independent CI jobs. It also preserves the important split: each phase has a fresh context, narrower tool permissions, its own timeout, its own budget, and explicit JSON/Markdown handoff artifacts.
 
 Claude runs in three separate invocations:
 
 1. Investigation: identifies the issue target, card/character facts, MCP/game-state needs, and validation plan. It cannot edit code.
-2. Implementation: applies code changes only if the investigation plan is viable and appropriately scoped.
-3. Verification: runs tests, live MCP validation, screenshots, and final evidence checks.
+2. Implementation: applies code changes only if the investigation plan is viable and appropriately scoped. It cannot mutate GitHub.
+3. Verification: runs tests, live MCP validation, screenshots, and final evidence checks. It has no GitHub token and cannot mutate GitHub.
+4. The workflow wrapper creates the branch, commit, push, and PR only after verification reports `status: pass`.
 
 Each phase writes both machine-readable JSON and human-readable Markdown:
 
@@ -93,7 +95,7 @@ Each phase writes both machine-readable JSON and human-readable Markdown:
 - `issue-agent-verification.json` / `issue-agent-verification.md`
 - `issue-agent-result.json` / `issue-agent-result.md`
 
-The workflow reads each phase JSON before continuing. If investigation or implementation reports `status: abort`, later phase steps are skipped and the final summary reports the abort layer and reason. If verification aborts, the summary still publishes the PR link, screenshots gathered so far, and the specific verifier failure.
+The workflow reads each phase JSON before continuing. If investigation or implementation reports `status: abort`, later phase steps are skipped and the final summary reports the abort layer and reason. If verification aborts, no PR is created; the summary still publishes screenshots gathered so far and the specific verifier failure.
 
 Allowed investigation abort reasons:
 
@@ -125,7 +127,7 @@ Allowed verification abort reasons:
 - `claimed_result_not_observed`
 - `artifact_contract_missing`
 
-Each phase Markdown is appended to the job summary as soon as the phase finishes. The final summary step posts a compact rollup with phase statuses, per-phase costs, grand total cost, artifact links, screenshot counts, and any PR link reported by the implementation or result JSON.
+Each phase Markdown is appended to the job summary as soon as the phase finishes. The final summary step posts a compact rollup with phase statuses, per-phase costs, grand total cost, artifact links, screenshot counts, and any PR link created by the wrapper and written back into the result JSON.
 
 ## Visibility
 
@@ -167,6 +169,8 @@ The issue-agent path should not use:
 - `D:\automation\spirelens-live-bridge`
 
 If the current MCP surface is insufficient for an issue, Claude should report the blocker on the issue instead of reviving side infrastructure.
+
+
 
 
 
