@@ -81,7 +81,7 @@ function Publish-ScreenshotImages {
             }
             if (-not [string]::IsNullOrWhiteSpace($existingSha)) { $body.sha = $existingSha }
 
-            $tmp = New-TemporaryFile
+            $tmp = [System.IO.Path]::GetTempFileName()
             try {
                 $body | ConvertTo-Json -Compress | Set-Content -LiteralPath $tmp -Encoding UTF8
                 & gh api -X PUT "repos/$RepoSlug/contents/$repoPath" --input $tmp 2>$null | Out-Null
@@ -391,7 +391,7 @@ $lines.Add("| Claude cost | $(Format-Usd $costSummary.TotalCostUsd) |")
 $lines.Add("| Claude turns | $($costSummary.Turns) |")
 $lines.Add("| Head SHA | $HeadSha |")
 $lines.Add("| Ref | $RefName |")
-$lines.Add("| Persistent local logs | `$persistentRoot` |")
+$lines.Add('| Persistent local logs | `' + $persistentRoot + '` |')
 $lines.Add('')
 $phaseCostRows = New-Object System.Collections.Generic.List[string]
 foreach ($phaseName in $phaseNames) {
