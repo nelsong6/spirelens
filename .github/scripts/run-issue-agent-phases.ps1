@@ -129,6 +129,11 @@ $phaseDefinitions = @(
         ) + $CatalogMcpTools
         DisallowedTools = $SingleplayerMcpTools + $MultiplayerMcpTools + @(
             'Bash(gh issue view *--comments*)',
+            'Bash(gh issue comment *)',
+            'Bash(gh pr view *)',
+            'Bash(gh pr comment *)',
+            'Bash(gh api *comments*)',
+            'Bash(gh api *issues/*/timeline*)',
             'Bash(gh api *)',
             'Edit',
             'NotebookEdit',
@@ -165,6 +170,11 @@ $phaseDefinitions = @(
             'PowerShell(dotnet test *)',
             'Bash(gh issue view *--comments*)',
             'PowerShell(gh issue view *--comments*)',
+            'PowerShell(gh issue comment *)',
+            'PowerShell(gh pr view *)',
+            'PowerShell(gh pr comment *)',
+            'PowerShell(gh api *comments*)',
+            'PowerShell(gh api *issues/*/timeline*)',
             'Bash(gh api *)',
             'PowerShell(gh api *)',
             'Bash(gh issue comment *)',
@@ -842,7 +852,7 @@ Read the issue title and body only with:
 gh issue view $IssueNumber --repo $RepoSlug
 ``````
 
-Do not read issue comments, issue timeline entries, prior issue-agent summaries, PR discussions, or GitHub API comment endpoints in this phase unless a future prompt explicitly says to do so.
+Do not read issue comments, issue timeline entries, prior issue-agent summaries, PR discussions, PR review comments, issue-agent bot comments, or GitHub API comment/timeline endpoints in this phase. The issue title and body are the only GitHub issue context source unless a future prompt explicitly changes this rule.
 "@
     } else {
 @"
