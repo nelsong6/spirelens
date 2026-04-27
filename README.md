@@ -4,7 +4,7 @@ Per-card attribution stats mod for [Slay the Spire 2](https://store.steampowered
 
 **Status:** Dev build - core per-instance card stats are live in-game, including damage/block attribution, observed draw and energy generation, Regent star-resource spend/gain tracking, forge granted from cards, blocked-draw attribution, recurring summon-to-hand tracking, applied-effect summaries, Artifact-blocked debuffs, removed-card viewing, pooled combat-generated card summaries, and dedicated poison application/damage rows. Not yet published to Nexus (M6).
 
-For codebase orientation, start with [AGENTS.md](D:/repos/SpireLens/AGENTS.md:1) and [docs/architecture.md](D:/repos/SpireLens/docs/architecture.md:1).
+For codebase orientation, start with [AGENTS.md](AGENTS.md) and [docs/architecture.md](docs/architecture.md).
 
 ## Development Workflow
 
