@@ -140,20 +140,21 @@ function Start-Sts2 {
         return
     }
 
-    $launcher = Join-Path $GameDir 'launch_opengl.bat'
-    if (Test-Path -LiteralPath $launcher) {
-        Write-Host "Launching STS2 through '$launcher'."
-        Start-Process -FilePath $launcher -WorkingDirectory $GameDir | Out-Null
+    $exePath = Join-Path $GameDir 'SlayTheSpire2.exe'
+    if (Test-Path -LiteralPath $exePath) {
+        Write-Host "Launching STS2 through '$exePath' with arguments '$Arguments'."
+        Start-Process -FilePath $exePath -ArgumentList $Arguments -WorkingDirectory $GameDir | Out-Null
         return
     }
 
-    $exePath = Join-Path $GameDir 'SlayTheSpire2.exe'
-    if (-not (Test-Path -LiteralPath $exePath)) {
-        throw "Unable to find SlayTheSpire2.exe under '$GameDir'."
+    $launcher = Join-Path $GameDir 'launch_opengl.bat'
+    if (Test-Path -LiteralPath $launcher) {
+        Write-Host "Launching STS2 through fallback batch launcher '$launcher'."
+        Start-Process -FilePath $launcher -WorkingDirectory $GameDir -WindowStyle Minimized | Out-Null
+        return
     }
 
-    Write-Host "Launching STS2 through '$exePath' with arguments '$Arguments'."
-    Start-Process -FilePath $exePath -ArgumentList $Arguments -WorkingDirectory $GameDir | Out-Null
+    throw "Unable to find SlayTheSpire2.exe or launch_opengl.bat under '$GameDir'."
 }
 
 function Get-Sts2LogDirs {
