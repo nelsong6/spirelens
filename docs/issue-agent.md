@@ -174,10 +174,13 @@ For STS2 issue-agent work:
 - capture screenshot artifacts through the `capture_screenshot` MCP tool before marking the issue complete
 - always include at least one full STS2 game-window screenshot
 - if the issue is about a specific card, include at least one screenshot showing that card's stats working in a representative in-run test case
+- if the issue is about a specific relic, include `get_game_state` evidence for the resolved relic id/name plus at least one screenshot showing that relic's stats working in a representative in-run test case
 - document the test case used for the screenshot artifacts: what was set up, what was exercised, and what each screenshot is intended to prove
 - capture screenshots after the behavior is working, not just during setup
 - for tooltip-related changes, capture the affected tooltip states in the relevant hand, deck, draw pile, discard pile, exhaust pile, rewards, selection, or other card surface; the screenshot evidence item should set `text_visible_required:true`, and verification must copy the visible text into `observed_text`
 - for SpireLens card-stat tooltip proof, use the MCP route `bridge_health` -> `set_spirelens_view_stats_enabled(true)` -> `list_visible_cards(surface)` -> `show_card_tooltip(surface, card_index, card_id)` -> `capture_screenshot` so the screenshot shows the target card tooltip text directly
+- for SpireLens relic-stat tooltip proof, use the MCP route `bridge_health` -> `set_spirelens_view_stats_enabled(true)` -> `list_visible_relics(surface)` -> `show_relic_tooltip(surface, relic_id)` -> `capture_screenshot` so the screenshot shows the target relic tooltip text directly
+- prefer `player_relic_bar` for owned relic stats unless the issue specifically needs `relic_select` or `treasure`
 - if multiple materially distinct views changed, such as compact hand-hover and fuller deck-view tooltip states, capture each affected view when that is the clearest way to prove the change
 - use judgment on how many screenshots to include, but do not exceed 10 screenshots for a single issue or pull request
 - if adequate proof would require more than 10 screenshots, split the work into smaller branches or pull requests instead of overloading one
