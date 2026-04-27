@@ -25,7 +25,7 @@ public class MakeItSoTooltipTests
         _ = AppendMakeItSoStatsMethod.Invoke(null, new object?[] { sb, new CardAggregate(), false, 2, 3 });
         var text = sb.ToString();
 
-        Assert.Contains("Skill counter", text);
+        Assert.Contains("Trigger progress", text);
         Assert.Contains("[b]2/3[/b]", text);
     }
 
@@ -41,7 +41,7 @@ public class MakeItSoTooltipTests
         _ = AppendMakeItSoStatsMethod.Invoke(null, new object?[] { sb, agg, false, null, 0 });
         var text = sb.ToString();
 
-        Assert.Contains("Summoned to hand", text);
+        Assert.Contains("Times triggered", text);
         Assert.Contains("[b]2[/b]", text);
     }
 
@@ -57,6 +57,6 @@ public class MakeItSoTooltipTests
         _ = AppendMakeItSoStatsMethod.Invoke(null, new object?[] { sb, agg, true, null, 0 });
         var text = sb.ToString();
 
-        Assert.DoesNotContain("Summoned to hand", text);
+        Assert.DoesNotContain("Times triggered", text);
     }
 }
