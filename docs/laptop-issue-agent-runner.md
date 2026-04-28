@@ -112,14 +112,15 @@ If the Windows account does not have an administrator password, stopping or
 reconfiguring the existing service is blocked. In that case, do not spend time
 trying to make `NETWORK SERVICE` behave like the desktop user. Register a
 separate interactive runner under the logged-in `Nelson` account with its own
-runner name and label, then dispatch jobs to that label. This avoids needing
-admin rights to stop the existing service and keeps the interactive runner
-attached to the user account that already has Claude, Steam, and `uv` ready.
+runner name and route label, then queue issues with that label. This avoids
+needing admin rights to stop the existing service and keeps the interactive
+runner attached to the user account that already has Claude, Steam, and `uv`
+ready.
 
 Observed NELSONPC test runs:
 
-- Dispatching issue #105 with `runner_label=issue-agent-runner-nelsonpc`
-  successfully routed jobs to `issue-agent-NELSONPC`.
+- Routing issue #105 with `issue-agent-runner-nelsonpc` successfully routed
+  jobs to `issue-agent-NELSONPC`.
 - The first run failed because the service could not find Claude. Repository
   variable `ISSUE_AGENT_CLAUDE_CLI_PATH` is now set to
   `D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`.
@@ -192,9 +193,9 @@ If you want a different location, set repository variable
 
 ## Claude Subscription Auth
 
-The issue-agent workflow uses the local Claude Code login for the Windows account
-running the interactive runner. Log in once from that same account before
-dispatching jobs:
+The issue-agent workflow uses the local Claude Code login for the Windows
+account running the interactive runner. Log in once from that same account
+before queueing jobs:
 
 ```powershell
 claude auth status
@@ -263,8 +264,8 @@ Set-Location D:\actions-runner-user
 .\run.cmd
 ```
 
-Then dispatch issue-agent runs with
-`runner_label=issue-agent-runner-nelsonpc-user`.
+Then queue issue-agent work by applying `issue-agent-runner-nelsonpc-user` to
+the issue before applying `issue-agent`.
 
 The workflow derives the live STS2 verification label from the route label:
 `issue-agent-runner-nelsonpc-user` requires
@@ -298,8 +299,8 @@ Observed validation for the user runner:
 - The run later failed in project build/test logic, not in runner registration,
   Claude lookup, Claude auth, or Windows permissions.
 
-If dispatching workflow runs manually from the laptop, make sure GitHub CLI is
-authenticated:
+If queueing issue-agent runs from the laptop with GitHub CLI labels, make sure
+GitHub CLI is authenticated:
 
 ```powershell
 gh auth status
@@ -329,7 +330,7 @@ Once the runner is online in GitHub:
 
 1. Confirm the machine appears under repository runners with label
    `issue-agent`.
-2. Run the `Issue Agent` workflow manually for a low-risk issue number.
+2. Add the machine route label to a low-risk issue, then add `issue-agent`.
 3. Confirm the run:
    - starts on the laptop
    - passes the STS2 bridge readiness check

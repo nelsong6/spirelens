@@ -8,9 +8,12 @@ There is no repo-owned queue worker, scheduled task, filesystem lock, or outer l
 
 An issue is eligible for autonomous work when it has:
 
+- exactly one `issue-agent-runner-<host>` route label
 - `issue-agent`
 
-The issue-agent workflow is triggered by the GitHub issue event, and GitHub passes the exact issue number into the run.
+The route label must be present before `issue-agent` is added. The issue-agent
+workflow is triggered by the GitHub issue event, and GitHub passes the exact
+issue number and current issue labels into the run.
 
 Queueing is provided by GitHub's self-hosted runner queue, not by workflow
 `concurrency`. Do not add a top-level issue-agent concurrency group: GitHub
@@ -29,10 +32,10 @@ Issue-agent labels are:
 
 The processing model is intentionally simple:
 
-1. GitHub issue event fires, or a human manually dispatches the workflow for one issue number.
-2. GitHub Actions starts one workflow job on a self-hosted runner labeled `issue-agent`.
-3. That one job exposes investigation, implementation, and verification as separate visible Actions steps.
-4. Each phase step launches a fresh Claude Code invocation with its own prompt, tool permissions, timeout, budget, logs, and handoff artifacts.
+1. Add exactly one `issue-agent-runner-<host>` label to the issue.
+2. Add `issue-agent` to queue the issue.
+3. GitHub Actions starts phase jobs on self-hosted Windows runners matching that route label.
+4. Each LLM phase launches a fresh Claude Code invocation with its own prompt, tool permissions, timeout, budget, logs, and handoff artifacts.
 5. Claude owns the issue work through the phase contract: investigation, implementation, verification, tests, screenshots, and evidence. GitHub mutations are wrapper-owned after phase artifacts are written.
 
 There is no second script that chooses issues, reads structured result files, or drains a local queue.
@@ -52,12 +55,12 @@ Each Windows issue-agent host should provide:
 
 The workflow verifies `claude auth status` before launching the phased agent. It does not load an Anthropic API key from a runner file.
 
-Routed hosts use issue labels or workflow-dispatch input labels shaped like
-`issue-agent-runner-<host>`. When such a route label is present, the workflow
-also routes live STS2 verification through `issue-agent-sts2-<host>`. Apply the
-`issue-agent-sts2-<host>` label to exactly one runner per physical STS2 game
-session so verification jobs queue on that runner instead of running against the
-same game instance in parallel.
+Routed hosts use issue labels shaped like `issue-agent-runner-<host>`. The
+workflow requires exactly one such route label and applies it to all Windows
+phase jobs. It also routes live STS2 verification through
+`issue-agent-sts2-<host>`. Apply the `issue-agent-sts2-<host>` label to exactly
+one runner per physical STS2 game session so verification jobs queue on that
+runner instead of running against the same game instance in parallel.
 
 ## Local Host Bring-Up
 
