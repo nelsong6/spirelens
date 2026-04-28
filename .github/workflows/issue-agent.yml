@@ -215,6 +215,8 @@ jobs:
     outputs:
       phase_status: ${{ steps.implementation_result.outputs.phase_status }}
       abort_reason: ${{ steps.implementation_result.outputs.abort_reason }}
+      branch_name: ${{ steps.publish_implementation.outputs.branch_name }}
+      commit_sha: ${{ steps.publish_implementation.outputs.commit_sha }}
 
     steps:
       - name: Checkout repository
@@ -287,40 +289,55 @@ jobs:
           dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
           if ($LASTEXITCODE -ne 0) { throw "Implementation checkout core build failed." }
 
-      - name: Package implementation patch
-        if: always()
+      - name: Push implementation branch
+        id: publish_implementation
+        if: steps.implementation_result.outputs.phase_status == 'pass'
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          $patchPath = Join-Path $env:RUNNER_TEMP "issue-agent-implementation.patch"
           $implementationPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
+          $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
 
           git add -A -- . ':!.github/workflows/issue-agent.yml'
-          git diff --cached --binary --output="$patchPath"
-          git reset --mixed --quiet
-
-          if (-not (Test-Path -LiteralPath $patchPath)) { New-Item -ItemType File -Path $patchPath | Out-Null }
-          $bytes = (Get-Item -LiteralPath $patchPath).Length
+          $stagedPaths = @(git diff --cached --name-only | ForEach-Object { ([string]$_).Replace('\', '/') })
+          if ($stagedPaths.Count -eq 0) {
+            throw "Implementation phase passed but produced no repository changes to commit."
+          }
 
           if (Test-Path -LiteralPath $implementationPath) {
             $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
             $expectedPaths = @($implementation.changed_files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
             if ($expectedPaths.Count -gt 0) {
-              $patchText = if ($bytes -gt 0) { Get-Content -LiteralPath $patchPath -Raw } else { "" }
               $missingPaths = @()
               foreach ($path in $expectedPaths) {
                 $normalized = ([string]$path).Replace('\\', '/')
                 if ($normalized -eq ".github/workflows/issue-agent.yml") { continue }
-                $diffHeader = "diff --git a/$normalized b/$normalized"
-                if (-not $patchText.Contains($diffHeader)) { $missingPaths += $normalized }
+                if ($stagedPaths -notcontains $normalized) { $missingPaths += $normalized }
               }
               if ($missingPaths.Count -gt 0) {
-                throw "Implementation result listed changed files absent from packaged patch: $($missingPaths -join ', ')"
+                throw "Implementation result listed changed files absent from staged commit: $($missingPaths -join ', ')"
               }
             }
           }
 
-          Write-Host "Packaged implementation patch: $patchPath ($bytes bytes)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Issue #$($env:ISSUE_NUMBER) agent changes"
+          $commitSha = (git rev-parse HEAD).Trim()
+          git push origin "HEAD:refs/heads/$branch"
+
+          if (Test-Path -LiteralPath $implementationPath) {
+            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
+            if ($null -eq $implementation.PSObject.Properties['implementation_branch']) { $implementation | Add-Member -NotePropertyName implementation_branch -NotePropertyValue $null }
+            if ($null -eq $implementation.PSObject.Properties['implementation_commit']) { $implementation | Add-Member -NotePropertyName implementation_commit -NotePropertyValue $null }
+            $implementation.implementation_branch = $branch
+            $implementation.implementation_commit = $commitSha
+            $implementation | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $implementationPath -Encoding UTF8
+          }
+
+          "branch_name=$branch" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "commit_sha=$commitSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Pushed implementation branch: $branch ($commitSha)"
 
       - name: Upload implementation artifacts
         if: always()
@@ -328,7 +345,6 @@ jobs:
         with:
           name: issue-agent-implementation-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/issue-agent-implementation.patch
             ${{ runner.temp }}/claude-issue-agent-implementation-*.jsonl
             ${{ runner.temp }}/claude-issue-agent-implementation-*.log
             ${{ runner.temp }}/sts2-artifacts/issue-agent-implementation.*
@@ -370,6 +386,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.implementation.outputs.branch_name }}
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
 
       - name: Download test plan artifacts
@@ -406,19 +423,6 @@ jobs:
           & $scriptPath `
             -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
             -InstallMcp
-
-      - name: Apply implementation patch
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          $patchPath = Join-Path $env:RUNNER_TEMP "downloaded-implementation\issue-agent-implementation.patch"
-          if (-not (Test-Path -LiteralPath $patchPath)) { throw "Implementation patch artifact missing: $patchPath" }
-          if ((Get-Item -LiteralPath $patchPath).Length -gt 0) {
-            git apply --whitespace=nowarn --binary $patchPath
-          } else {
-            Write-Host "Implementation patch is empty; continuing with unchanged checkout."
-          }
-
       - name: Deploy implementation to STS2
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
@@ -500,15 +504,10 @@ jobs:
             $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
           }
 
-          $changed = git status --porcelain
-          if ([string]::IsNullOrWhiteSpace($changed)) {
-            "pr_url=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            "pr_number=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            Write-Host "No repository changes after verified issue-agent run; skipping PR creation."
-            return
+          $branch = "${{ needs.implementation.outputs.branch_name }}"
+          if ([string]::IsNullOrWhiteSpace($branch)) {
+            throw "Implementation branch output was empty; cannot open a PR."
           }
-
-          $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)"
           $title = if ($implementation -and $implementation.pr_title) { [string]$implementation.pr_title } else { "Issue #$($env:ISSUE_NUMBER) agent changes" }
           $body = if ($implementation -and $implementation.pr_body) { [string]$implementation.pr_body } else { "Automated issue-agent changes for #$($env:ISSUE_NUMBER). Verification passed before this PR was opened by the workflow wrapper." }
           $bodyPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-body.md"
@@ -516,10 +515,13 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b $branch
-          git add --all
-          git commit -m "Issue #$($env:ISSUE_NUMBER) agent changes"
-          git push --set-upstream origin $branch
+          $changed = git status --porcelain
+          if (-not [string]::IsNullOrWhiteSpace($changed)) {
+            git add --all
+            git commit -m "Issue #$($env:ISSUE_NUMBER) verification adjustments"
+            git push origin "HEAD:refs/heads/$branch"
+          }
+
           $prUrl = gh pr create --repo $env:REPO_SLUG --base main --head $branch --title $title --body-file $bodyPath
           $prNumber = ($prUrl -split '/')[-1]
           "pr_url=$prUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
