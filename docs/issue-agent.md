@@ -1,8 +1,11 @@
 # Issue Agent
 
-The current issue-agent model is GitHub Actions driven.
+The current issue-agent model is Glimmung-dispatched and GitHub Actions
+executed.
 
-There is no repo-owned queue worker, scheduled task, filesystem lock, or outer loop script anymore. GitHub supplies the event and queue layer.
+There is no repo-owned queue worker, scheduled task, filesystem lock, or outer
+loop script anymore. Glimmung supplies the host lease and queue layer; GitHub
+Actions supplies the execution runner, logs, artifacts, and PR-facing wrapper.
 
 ## Trigger Contract
 
@@ -10,20 +13,15 @@ An issue is eligible for autonomous work when it has:
 
 - `issue-agent`
 
-An issue may also have one `issue-agent-runner-<host>` route label. If it does,
-that explicit route wins. If it does not, the workflow picks one route from
-`ISSUE_AGENT_ROUTE_LABEL_POOL`, applies that label to the issue for visibility,
-and uses that same route for every phase in the run. Multiple route labels are a
-configuration error.
+Glimmung receives the GitHub issue event and dispatches
+`.github/workflows/issue-agent.yaml` with `lease_id`, `host`, and
+`issue_number`. `host` is the selected runner route label, such as
+`issue-agent-runner-nelsonlaptop`.
 
-The issue-agent workflow is triggered by the GitHub issue event, and GitHub
-passes the exact issue number and current issue labels into the run.
-
-Queueing is provided by a per-host `issue-agent-lock` runner. The label-facing
-workflow holds that runner, dispatches the worker workflow, and waits until the
-worker finishes. Do not add a top-level issue-agent concurrency group: GitHub
-Actions concurrency keeps only one pending run per group and cancels older
-pending runs when newer runs enter the same group.
+Queueing is provided by Glimmung's per-host lease state in Cosmos. Do not add a
+top-level issue-agent concurrency group: GitHub Actions concurrency keeps only
+one pending run per group and cancels older pending runs when newer runs enter
+the same group.
 
 Issue-agent labels are:
 
@@ -37,24 +35,21 @@ Issue-agent labels are:
 
 The processing model is intentionally simple:
 
-1. Optionally add one `issue-agent-runner-<host>` label to force a specific host.
-2. Add `issue-agent` to queue the issue.
-3. If no route label was provided, the route job picks one from `ISSUE_AGENT_ROUTE_LABEL_POOL` and labels the issue.
-4. The label-facing workflow queues on the selected host's `issue-agent-lock`
-   runner.
-5. The lock job dispatches `Issue Agent Worker` and polls that worker run until
-   it reaches a final success/failure state.
-6. The worker workflow starts phase jobs on self-hosted Windows runners matching
-   the same route label.
-7. Each LLM phase launches a fresh Claude Code invocation with its own prompt,
+1. Add `issue-agent` to queue the issue.
+2. Glimmung matches the workflow's requirements to a free host lease.
+3. Glimmung dispatches the Issue Agent workflow with `lease_id`, `host`, and
+   issue metadata.
+4. The workflow verifies the lease is active and belongs to `host`.
+5. Windows phase jobs run on self-hosted runners matching
+   `issue-agent-worker` and the selected `issue-agent-runner-<host>` label.
+6. Each LLM phase launches a fresh Claude Code invocation with its own prompt,
    tool permissions, timeout, budget, logs, and handoff artifacts.
-8. Claude owns the issue work through the phase contract: test plan,
+7. Claude owns the issue work through the phase contract: test plan,
    implementation, verification, tests, screenshots, and evidence. GitHub
    mutations are wrapper-owned after phase artifacts are written.
 
 There is no second script that chooses issues, reads structured result files, or
-drains a local queue. GitHub Actions remains the queue layer; the lock runner is
-only a headless semaphore for one issue-agent worker per host.
+drains a local queue.
 
 ## Source Freshness Contract
 
@@ -77,10 +72,8 @@ main snapshot. Later runs can see code merged by earlier runs.
 
 Each Windows issue-agent host should provide:
 
-- one lightweight self-hosted GitHub Actions lock runner with
-  `issue-agent-runner-<host>` and `issue-agent-lock`
-- at least one self-hosted GitHub Actions phase runner with the host route label
-  `issue-agent-runner-<host>`
+- at least one self-hosted GitHub Actions worker runner with
+  `issue-agent-runner-<host>` and `issue-agent-worker`
 - Claude Code installed locally and discoverable either through repository
   variable `ISSUE_AGENT_CLAUDE_CLI_PATH` or one of the documented default
   locations
@@ -91,37 +84,17 @@ Each Windows issue-agent host should provide:
 
 The workflow verifies `claude auth status` before launching the phased agent. It does not load an Anthropic API key from a runner file.
 
-Routed hosts use issue labels shaped like `issue-agent-runner-<host>`. The
-workflow applies one route label to all Windows phase jobs, whether that label
-was provided by a human or selected from `ISSUE_AGENT_ROUTE_LABEL_POOL`. It also
-routes live STS2 test-plan and verification work through
-`issue-agent-sts2-<host>`. Apply the `issue-agent-sts2-<host>` label to exactly
-one runner per physical STS2 game session so live-game jobs queue on that runner
-instead of running against the same game instance in parallel.
-
-Default auto-route pool:
-
-```text
-issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user
-```
-
-Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` to change the pool. The
-current picker uses the issue number modulo the pool size, so adjacent issues
-spread across the configured hosts predictably. Only include hosts that have
-passed the local runner smoke checks in
-[docs/laptop-issue-agent-runner.md](./laptop-issue-agent-runner.md), especially
-the Steam branch/build, STS2 assembly/type, and MCP build checks for any newly
-added machine.
+Glimmung hosts are named with the same label shape as the GitHub runner route:
+`issue-agent-runner-<host>`. The workflow uses that route label plus
+`issue-agent-worker` for every Windows phase. Do not add phase-specific labels
+unless a future host has truly different runner capabilities.
 
 If the repository uses GitHub Actions runner groups, set
 `ISSUE_AGENT_RUNNER_GROUP` to route all Windows issue-agent phases through that
-group while preserving the label routing above. Per-phase overrides are also
-supported:
+group while preserving the label routing above. A worker-specific override is
+also supported:
 
-- `ISSUE_AGENT_LOCK_RUNNER_GROUP`
-- `ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP`
-- `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
-- `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
+- `ISSUE_AGENT_WORKER_RUNNER_GROUP`
 
 When a group variable is set, the workflow emits GitHub's grouped `runs-on`
 shape, for example:
@@ -133,26 +106,23 @@ runs-on:
     - self-hosted
     - windows
     - issue-agent-runner-nelsonlaptop
-    - issue-agent-test-plan
+    - issue-agent-worker
 ```
 
 Required host layout for parallel test planning and implementation:
 
 | Runner role | Required custom labels |
 | --- | --- |
-| Lock runner | `issue-agent-runner-<host>`, `issue-agent-lock` |
-| Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
-| Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
+| Worker runner | `issue-agent-runner-<host>`, `issue-agent-worker` |
 
 The worker runs a deterministic baseline health check inside both LLM jobs
 before Claude starts. That preserves the baseline gate without consuming the
 implementation runner as a separate prerequisite job, so test-plan and
 implementation can still schedule in parallel on a properly split host.
 
-Do not put `issue-agent-implementation` on the live STS2 runner when the host is
-expected to run phases in parallel. A single runner with every phase label is a
-serial fallback only: whichever job starts first occupies the only matching
-runner and the other phase waits.
+For parallelism on one host, run at least two interactive worker runners with
+the same labels in separate runner directories. Glimmung serializes whole
+issues per host; the workflow decides which phases can run in parallel.
 
 ## Local Host Bring-Up
 
@@ -178,11 +148,7 @@ In this environment, stateful STS2 work should go through approved MCP tools rat
 
 ## Phased Job Workflow
 
-The public `Issue Agent` workflow is only the label-triggered lock holder. It
-routes the issue, waits on the selected host's `issue-agent-lock` runner,
-dispatches `Issue Agent Worker`, and mirrors the worker's final conclusion.
-
-The worker workflow uses separate GitHub Actions jobs for each phase:
+The `Issue Agent` workflow uses separate GitHub Actions jobs for each phase:
 
 1. `LLM: Plan validation evidence`
 2. `LLM: Implement code change`
@@ -192,9 +158,8 @@ The worker workflow uses separate GitHub Actions jobs for each phase:
 
 Each phase has a fresh context, narrower tool permissions, its own timeout, its
 own budget, and explicit JSON/Markdown handoff artifacts. Because these are
-separate Actions jobs, every Windows job must include both a phase label and the
-same `issue-agent-runner-<host>` route label. Live-game jobs also include
-`issue-agent-sts2-<host>`.
+separate Actions jobs, every Windows job must include `issue-agent-worker` and
+the same Glimmung-selected `issue-agent-runner-<host>` route label.
 
 Before Claude starts in the test-plan and implementation jobs, baseline health
 checks current `main` with:

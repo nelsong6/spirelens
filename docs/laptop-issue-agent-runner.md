@@ -11,10 +11,7 @@ machine, typically the work laptop.
 Bring one Windows machine online as a self-hosted GitHub Actions runner with:
 
 - a host route label such as `issue-agent-runner-nelsonlaptop`
-- one lock runner label: `issue-agent-lock`
-- one live-game runner label such as `issue-agent-sts2-nelsonlaptop`
-- phase labels for the runner role: `issue-agent-test-plan`,
-  `issue-agent-implementation`, and/or `issue-agent-verification`
+- worker runner label `issue-agent-worker`
 - Claude Code installed locally
 - Slay the Spire 2 installed locally
 - STS2 Modding MCP installed locally
@@ -73,7 +70,7 @@ and `sts2.dll` reports product version
 `0.1.0+dc286199d0203e9dc5bcbef57d373870c5c0e996`.
 
 Do not treat a local MCP build as a substitute for STS2 version alignment. A
-new host stays out of `ISSUE_AGENT_ROUTE_LABEL_POOL` until its Steam branch,
+new host stays out of Glimmung's SpireLens host pool until its Steam branch,
 build id, depot manifest, and `sts2.dll` product version match the known-good
 STS2 host.
 
@@ -251,7 +248,7 @@ authenticated.
 ```powershell
 pwsh -NoProfile -File .\ops\windows-worker\Register-LocalIssueAgentRunner.ps1 `
   -RepositorySlug nelsong6/spirelens `
-  -RunnerLabels issue-agent-runner-nelsonlaptop,issue-agent-lock
+  -RunnerLabels issue-agent-runner-nelsonlaptop,issue-agent-worker
 ```
 
 The script will:
@@ -282,100 +279,65 @@ show as session 1, not session 0. A Windows service launches STS2 in session 0,
 which does not provide the same Steam client/session context as the logged-in
 user desktop.
 
-If there is no administrator password available, use a second interactive runner
-instead of stopping the existing service. Configure it in a separate directory
-and give it a unique route label such as `issue-agent-runner-nelsonpc-user`.
-Do not put every phase label on one runner if the host is expected to run the
-test-plan and implementation phases in parallel. A single-runner host is a
-serial fallback only.
+If there is no administrator password available, use a separate interactive
+runner instead of stopping the existing service. Configure it in a separate
+directory and give it a unique route label such as
+`issue-agent-runner-nelsonpc-user`.
 
-For the lock runner, use only the host route label and `issue-agent-lock`. This
-runner does not run Claude or STS2; it holds the host-wide queue slot while the
-worker workflow runs:
-
-```powershell
-$token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
-New-Item -ItemType Directory -Force D:\actions-runner-user-lock | Out-Null
-Set-Location D:\actions-runner-user-lock
-# install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-lock --labels issue-agent-runner-nelsonpc-user,issue-agent-lock --work _work
-.\run.cmd
-```
-
-For the live STS2 runner, use only the host route label, the live-game resource
-label, and the live STS2 phase labels:
+For every issue-agent worker runner on that host, use the host route label plus
+`issue-agent-worker`:
 
 ```powershell
 $token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
 New-Item -ItemType Directory -Force D:\actions-runner-user | Out-Null
 Set-Location D:\actions-runner-user
 # install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user --labels issue-agent-runner-nelsonpc-user,issue-agent-sts2-nelsonpc-user,issue-agent-test-plan,issue-agent-verification --work _work
+.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-a --labels issue-agent-runner-nelsonpc-user,issue-agent-worker --work _work
 .\run.cmd
 ```
 
-For parallel implementation, configure a second interactive user runner in a
-different directory with the same route label and only the implementation phase
-label:
+For parallel test planning and implementation, configure a second interactive
+user runner in a different directory with the same labels:
 
 ```powershell
 $token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
-New-Item -ItemType Directory -Force D:\actions-runner-user-implementation | Out-Null
-Set-Location D:\actions-runner-user-implementation
+New-Item -ItemType Directory -Force D:\actions-runner-user-b | Out-Null
+Set-Location D:\actions-runner-user-b
 # install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-implementation --labels issue-agent-runner-nelsonpc-user,issue-agent-implementation --work _work
+.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-b --labels issue-agent-runner-nelsonpc-user,issue-agent-worker --work _work
 .\run.cmd
 ```
 
-Then queue issue-agent work by applying `issue-agent`. To force this host, apply
-`issue-agent-runner-nelsonpc-user` before applying `issue-agent`. If no route
-label is present, the workflow auto-selects one route from
-`ISSUE_AGENT_ROUTE_LABEL_POOL` and adds the chosen route label to the issue.
-
-The workflow derives the live STS2 label from the route label:
-`issue-agent-runner-nelsonpc-user` requires
-`issue-agent-sts2-nelsonpc-user` for test-plan and verification jobs. Put the
-`issue-agent-sts2-*` label on exactly one runner for each physical STS2 game
-session so GitHub's runner queue serializes live-game work without
-canceling pending issue-agent runs.
+Then queue issue-agent work by applying `issue-agent`. Glimmung chooses the host
+from its registered host pool and dispatches `.github/workflows/issue-agent.yaml`
+with that host label.
 
 If these self-hosted runners are restricted to a GitHub Actions runner group,
 set repository variable `ISSUE_AGENT_RUNNER_GROUP` to that group name. The
-workflow will target the group plus the same route, phase, and live-game labels.
-Use these optional overrides only when phases live in different groups:
+workflow will target the group plus the same route and worker labels.
+Use this optional override when worker runners live in a different group:
 
-- `ISSUE_AGENT_LOCK_RUNNER_GROUP`
-- `ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP`
-- `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
-- `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
+- `ISSUE_AGENT_WORKER_RUNNER_GROUP`
 
-For a parallel host, split labels by role:
+For a parallel host, use the same labels on every worker runner:
 
 | Runner role | Labels |
 | --- | --- |
-| Lock runner | `issue-agent-runner-<host>`, `issue-agent-lock` |
-| Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
-| Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
-
-If `issue-agent-implementation` is present on the live STS2 runner, GitHub may
-start implementation there and leave `LLM: Plan validation evidence` queued
-until implementation finishes. That is expected runner-queue behavior, not a
-workflow dependency.
+| Worker runner | `issue-agent-runner-<host>`, `issue-agent-worker` |
 
 Target laptop configuration:
 
 | Runner | Role | Labels |
 | --- | --- | --- |
-| `sts2-lock` | Lock runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-lock` |
-| `sts2-side-a` | Live STS2 runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-sts2-nelsonlaptop`, `issue-agent-test-plan`, `issue-agent-verification` |
-| `sts2-side-b` | Code implementation runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-implementation` |
+| `sts2-side-a` | Worker runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-worker` |
+| `sts2-side-b` | Worker runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-worker` |
 
 NELSONPC currently has this non-admin runner registered and online:
 
 - Runner root: `D:\actions-runner-user`
 - Runner name: `issue-agent-NELSONPC-user`
 - Routing label: `issue-agent-runner-nelsonpc-user`
-- STS2 live-game label: `issue-agent-sts2-nelsonpc-user`
+- Worker label: `issue-agent-worker`
 - Runner log: `D:\actions-runner-user\_codex-logs\runner.out.log`
 
 Because `D:\repos\spire-lens-mcp` was originally created by the old
@@ -404,7 +366,7 @@ Observed validation for the user runner:
   reports `ICombatState=True` and `spire-lens-mcp` builds cleanly against that
   install with commit `4b03b0d`.
 
-Before adding any host to `ISSUE_AGENT_ROUTE_LABEL_POOL`, use that runner as a
+Before adding any host to Glimmung's SpireLens host pool, use that runner as a
 host smoke test and confirm:
 
 - Steam resolves Slay the Spire 2 to the intended current install, not an older
@@ -457,10 +419,7 @@ has expired or is missing.
 The issue-agent workflow expects:
 
 - every runner used for an issue has the chosen `issue-agent-runner-<host>` route label
-- exactly one lock runner per host has `issue-agent-lock`
-- exactly one live-game runner per host has `issue-agent-sts2-<host>`
-- live-game runners have `issue-agent-test-plan` and `issue-agent-verification`
-- code runners have `issue-agent-implementation`
+- every runner used for issue-agent work has `issue-agent-worker`
 - the repo checkout contains a working `.mcp.json`
 - Claude can list and connect to `spire-lens-mcp`
 - STS2 is available locally when the issue requires live validation
@@ -477,11 +436,10 @@ The workflow itself still handles:
 Once the runner is online in GitHub:
 
 1. Confirm the machine appears under repository runners with label
-   `issue-agent-runner-<host>`.
-2. Add `issue-agent` to a low-risk issue and confirm the workflow auto-applies
-   one route label from `ISSUE_AGENT_ROUTE_LABEL_POOL`.
-3. To force a specific machine, add that machine's route label before adding
-   `issue-agent`.
+   `issue-agent-runner-<host>` and `issue-agent-worker`.
+2. Confirm `https://glimmung.romaine.life/v1/state` lists the host as free and
+   matching SpireLens requirements.
+3. Add `issue-agent` to a low-risk issue.
 4. Confirm the run:
    - starts on the laptop
    - passes the STS2 bridge readiness check
@@ -493,47 +451,16 @@ Once the runner is online in GitHub:
 For a second machine, use the same route/phase/live label pattern with a unique
 host suffix:
 
-- `issue-agent-runner-<host>` goes on every runner for that machine.
-- `issue-agent-lock` goes on exactly one lightweight lock runner.
-- `issue-agent-sts2-<host>` goes on exactly one live-game runner.
-- `issue-agent-test-plan` and `issue-agent-verification` go on the live-game
-  runner.
-- `issue-agent-implementation` goes on the implementation runner.
+- `issue-agent-runner-<host>` goes on every worker runner for that machine.
+- `issue-agent-worker` goes on every worker runner for that machine.
 
-For example, a three-runner `nelsonpc-user` setup would be:
+For example, a two-runner `nelsonpc-user` setup would be:
 
 | Runner role | Labels |
 | --- | --- |
-| Lock runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-lock` |
-| Live STS2 runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-sts2-nelsonpc-user`, `issue-agent-test-plan`, `issue-agent-verification` |
-| Code implementation runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-implementation` |
+| Worker runner A | `issue-agent-runner-nelsonpc-user`, `issue-agent-worker` |
+| Worker runner B | `issue-agent-runner-nelsonpc-user`, `issue-agent-worker` |
 
-The default auto-route pool is:
-
-```text
-issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user
-```
-
-Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` if a machine should be
-temporarily removed from or added to automatic issue assignment. Explicit route
-labels on an issue always override the pool.
-
-As of 2026-04-27, the repository variable is also set to
-`issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user` after the
-host smoke checks above verified STS2 version alignment.
-
-Set repository variable `ISSUE_AGENT_RUNNER_GROUP` if the runner labels live
-inside a non-default GitHub Actions runner group. The workflow still requires
-the matching route/phase/live labels inside that group.
-
-While bringing up a new machine, set `ISSUE_AGENT_ROUTE_LABEL_POOL` to only the
-known-good host, for example:
-
-```text
-issue-agent-runner-nelsonlaptop
-```
-
-Add the new host back only after its live STS2 runner and implementation runner
-both pass host prep, Claude auth, STS2 branch/build/product-hash alignment,
-`ICombatState` presence, `spire-lens-mcp` build, and a low-risk real
-issue-agent run.
+Add a new Glimmung host only after its worker runners pass host prep, Claude
+auth, STS2 branch/build/product-hash alignment, `ICombatState` presence,
+`spire-lens-mcp` build, and a low-risk real issue-agent run.

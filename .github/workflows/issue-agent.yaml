@@ -52,11 +52,8 @@ jobs:
     name: "Verify glimmung lease + resolve runner labels"
     runs-on: ubuntu-latest
     outputs:
-      test_plan_runs_on: ${{ steps.route.outputs.test_plan_runs_on }}
-      implementation_runs_on: ${{ steps.route.outputs.implementation_runs_on }}
-      verification_runs_on: ${{ steps.route.outputs.verification_runs_on }}
+      worker_runs_on: ${{ steps.route.outputs.worker_runs_on }}
       route_label: ${{ steps.route.outputs.route_label }}
-      verification_resource_label: ${{ steps.route.outputs.verification_resource_label }}
     steps:
       - name: Verify glimmung lease
         # Capability auth: the lease_id is unguessable, so possessing it is
@@ -89,10 +86,7 @@ jobs:
         shell: pwsh
         env:
           ROUTE_LABEL_PREFIX: issue-agent-runner-
-          STS2_RESOURCE_LABEL_PREFIX: issue-agent-sts2-
-          TEST_PLAN_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
-          IMPLEMENTATION_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
-          VERIFICATION_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_VERIFICATION_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
+          WORKER_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_WORKER_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
           ROUTE_LABEL_INPUT: ${{ inputs.host }}
         run: |
           # Glimmung is the lock; it always supplies the route label
@@ -106,34 +100,16 @@ jobs:
             throw "Runner route label must start with '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
           }
 
-          $routeSuffix = $routeLabel.Substring($env:ROUTE_LABEL_PREFIX.Length)
-          if ([string]::IsNullOrWhiteSpace($routeSuffix)) {
-            throw "Runner route label must include a host suffix after '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
-          }
-          $verificationResourceLabel = "$($env:STS2_RESOURCE_LABEL_PREFIX)$routeSuffix"
-
-          function Write-RunsOnOutput {
-            param(
-              [string]$Name,
-              [string[]]$Labels,
-              [string]$RunnerGroup = ""
-            )
-            $resolved = @($Labels) + @($routeLabel)
-            if ([string]::IsNullOrWhiteSpace($RunnerGroup)) {
-              $json = $resolved | ConvertTo-Json -Compress
-            } else {
-              $json = ([ordered]@{ group = $RunnerGroup; labels = $resolved } | ConvertTo-Json -Compress)
-            }
-            "$Name=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            Write-Host "$Name=$json"
+          $resolved = @('self-hosted', 'windows', 'issue-agent-worker', $routeLabel)
+          if ([string]::IsNullOrWhiteSpace($env:WORKER_RUNNER_GROUP)) {
+            $workerRunsOn = $resolved | ConvertTo-Json -Compress
+          } else {
+            $workerRunsOn = ([ordered]@{ group = $env:WORKER_RUNNER_GROUP; labels = $resolved } | ConvertTo-Json -Compress)
           }
 
           "route_label=$routeLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "verification_resource_label=$verificationResourceLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          Write-RunsOnOutput -Name 'test_plan_runs_on' -Labels @('self-hosted','windows','issue-agent-test-plan',$verificationResourceLabel) -RunnerGroup $env:TEST_PLAN_RUNNER_GROUP
-          Write-RunsOnOutput -Name 'implementation_runs_on' -Labels @('self-hosted','windows','issue-agent-implementation') -RunnerGroup $env:IMPLEMENTATION_RUNNER_GROUP
-          Write-RunsOnOutput -Name 'verification_runs_on' -Labels @('self-hosted','windows','issue-agent-verification',$verificationResourceLabel) -RunnerGroup $env:VERIFICATION_RUNNER_GROUP
+          "worker_runs_on=$workerRunsOn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "worker_runs_on=$workerRunsOn"
 
 
   claim-issue:
@@ -185,7 +161,7 @@ jobs:
     needs:
       - route
     if: needs.route.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.test_plan_runs_on) }}
+    runs-on: ${{ fromJson(needs.route.outputs.worker_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-test-plan
       ISSUE_NUMBER: ${{ inputs.issue_number }}
@@ -331,7 +307,7 @@ jobs:
     needs:
       - route
     if: needs.route.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
+    runs-on: ${{ fromJson(needs.route.outputs.worker_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-implementation
       ISSUE_NUMBER: ${{ inputs.issue_number }}
@@ -594,7 +570,7 @@ jobs:
       - implementation
       - screenshot-storage-outputs
     if: needs.route.result == 'success' && needs.test-plan.result == 'success' && needs.implementation.result == 'success' && needs.screenshot-storage-outputs.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.verification_runs_on) }}
+    runs-on: ${{ fromJson(needs.route.outputs.worker_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-verification
       ISSUE_NUMBER: ${{ inputs.issue_number }}
