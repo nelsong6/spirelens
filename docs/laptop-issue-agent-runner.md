@@ -399,7 +399,7 @@ D:\repos\spire-lens-mcp\build.ps1 -GameDir $gameDir -Configuration Release
 The type check must print `True`, and the branch/build/product fields must
 match the known-good host. If either check fails, keep the runner out of the
 auto-route pool until the STS2 install is aligned. Only after those checks pass
-should the MCP build and live issue-agent smoke run be treated as meaningful.
+should the MCP build and a real issue-agent run be treated as meaningful.
 
 If queueing issue-agent runs from the laptop with GitHub CLI labels, make sure
 GitHub CLI is authenticated:
@@ -490,5 +490,5 @@ issue-agent-runner-nelsonlaptop
 
 Add the new host back only after its live STS2 runner and implementation runner
 both pass host prep, Claude auth, STS2 branch/build/product-hash alignment,
-`ICombatState` presence, `spire-lens-mcp` build, and a low-risk issue-agent
-smoke run.
+`ICombatState` presence, `spire-lens-mcp` build, and a low-risk real
+issue-agent run.
