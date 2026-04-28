@@ -45,6 +45,23 @@ The processing model is intentionally simple:
 
 There is no second script that chooses issues, reads structured result files, or drains a local queue.
 
+## Source Freshness Contract
+
+The issue event is only a queue signal. Issue-agent jobs must not rely on the
+commit SHA attached to the label event.
+
+Baseline, test-plan, and implementation jobs explicitly refresh to the latest
+`origin/main`, then immediately switch to a per-run local work branch before
+Claude or the wrapper can mutate files. Verification attaches its implementation
+branch checkout to a per-run local work branch before live validation.
+
+When publishing an implementation branch, the wrapper creates the publish branch
+from current `origin/main` again and applies the agent diff there. If that patch
+no longer applies, the run should fail clearly instead of pushing a stale branch.
+
+This keeps a backlog of labeled issues from all working against the same old
+main snapshot. Later runs can see code merged by earlier runs.
+
 ## Runner Contract
 
 Each Windows issue-agent host should provide:
@@ -182,8 +199,9 @@ diff, reapplies that diff onto the current default branch, and pushes only that
 resulting commit. This keeps branch publication from reintroducing workflow-file
 history through the GitHub App token, which does not have workflow write scope.
 Issue-agent runs are not allowed to publish changes under `.github/workflows`;
-those must be made by the normal maintainer path. The wrapper also checks every
-git command explicitly so a rejected push cannot be reported as a usable branch
+those must be made by the normal maintainer path. Issue-agent runs also exclude
+`.mcp.json`, which is runner-local configuration. The wrapper checks every git
+command explicitly so a rejected push cannot be reported as a usable branch
 handoff.
 
 Verification should default to the save-backed route: materialize a scenario from the correct character base save, install it as current, validate/load it, inspect the live state, and only then configure the already-loaded combat. Quick helpers that start ad hoc runs or choose Neow options are intentionally out of the default path.

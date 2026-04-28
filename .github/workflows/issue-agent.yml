@@ -161,8 +161,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
+
+      - name: Refresh checkout to latest main
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
+          Set-Location -LiteralPath $repoRoot
+          git fetch --prune origin main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch latest origin/main." }
+          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-baseline"
+          git checkout -B $workBranch origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to create issue-agent work branch from latest origin/main." }
+          $baseSha = (git rev-parse HEAD).Trim()
+          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
 
       - name: Prepare baseline host
         env:
@@ -258,8 +274,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
+
+      - name: Refresh checkout to latest main
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
+          Set-Location -LiteralPath $repoRoot
+          git fetch --prune origin main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch latest origin/main." }
+          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-test-plan"
+          git checkout -B $workBranch origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to create issue-agent work branch from latest origin/main." }
+          $baseSha = (git rev-parse HEAD).Trim()
+          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
 
       - name: Prepare issue-agent host
         env:
@@ -354,8 +386,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
+
+      - name: Refresh checkout to latest main
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
+          Set-Location -LiteralPath $repoRoot
+          git fetch --prune origin main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch latest origin/main." }
+          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-implementation"
+          git checkout -B $workBranch origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to create issue-agent work branch from latest origin/main." }
+          $baseSha = (git rev-parse HEAD).Trim()
+          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
 
       - name: Prepare issue-agent host
         env:
@@ -438,6 +486,10 @@ jobs:
               throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
             }
           }
+          function Normalize-RepoPath {
+            param([string]$Path)
+            return (([string]$Path).Replace('\/', '/') -replace '[\\/]+', '/')
+          }
 
           $implementationPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
           $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
@@ -445,28 +497,28 @@ jobs:
           $publishRoot = Join-Path $env:RUNNER_TEMP "issue-agent-publish-$branch"
           $patchPath = Join-Path $env:RUNNER_TEMP "issue-agent-implementation-$branch.patch"
 
-          $workflowChanges = @(Invoke-Git status --short -- .github/workflows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-          if ($workflowChanges.Count -gt 0) {
-            throw "Implementation phase changed GitHub workflow files, which issue-agent runs cannot publish: $($workflowChanges -join ', ')"
+          $blockedChanges = @(Invoke-Git status --short -- .github/workflows .mcp.json | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+          if ($blockedChanges.Count -gt 0) {
+            throw "Implementation phase changed GitHub workflow or runner-local config files, which issue-agent runs cannot publish: $($blockedChanges -join ', ')"
           }
 
-          Invoke-Git add -A -- . ':(exclude).github/workflows/**'
-          $stagedPaths = @(Invoke-Git diff --cached --name-only -- . ':(exclude).github/workflows/**' | ForEach-Object { ([string]$_).Replace('\', '/') })
+          Invoke-Git add -A -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
+          $stagedPaths = @(Invoke-Git diff --cached --name-only -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json' | ForEach-Object { Normalize-RepoPath $_ })
           if ($stagedPaths.Count -eq 0) {
             throw "Implementation phase passed but produced no repository changes to commit."
           }
-          Invoke-Git diff --cached --binary --output="$patchPath" -- . ':(exclude).github/workflows/**'
+          Invoke-Git diff --cached --binary --output="$patchPath" -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
 
           Invoke-Git fetch origin "+refs/heads/$($defaultBranch):refs/remotes/origin/$($defaultBranch)"
           Invoke-Git worktree add -B $branch $publishRoot "origin/$defaultBranch"
-          Invoke-Git -C $publishRoot apply --index $patchPath
-          $stagedPaths = @(Invoke-Git -C $publishRoot diff --cached --name-only | ForEach-Object { ([string]$_).Replace('\', '/') })
+          Invoke-Git -C $publishRoot apply --index --whitespace=nowarn --binary $patchPath
+          $stagedPaths = @(Invoke-Git -C $publishRoot diff --cached --name-only | ForEach-Object { Normalize-RepoPath $_ })
           if ($stagedPaths.Count -eq 0) {
             throw "Implementation patch became empty when applied to origin/$defaultBranch."
           }
-          $workflowStagedPaths = @($stagedPaths | Where-Object { $_ -like ".github/workflows/*" })
-          if ($workflowStagedPaths.Count -gt 0) {
-            throw "Implementation patch unexpectedly staged GitHub workflow files: $($workflowStagedPaths -join ', ')"
+          $blockedStagedPaths = @($stagedPaths | Where-Object { $_ -like ".github/workflows/*" -or $_ -eq ".mcp.json" })
+          if ($blockedStagedPaths.Count -gt 0) {
+            throw "Implementation patch unexpectedly staged blocked files: $($blockedStagedPaths -join ', ')"
           }
 
           if (Test-Path -LiteralPath $implementationPath) {
@@ -475,9 +527,9 @@ jobs:
             if ($expectedPaths.Count -gt 0) {
               $missingPaths = @()
               foreach ($path in $expectedPaths) {
-                $normalized = ([string]$path).Replace('\\', '/')
-                if ($normalized -like ".github/workflows/*") {
-                  throw "Implementation result listed a GitHub workflow file, which issue-agent runs cannot publish: $normalized"
+                $normalized = Normalize-RepoPath $path
+                if ($normalized -like ".github/workflows/*" -or $normalized -eq ".mcp.json") {
+                  throw "Implementation result listed a blocked file, which issue-agent runs cannot publish: $normalized"
                 }
                 if ($stagedPaths -notcontains $normalized) { $missingPaths += $normalized }
               }
@@ -555,6 +607,19 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.implementation.outputs.branch_name }}
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
+
+      - name: Attach verification checkout to local work branch
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
+          Set-Location -LiteralPath $repoRoot
+          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-verification"
+          git checkout -B $workBranch HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Unable to create verification work branch from implementation checkout." }
+          $baseSha = (git rev-parse HEAD).Trim()
+          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Issue-agent verification checkout attached at $baseSha on local branch $workBranch."
 
       - name: Download test plan artifacts
         if: always()
@@ -665,6 +730,14 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
+          function Invoke-Git {
+            param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+            & git @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+            }
+          }
+
           $artifactDir = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
           $implementationPath = Join-Path $artifactDir "issue-agent-implementation.json"
           $resultPath = Join-Path $artifactDir "issue-agent-result.json"
@@ -686,16 +759,22 @@ jobs:
           $bodyPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-body.md"
           $body | Set-Content -LiteralPath $bodyPath -Encoding UTF8
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          $changed = git status --porcelain
-          if (-not [string]::IsNullOrWhiteSpace($changed)) {
-            git add --all
-            git commit -m "Issue #$($env:ISSUE_NUMBER) verification adjustments"
-            git push origin "HEAD:refs/heads/$branch"
+          $blockedChanges = @(Invoke-Git status --short -- .github/workflows .mcp.json | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+          if ($blockedChanges.Count -gt 0) {
+            throw "Verification produced GitHub workflow or runner-local config changes, which issue-agent runs cannot publish: $($blockedChanges -join ', ')"
+          }
+
+          Invoke-Git config user.name "github-actions[bot]"
+          Invoke-Git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          $changed = @(Invoke-Git status --porcelain -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json' | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+          if ($changed.Count -gt 0) {
+            Invoke-Git add --all -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
+            Invoke-Git commit -m "Issue #$($env:ISSUE_NUMBER) verification adjustments"
+            Invoke-Git push origin "HEAD:refs/heads/$branch"
           }
 
           $prUrl = gh pr create --repo $env:REPO_SLUG --base main --head $branch --title $title --body-file $bodyPath
+          if ($LASTEXITCODE -ne 0) { throw "gh pr create failed with exit code $LASTEXITCODE." }
           $prNumber = ($prUrl -split '/')[-1]
           "pr_url=$prUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "pr_number=$prNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
