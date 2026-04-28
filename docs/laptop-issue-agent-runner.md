@@ -259,18 +259,26 @@ $token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-to
 New-Item -ItemType Directory -Force D:\actions-runner-user | Out-Null
 Set-Location D:\actions-runner-user
 # install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user --labels issue-agent,issue-agent-test-plan,issue-agent-implementation,issue-agent-verification,issue-agent-runner-nelsonpc-user --work _work
+.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user --labels issue-agent,issue-agent-test-plan,issue-agent-implementation,issue-agent-verification,issue-agent-runner-nelsonpc-user,issue-agent-sts2-nelsonpc-user --work _work
 .\run.cmd
 ```
 
 Then dispatch issue-agent runs with
 `runner_label=issue-agent-runner-nelsonpc-user`.
 
+The workflow derives the live STS2 verification label from the route label:
+`issue-agent-runner-nelsonpc-user` requires
+`issue-agent-sts2-nelsonpc-user` for the verification job. Put the
+`issue-agent-sts2-*` label on exactly one runner for each physical STS2 game
+session so GitHub's runner queue serializes live-game verification without
+canceling pending issue-agent runs.
+
 NELSONPC currently has this non-admin runner registered and online:
 
 - Runner root: `D:\actions-runner-user`
 - Runner name: `issue-agent-NELSONPC-user`
 - Routing label: `issue-agent-runner-nelsonpc-user`
+- STS2 verification label: `issue-agent-sts2-nelsonpc-user`
 - Runner log: `D:\actions-runner-user\_codex-logs\runner.out.log`
 
 Because `D:\repos\spire-lens-mcp` was originally created by the old

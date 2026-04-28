@@ -24,10 +24,6 @@ permissions:
 env:
   ISSUE_AGENT_ARTIFACT_NAME: issue-agent-artifacts
 
-concurrency:
-  group: spirelens-issue-agent
-  cancel-in-progress: false
-
 jobs:
   route:
     name: "Route issue-agent runner"
@@ -42,12 +38,15 @@ jobs:
       test_plan_runs_on: ${{ steps.route.outputs.test_plan_runs_on }}
       implementation_runs_on: ${{ steps.route.outputs.implementation_runs_on }}
       verification_runs_on: ${{ steps.route.outputs.verification_runs_on }}
+      route_label: ${{ steps.route.outputs.route_label }}
+      verification_resource_label: ${{ steps.route.outputs.verification_resource_label }}
     steps:
       - name: Resolve runner labels
         id: route
         shell: pwsh
         env:
           ROUTE_LABEL_PREFIX: issue-agent-runner-
+          STS2_RESOURCE_LABEL_PREFIX: issue-agent-sts2-
           DISPATCH_RUNNER_LABEL: ${{ github.event.inputs.runner_label || '' }}
           ISSUE_LABELS_JSON: ${{ toJSON(github.event.issue.labels.*.name) }}
         run: |
@@ -68,6 +67,15 @@ jobs:
             throw "Runner route label must be empty or start with '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
           }
 
+          $verificationResourceLabel = ""
+          if (-not [string]::IsNullOrWhiteSpace($routeLabel)) {
+            $routeSuffix = $routeLabel.Substring($env:ROUTE_LABEL_PREFIX.Length)
+            if ([string]::IsNullOrWhiteSpace($routeSuffix)) {
+              throw "Runner route label must include a host suffix after '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
+            }
+            $verificationResourceLabel = "$($env:STS2_RESOURCE_LABEL_PREFIX)$routeSuffix"
+          }
+
           function Write-RunsOnOutput {
             param([string]$Name, [string[]]$Labels)
             $resolved = @($Labels)
@@ -77,9 +85,16 @@ jobs:
             Write-Host "$Name=$json"
           }
 
+          "route_label=$routeLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "verification_resource_label=$verificationResourceLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "route_label=$routeLabel"
+          Write-Host "verification_resource_label=$verificationResourceLabel"
+
           Write-RunsOnOutput -Name 'test_plan_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-test-plan')
           Write-RunsOnOutput -Name 'implementation_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-implementation')
-          Write-RunsOnOutput -Name 'verification_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-verification')
+          $verificationLabels = @('self-hosted', 'windows', 'issue-agent-verification')
+          if (-not [string]::IsNullOrWhiteSpace($verificationResourceLabel)) { $verificationLabels += $verificationResourceLabel }
+          Write-RunsOnOutput -Name 'verification_runs_on' -Labels $verificationLabels
   claim-issue:
     name: "Mark issue-agent run active"
     needs: route

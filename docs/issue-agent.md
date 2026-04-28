@@ -12,6 +12,11 @@ An issue is eligible for autonomous work when it has:
 
 The issue-agent workflow is triggered by the GitHub issue event, and GitHub passes the exact issue number into the run.
 
+Queueing is provided by GitHub's self-hosted runner queue, not by workflow
+`concurrency`. Do not add a top-level issue-agent concurrency group: GitHub
+Actions concurrency keeps only one pending run per group and cancels older
+pending runs when newer runs enter the same group.
+
 Issue-agent labels are:
 
 - `issue-agent` means runnable / queued. The workflow removes this label when it claims the issue.
@@ -46,6 +51,13 @@ Each Windows issue-agent host should provide:
 - Claude Code authenticated once as the interactive runner account
 
 The workflow verifies `claude auth status` before launching the phased agent. It does not load an Anthropic API key from a runner file.
+
+Routed hosts use issue labels or workflow-dispatch input labels shaped like
+`issue-agent-runner-<host>`. When such a route label is present, the workflow
+also routes live STS2 verification through `issue-agent-sts2-<host>`. Apply the
+`issue-agent-sts2-<host>` label to exactly one runner per physical STS2 game
+session so verification jobs queue on that runner instead of running against the
+same game instance in parallel.
 
 ## Local Host Bring-Up
 
