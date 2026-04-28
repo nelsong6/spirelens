@@ -942,6 +942,7 @@ public static class RunTracker
                 }
                 runRelicAgg.EnemiesAffected += pendingRelicAgg.EnemiesAffected;
                 runRelicAgg.VulnerableApplied += pendingRelicAgg.VulnerableApplied;
+                runRelicAgg.WeakApplied += pendingRelicAgg.WeakApplied;
             }
 
             // Refresh run-level metadata from the current game state (floor may have advanced).
@@ -1269,6 +1270,7 @@ public static class RunTracker
     // -------- Relic stat recording --------
 
     private const string BagOfMarblesRelicId = "RELIC.BAG_OF_MARBLES";
+    private const string RedMaskRelicId = "RELIC.RED_MASK";
 
     /// <summary>
     /// Record a Bag of Marbles combat-start Vulnerable application.
@@ -1301,6 +1303,36 @@ public static class RunTracker
     }
 
     /// <summary>
+    /// Record a Red Mask combat-start Weak application.
+    /// <paramref name="enemyCount"/> is the number of live enemies that
+    /// received 1 Weak stack. Called from
+    /// <see cref="Patches.RedMaskBeforeSideTurnStartPatch"/>.
+    /// </summary>
+    public static void RecordRedMaskApplication(int enemyCount)
+    {
+        if (enemyCount <= 0) return;
+
+        lock (_lock)
+        {
+            try
+            {
+                _pendingCombat ??= new PendingCombat();
+                if (!_pendingCombat.RelicAggregates.TryGetValue(RedMaskRelicId, out var agg))
+                {
+                    agg = new RelicAggregate();
+                    _pendingCombat.RelicAggregates[RedMaskRelicId] = agg;
+                }
+                agg.EnemiesAffected += enemyCount;
+                agg.WeakApplied += enemyCount;
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordRedMaskApplication failed: {e.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Return the committed relic aggregate for a relic id, merged with any
     /// pending combat data. Used by the relic tooltip to show current-run stats.
     /// </summary>
@@ -1316,6 +1348,7 @@ public static class RunTracker
                 {
                     EnemiesAffected = committed.EnemiesAffected,
                     VulnerableApplied = committed.VulnerableApplied,
+                    WeakApplied = committed.WeakApplied,
                 };
             }
 
@@ -1324,6 +1357,7 @@ public static class RunTracker
                 result ??= new RelicAggregate();
                 result.EnemiesAffected += pending.EnemiesAffected;
                 result.VulnerableApplied += pending.VulnerableApplied;
+                result.WeakApplied += pending.WeakApplied;
             }
 
             return result;

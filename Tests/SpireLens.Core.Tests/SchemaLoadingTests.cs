@@ -246,9 +246,25 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV15Fixture()
+    public void HistoricalLoad_AcceptsLegacyResumableV15Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v15-bag-of-marbles-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(15, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
+        var relicAgg = loaded.Data.RelicAggregates["RELIC.BAG_OF_MARBLES"];
+        Assert.Equal(5, relicAgg.EnemiesAffected);
+        Assert.Equal(5, relicAgg.VulnerableApplied);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsCurrentV16Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v16-red-mask-run.json"));
 
         Assert.NotNull(loaded);
         Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
@@ -256,9 +272,9 @@ public class SchemaLoadingTests
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Null(loaded.CompatibilityNote);
-        var relicAgg = loaded.Data.RelicAggregates["RELIC.BAG_OF_MARBLES"];
-        Assert.Equal(5, relicAgg.EnemiesAffected);
-        Assert.Equal(5, relicAgg.VulnerableApplied);
+        var relicAgg = loaded.Data.RelicAggregates["RELIC.RED_MASK"];
+        Assert.Equal(3, relicAgg.EnemiesAffected);
+        Assert.Equal(3, relicAgg.WeakApplied);
     }
 
     [Fact]
@@ -442,15 +458,27 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV15Fixture()
+    public void ResumableLoad_AcceptsLegacyResumableV15Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v15-bag-of-marbles-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(15, resumed!.SchemaVersion);
         var relicAgg = resumed.RelicAggregates["RELIC.BAG_OF_MARBLES"];
         Assert.Equal(5, relicAgg.EnemiesAffected);
         Assert.Equal(5, relicAgg.VulnerableApplied);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsCurrentV16Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v16-red-mask-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        var relicAgg = resumed.RelicAggregates["RELIC.RED_MASK"];
+        Assert.Equal(3, relicAgg.EnemiesAffected);
+        Assert.Equal(3, relicAgg.WeakApplied);
     }
 
     [Fact]

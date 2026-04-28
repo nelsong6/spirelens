@@ -98,6 +98,6 @@ public class BagOfMarblesStatsTests
     {
         var run = new RunData();
         Assert.Equal(RunData.CurrentSchemaVersion, run.SchemaVersion);
-        Assert.Equal(15, RunData.CurrentSchemaVersion);
+        Assert.Equal(16, RunData.CurrentSchemaVersion);
     }
 }
