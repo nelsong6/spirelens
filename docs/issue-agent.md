@@ -80,7 +80,7 @@ current picker uses the issue number modulo the pool size, so adjacent issues
 spread across the configured hosts predictably. Only include hosts that have
 passed the local runner smoke checks in
 [docs/laptop-issue-agent-runner.md](./laptop-issue-agent-runner.md), especially
-the STS2 assembly/MCP build check for any newly added machine.
+the Steam-resolved STS2 path and MCP build checks for any newly added machine.
 
 If the repository uses GitHub Actions runner groups, set
 `ISSUE_AGENT_RUNNER_GROUP` to route all Windows issue-agent phases through that

@@ -351,26 +351,29 @@ host smoke test and confirm:
 
 - Steam resolves Slay the Spire 2 to the intended current install, not an older
   checkout, copied install, or stale publicized assembly directory.
-- The resolved game assembly is the current raw STS2 assembly at
-  `D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll`.
-- That `sts2.dll` contains
-  `MegaCrit.Sts2.Core.Combat.ICombatState`.
+- The resolved game assembly is the current raw STS2 assembly under that
+  Steam-registered install, for example
+  `D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll`
+  on NELSONPC.
 - `spire-lens-mcp` builds cleanly from a clean checkout against the resolved
   STS2 data directory.
 - The runner process is the same logged-in interactive Windows account that has
   Claude auth, Steam access, `uv`, and the expected user `PATH`.
 
-A quick local assembly/version check:
+A quick local Steam path and MCP build smoke check:
 
 ```powershell
-$sts2Dll = 'D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll'
+$gameDir = 'D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2'
+$sts2Dll = Join-Path $gameDir 'data_sts2_windows_x86_64\sts2.dll'
 Get-Item $sts2Dll | Select-Object FullName, LastWriteTime, @{Name='ProductVersion'; Expression={$_.VersionInfo.ProductVersion}}
-[Reflection.Assembly]::LoadFrom($sts2Dll).GetType('MegaCrit.Sts2.Core.Combat.ICombatState', $false) -ne $null
+git -C D:\repos\spire-lens-mcp status --short --branch
+D:\repos\spire-lens-mcp\build.ps1 -GameDir $gameDir -Configuration Release
 ```
 
-The type check must print `True`. If it prints `False`, the runner is building
-against the wrong or stale STS2 assembly context and should stay out of the
-auto-route pool until that is fixed.
+The build must pass from the clean checkout. `ICombatState` is not a required
+type on every current STS2 build; the durable smoke signal is that the MCP
+checkout builds against the same Steam-resolved assembly directory that the
+runner will launch.
 
 If queueing issue-agent runs from the laptop with GitHub CLI labels, make sure
 GitHub CLI is authenticated:
