@@ -148,6 +148,51 @@ jobs:
           $verificationLabels = @('self-hosted', 'windows', 'issue-agent-verification')
           if (-not [string]::IsNullOrWhiteSpace($verificationResourceLabel)) { $verificationLabels += $verificationResourceLabel }
           Write-RunsOnOutput -Name 'verification_runs_on' -Labels $verificationLabels -RunnerGroup $env:VERIFICATION_RUNNER_GROUP
+
+  baseline-health:
+    name: "Baseline main health"
+    needs: route
+    if: needs.route.result == 'success'
+    runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
+    env:
+      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-baseline
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
+
+      - name: Prepare baseline host
+        env:
+          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
+          CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
+          & $scriptPath `
+            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
+
+      - name: Build and test baseline main
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
+          $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
+          if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
+
+          dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          if ($LASTEXITCODE -ne 0) { throw "Baseline loader build failed on main." }
+
+          dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          if ($LASTEXITCODE -ne 0) { throw "Baseline core build failed on main." }
+
+          dotnet build "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          if ($LASTEXITCODE -ne 0) { throw "Baseline test project build failed on main." }
+
+          dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --no-build "-p:Sts2DataDir=$sts2DataDir"
+          if ($LASTEXITCODE -ne 0) { throw "Baseline tests failed on main." }
+
   claim-issue:
     name: "Mark issue-agent run active"
     needs: route
@@ -197,8 +242,10 @@ jobs:
 
   test-plan:
     name: "LLM: Plan validation evidence"
-    needs: route
-    if: needs.route.result == 'success'
+    needs:
+      - route
+      - baseline-health
+    if: needs.route.result == 'success' && needs.baseline-health.result == 'success'
     runs-on: ${{ fromJson(needs.route.outputs.test_plan_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-test-plan
@@ -289,8 +336,10 @@ jobs:
 
   implementation:
     name: "LLM: Implement code change"
-    needs: route
-    if: needs.route.result == 'success'
+    needs:
+      - route
+      - baseline-health
+    if: needs.route.result == 'success' && needs.baseline-health.result == 'success'
     runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
     env:
       ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-implementation
@@ -739,6 +788,7 @@ jobs:
     name: "Release issue-agent running label"
     needs:
       - route
+      - baseline-health
       - claim-issue
       - test-plan
       - implementation

@@ -112,6 +112,13 @@ Required host layout for parallel test planning and implementation:
 | Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
 
+The workflow also runs a deterministic baseline health check on the selected
+`issue-agent-implementation` runner before either LLM phase starts. This does
+not require a separate runner; it briefly occupies the implementation runner to
+verify that current `main` builds and tests against that host's resolved STS2
+data directory. If baseline health fails, both LLM jobs stay gated off so the
+agent is not asked to diagnose or build on a broken starting point.
+
 Do not put `issue-agent-implementation` on the live STS2 runner when the host is
 expected to run phases in parallel. A single runner with every phase label is a
 serial fallback only: whichever job starts first occupies the only matching
@@ -143,11 +150,12 @@ In this environment, stateful STS2 work should go through approved MCP tools rat
 
 The issue-agent workflow uses separate GitHub Actions jobs for each phase:
 
-1. `LLM: Plan validation evidence`
-2. `LLM: Implement code change`
-3. `LLM: Verify in STS2`
-4. `Create pull request`
-5. `Summarize issue-agent run`
+1. `Baseline main health`
+2. `LLM: Plan validation evidence`
+3. `LLM: Implement code change`
+4. `LLM: Verify in STS2`
+5. `Create pull request`
+6. `Summarize issue-agent run`
 
 Each phase has a fresh context, narrower tool permissions, its own timeout, its
 own budget, and explicit JSON/Markdown handoff artifacts. Because these are
@@ -155,7 +163,14 @@ separate Actions jobs, every Windows job must include both a phase label and the
 same `issue-agent-runner-<host>` route label. Live-game jobs also include
 `issue-agent-sts2-<host>`.
 
-Claude runs in three separate invocations:
+Before Claude starts, baseline health checks current `main` with:
+
+- `dotnet build SpireLens.csproj -c Debug -p:SkipModsDeploy=true`
+- `dotnet build Core/SpireLens.Core.csproj -c Debug -p:SkipModsDeploy=true`
+- `dotnet build Tests/SpireLens.Core.Tests/SpireLens.Core.Tests.csproj -c Debug`
+- `dotnet test Tests/SpireLens.Core.Tests/SpireLens.Core.Tests.csproj -c Debug --no-build`
+
+Claude then runs in three separate invocations:
 
 1. Test plan: reads the issue, identifies the target, current game facts, MCP/game-state needs, and validation plan. It cannot edit code.
 2. Implementation: consumes the test-plan handoff artifacts and applies code changes only if the plan is viable and appropriately scoped. It cannot read or mutate GitHub.
