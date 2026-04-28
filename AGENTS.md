@@ -45,7 +45,7 @@ When inspecting `mods/`, treat any non-(SpireLens|BaseLib|SpireLensMcp) entry as
   - Nothing is promoted to the permanent run file until combat ends.
   - Reload between combats / between floors is supported and expected.
   - Mid-combat restore is intentionally out of scope.
-- The data model is additive through schema `v14`.
+- The data model is additive through schema `v16`.
   - [Core/RunData.cs](D:/repos/SpireLens/Core/RunData.cs:13) is the source of truth for the current schema.
   - [Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1) and the checked-in fixtures pin what remains resumable.
 - Card identity is per physical card when the card has stable deck identity.
@@ -64,6 +64,7 @@ When inspecting `mods/`, treat any non-(SpireLens|BaseLib|SpireLensMcp) entry as
 - Read [README.md](D:/repos/SpireLens/README.md:1) for the product-level overview.
 - Read [docs/pull-only-workflow.md](docs/pull-only-workflow.md) for the repo's GitHub-native workflow policy.
 - Read [docs/architecture.md](D:/repos/SpireLens/docs/architecture.md:1) for subsystem layout and data flow.
+- Read [docs/sts2-runtime-primer.md](docs/sts2-runtime-primer.md) before changing card/relic attribution hooks; it captures stable Slay the Spire 2 lifecycle, combat-history, async hook, pile, and attribution timing behavior.
 - For tracking behavior, start in [Core/RunTracker.cs](D:/repos/SpireLens/Core/RunTracker.cs:18).
 - For tooltip/UI behavior, start in:
   - [Core/Patches/ViewStatsInjectorPatch.cs](D:/repos/SpireLens/Core/Patches/ViewStatsInjectorPatch.cs:11)
@@ -80,6 +81,7 @@ When inspecting `mods/`, treat any non-(SpireLens|BaseLib|SpireLensMcp) entry as
   - keep labels self-describing
   - avoid adding loud headers unless they clearly earn their space
 - If you add new attribution:
+  - read [docs/sts2-runtime-primer.md](docs/sts2-runtime-primer.md) first
   - prefer empirical results over intent text
   - be explicit when attribution is heuristic, pooled, contributor-ledger based, or case-specific
 
