@@ -25,11 +25,80 @@ Install these once on the laptop:
 - Git
 - GitHub CLI
 - .NET 9 SDK
+- Godot .NET 4.5.1 for publish/export
 - Python 3.12
 - Steam
 - Slay the Spire 2
 - Claude Code
 - STS2 Modding MCP checkout and its local dependencies
+
+## NELSONPC Setup Snapshot
+
+`NELSONPC` has been prepared as a Windows issue-agent candidate with:
+
+- Git `2.54.0.windows.1`
+- GitHub CLI `2.91.0`
+- Node.js `24.15.0` and npm `11.12.1`
+- Corepack with pnpm `10.33.2` and Yarn `4.14.1`
+- Python `3.12.10`, `pipx`, and `uv`
+- PowerShell `7.6.1`
+- .NET SDK `9.0.313`
+- Godot .NET `4.5.1.stable.mono`
+- ripgrep `15.1.0`
+
+Local workspace folders:
+
+```text
+C:\Users\Nelson\Documents\Codex\repos
+C:\Users\Nelson\Documents\Codex\scratch
+C:\Users\Nelson\Documents\Codex\logs
+```
+
+Slay the Spire 2 is installed at:
+
+```text
+D:\SteamLibrary\steamapps\common\Slay the Spire 2
+```
+
+BaseLib is present in the game's `mods` folder.
+
+Godot .NET 4.5.1 is installed at:
+
+```text
+D:\automation\godot\Godot_v4.5.1-stable_mono_win64
+```
+
+The local CardUtilityStats checkout uses an ignored `Directory.Build.props`
+with machine-specific paths:
+
+```xml
+<Project>
+  <PropertyGroup>
+    <Sts2Path>D:/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Path>
+    <GodotPath>D:/automation/godot/Godot_v4.5.1-stable_mono_win64/Godot_v4.5.1-stable_mono_win64_console.exe</GodotPath>
+  </PropertyGroup>
+</Project>
+```
+
+Do not commit this file; it is ignored because the paths are host-specific.
+
+## Build Versus Publish
+
+For CardUtilityStats, Godot is required for the full mod workflow.
+
+`dotnet build -c Release` compiles and deploys the DLL, manifest, and runtime
+dependencies to the Slay the Spire 2 `mods` folder. This is sufficient for
+code-only DLL changes.
+
+`dotnet publish -c Release` invokes Godot headlessly and exports
+`CardUtilityStats.pck`. Use publish when an issue touches assets, export
+behavior, Nexus packaging, or any validation path that should match a runner
+where Godot visibly launches.
+
+On `NELSONPC`, publish currently writes the `.pck` but emits Godot export
+warnings because the export scanner sees C# files under `Core` and `Tests` and
+expects `CardUtilityStats.sln`. That is a repository export-configuration issue,
+not a missing machine prerequisite.
 
 Common Claude CLI locations supported by the workflow:
 
