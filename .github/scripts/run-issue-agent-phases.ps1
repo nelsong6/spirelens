@@ -24,6 +24,8 @@ $CatalogMcpTools = @(
     'mcp__spire-lens-mcp__list_characters',
     'mcp__spire-lens-mcp__lookup_relic',
     'mcp__spire-lens-mcp__list_relics',
+    'mcp__spire-lens-mcp__lookup_encounter',
+    'mcp__spire-lens-mcp__list_encounters',
     'mcp__spire-lens-mcp__get_catalog_summary',
     'mcp__spire-lens-mcp__get_validation_capabilities'
 )
@@ -685,6 +687,102 @@ function Apply-VerificationEvidenceGuard {
     return $Result
 }
 
+function Assert-ScenarioIdValidationEntries {
+    param(
+        [object]$Setup,
+        [object]$Validation
+    )
+
+    function Normalize-ScenarioCatalogId {
+        param(
+            [object]$Value,
+            [string]$Prefix
+        )
+
+        $text = ([string]$Value).Trim().ToUpperInvariant()
+        $marker = "$($Prefix.ToUpperInvariant())."
+        if ($text.StartsWith($marker, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $text.Substring($marker.Length)
+        }
+        return $text
+    }
+
+    function Assert-Entries {
+        param(
+            [object[]]$Expected,
+            [string]$Kind,
+            [string]$Field,
+            [string]$Prefix
+        )
+
+        if ($Expected.Count -eq 0) { return }
+        $entries = ConvertTo-Array (Get-PropertyValue -Object $Validation -Name $Kind) |
+            Where-Object { [string](Get-PropertyValue -Object $_ -Name 'field') -eq $Field }
+        foreach ($value in $Expected) {
+            $text = [string]$value
+            if ([string]::IsNullOrWhiteSpace($text)) { continue }
+            $matching = $entries | Where-Object {
+                [string](Get-PropertyValue -Object $_ -Name 'input') -eq $text -and
+                -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue -Object $_ -Name 'id')) -and
+                -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue -Object $_ -Name 'source'))
+            } | Select-Object -First 1
+            if ($null -eq $matching) {
+                throw "scenario_id_validation.$Kind is missing validated entry for scenario_setup.$Field value '$text'."
+            }
+            $validatedId = [string](Get-PropertyValue -Object $matching -Name 'id')
+            if ((Normalize-ScenarioCatalogId -Value $text -Prefix $Prefix) -ne (Normalize-ScenarioCatalogId -Value $validatedId -Prefix $Prefix)) {
+                throw "scenario_setup.$Field value '$text' must already be the exact resolved catalog id, but scenario_id_validation.$Kind resolved it to '$validatedId'."
+            }
+        }
+    }
+
+    Assert-Entries -Expected (ConvertTo-Array (Get-PropertyValue -Object $Setup -Name 'deck')) -Kind 'cards' -Field 'deck' -Prefix 'CARD'
+    Assert-Entries -Expected (ConvertTo-Array (Get-PropertyValue -Object $Setup -Name 'add_cards')) -Kind 'cards' -Field 'add_cards' -Prefix 'CARD'
+    Assert-Entries -Expected (ConvertTo-Array (Get-PropertyValue -Object $Setup -Name 'remove_cards')) -Kind 'cards' -Field 'remove_cards' -Prefix 'CARD'
+    Assert-Entries -Expected (ConvertTo-Array (Get-PropertyValue -Object $Setup -Name 'relics')) -Kind 'relics' -Field 'relics' -Prefix 'RELIC'
+    Assert-Entries -Expected (ConvertTo-Array (Get-PropertyValue -Object $Setup -Name 'add_relics')) -Kind 'relics' -Field 'add_relics' -Prefix 'RELIC'
+    Assert-Entries -Expected (ConvertTo-Array (Get-PropertyValue -Object $Setup -Name 'remove_relics')) -Kind 'relics' -Field 'remove_relics' -Prefix 'RELIC'
+
+    $encounter = [string](Get-PropertyValue -Object $Setup -Name 'next_normal_encounter')
+    if (-not [string]::IsNullOrWhiteSpace($encounter)) {
+        $entries = ConvertTo-Array (Get-PropertyValue -Object $Validation -Name 'encounters')
+        $matching = $entries | Where-Object {
+            [string](Get-PropertyValue -Object $_ -Name 'field') -eq 'next_normal_encounter' -and
+            [string](Get-PropertyValue -Object $_ -Name 'input') -eq $encounter -and
+            -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue -Object $_ -Name 'id')) -and
+            -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue -Object $_ -Name 'source'))
+        } | Select-Object -First 1
+        if ($null -eq $matching) {
+            throw "scenario_id_validation.encounters is missing validated entry for scenario_setup.next_normal_encounter value '$encounter'."
+        }
+        $validatedEncounterId = [string](Get-PropertyValue -Object $matching -Name 'id')
+        if ((Normalize-ScenarioCatalogId -Value $encounter -Prefix 'ENCOUNTER') -ne (Normalize-ScenarioCatalogId -Value $validatedEncounterId -Prefix 'ENCOUNTER')) {
+            throw "scenario_setup.next_normal_encounter value '$encounter' must already be the exact resolved catalog id, but scenario_id_validation.encounters resolved it to '$validatedEncounterId'."
+        }
+    }
+}
+
+function Test-ScenarioSetupHasEntries {
+    param(
+        [object]$Setup,
+        [string[]]$Fields
+    )
+
+    foreach ($field in $Fields) {
+        $value = Get-PropertyValue -Object $Setup -Name $field
+        $arrayLike = ($value -is [array]) -or (($value -is [System.Collections.IEnumerable]) -and ($value -isnot [string]))
+        if ($arrayLike) {
+            if ((ConvertTo-Array $value | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+                return $true
+            }
+        } elseif (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Assert-PhaseContract {
     param(
         [hashtable]$Phase,
@@ -707,6 +805,32 @@ function Assert-PhaseContract {
     }
 
     if ($Phase.Name -eq 'test_plan' -and $status -eq 'pass') {
+        $scenarioSetup = Get-PropertyValue -Object $Result -Name 'scenario_setup'
+        if ($null -eq $scenarioSetup) {
+            throw "Test planning phase pass result must include scenario_setup."
+        }
+
+        $scenarioIdValidation = Get-PropertyValue -Object $Result -Name 'scenario_id_validation'
+        if ($null -eq $scenarioIdValidation -or (Get-PropertyValue -Object $scenarioIdValidation -Name 'passed') -ne $true) {
+            throw "Test planning phase pass result must include scenario_id_validation.passed=true for every scenario card/relic/encounter id."
+        }
+
+        Assert-ScenarioIdValidationEntries -Setup $scenarioSetup -Validation $scenarioIdValidation
+
+        if (Test-ScenarioSetupHasEntries -Setup $scenarioSetup -Fields @('deck', 'add_cards', 'remove_cards')) {
+            $cardDiscovery = Get-PropertyValue -Object $Result -Name 'card_metadata_discovery'
+            if ($null -eq $cardDiscovery -or (Get-PropertyValue -Object $cardDiscovery -Name 'passed') -ne $true) {
+                throw "Test planning phase pass result must include card_metadata_discovery.passed=true when scenario_setup contains card ids."
+            }
+        }
+
+        if (Test-ScenarioSetupHasEntries -Setup $scenarioSetup -Fields @('relics', 'add_relics', 'remove_relics')) {
+            $relicDiscovery = Get-PropertyValue -Object $Result -Name 'relic_metadata_discovery'
+            if ($null -eq $relicDiscovery -or (Get-PropertyValue -Object $relicDiscovery -Name 'passed') -ne $true) {
+                throw "Test planning phase pass result must include relic_metadata_discovery.passed=true when scenario_setup contains relic ids."
+            }
+        }
+
         $requiredEvidence = ConvertTo-Array (Get-PropertyValue -Object $Result -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false }
         if ($requiredEvidence.Count -eq 0) {
             throw "Test planning phase pass result must include non-empty required_evidence."
@@ -873,7 +997,7 @@ Do not search above the repository root. Do not recurse through parent workspace
 $issueReadInstruction
 
 Use only the MCP tools allowed for this phase from the project MCP config at `$McpConfigPath`.
-- Use `lookup_card`, `lookup_relic`, `lookup_character`, `list_cards`, `list_relics`, `list_characters`, and `get_catalog_summary` for game metadata discovery. Do not rely on model memory for card ownership, relic identity, character ownership, ids, or ambiguity checks.
+- Use `lookup_card`, `lookup_relic`, `lookup_encounter`, `lookup_character`, `list_cards`, `list_relics`, `list_encounters`, `list_characters`, and `get_catalog_summary` for game metadata discovery. Do not rely on model memory for card ownership, relic identity, encounter identity, character ownership, ids, or ambiguity checks.
 - Use live gameplay MCP tools for game state and in-game actions.
 - Use `capture_screenshot` for screenshot evidence.
 Do not use raw localhost bridge calls, filesystem queues, `LiveScenarios/`, `ops/live-worker/`, `D:\automation\spirelens-live-bridge`, shell/PowerShell desktop capture, `CopyFromScreen`, `PrimaryScreen`, or `System.Drawing` for STS2 surfaces.
@@ -920,14 +1044,16 @@ TEST PLANNING RULES:
 - For every issue-specified character, call `lookup_character` before writing the test plan result. If lookup returns `not_found` or `ambiguous`, abort with character_not_found or card_ambiguous as appropriate.
 - When you need support cards for a scenario deck, use `list_cards` with exact arguments `owner`, `type`, `query`, and/or `limit`; for example use the resolved character owner and needed card type rather than guessing support card names one by one with repeated `lookup_card` calls. If `list_cards` cannot return enough real cards for the recipe, abort with `validation_plan_impossible` or `metadata_unavailable`.
 - When you need support relics for a scenario, use `lookup_relic` or `list_relics` rather than guessing relic ids. Scenario saves may use `relics`, `add_relics`, and `remove_relics` with the resolved relic ids.
+- Every id in `scenario_setup` must be validated through MCP catalog tools, even when it is only supporting test setup rather than the issue target. Validate `deck`, `add_cards`, and `remove_cards` entries with `lookup_card` or `list_cards`; validate `relics`, `add_relics`, and `remove_relics` entries with `lookup_relic` or `list_relics`; validate `next_normal_encounter` with `lookup_encounter` or `list_encounters`. Do not write ids from memory. `scenario_setup` values must be the exact resolved catalog ids, not display names, shorthand aliases, or fuzzy lookup queries.
 - Do not inspect implementation files unless needed to identify an existing test command or fixture name; scenario/evidence planning must remain independent of code edits.
 - Do not use an Explore/subagent/Task. If the issue, MCP catalog metadata, and existing test command hints are not enough to produce a validation plan quickly, abort with `validation_plan_impossible` instead of delegating.
 - After the required issue read and MCP lookups are complete, write the JSON and Markdown artifacts immediately. Keep the plan concise; do not spend additional turns narrating or re-checking unless a required field is genuinely missing.
 - Before writing screenshot or live-validation evidence, call `get_validation_capabilities` and use its returned `card_surfaces`, `relic_surfaces`, `runtime_options`, `recommended_tooltip_evidence_flow`, `recommended_relic_tooltip_evidence_flow`, and `tools[]` manifest as the source of truth for what verification can open, tooltip, screenshot, and mutate. Each referenced tool plan should respect the manifest fields `safe_for_test_planning`, `mutates_state`, `requires_game_running`, `requires_combat`, `output_contract`, `common_failures`, and `examples`. Do not assume an unavailable view exists, and do not omit an available view such as deck, draw_pile, discard_pile, exhaust_pile, player_relic_bar, relic_select, treasure, or verbose hand stats when it is the right evidence surface.
 - If MCP catalog metadata or validation capabilities cannot support the needed validation plan, abort.
 - Write `issue-agent-test-plan.json` with:
-  `{ "layer":"test_plan", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "target_kind":"card|relic|mixed|unknown", "card":{}, "relic":{}, "character":{}, "card_metadata_discovery":{"passed":null,"status":"not_run","notes":""}, "relic_metadata_discovery":{"passed":null,"status":"not_run","notes":""}, "validation_plan":[], "scenario_setup":{"base_save_name":"base_<character>","scenario_name":"issue_<issue>_<short_target>","deck":["TARGET_CARD_ID","REAL_SUPPORT_CARD_ID"],"add_cards":null,"remove_cards":null,"relics":null,"add_relics":null,"remove_relics":null,"gold":null,"current_hp":null,"max_hp":null,"max_energy":null,"next_normal_encounter":"FUZZY_WURM_CRAWLER_WEAK","notes":"small deterministic setup that satisfies the evidence plan"}, "required_evidence":[{"id":"unit-tests","kind":"unit_test","required":true,"must_show":"specific tests that prove the changed behavior"},{"id":"live-target-visible","kind":"screenshot","required":true,"must_show":"target card/relic/UI/tooltip state visibly proving the issue claim","target_visible_required":true,"text_visible_required":false,"allowed_fallback":null}] }`
+  `{ "layer":"test_plan", "status":"pass|abort", "abort_reason":null, "retryable":false, "human_action_required":false, "notes":"", "target_kind":"card|relic|mixed|unknown", "card":{}, "relic":{}, "character":{}, "card_metadata_discovery":{"passed":true,"status":"pass","notes":"scenario card ids resolved from MCP catalog tools"}, "relic_metadata_discovery":{"passed":true,"status":"pass","notes":"scenario relic ids resolved from MCP catalog tools"}, "scenario_id_validation":{"passed":true,"cards":[{"field":"deck","input":"TARGET_CARD_ID","id":"TARGET_CARD_ID","name":"Target Card","source":"lookup_card|list_cards"}],"relics":[{"field":"add_relics","input":"REAL_RELIC_ID","id":"REAL_RELIC_ID","name":"Relic Name","source":"lookup_relic|list_relics"}],"encounters":[{"field":"next_normal_encounter","input":"FUZZY_WURM_CRAWLER_WEAK","id":"FUZZY_WURM_CRAWLER_WEAK","name":"Fuzzy Wurm Crawler","source":"lookup_encounter|list_encounters"}],"notes":"every id in scenario_setup was resolved from MCP catalog tools"}, "validation_plan":[], "scenario_setup":{"base_save_name":"base_<character>","scenario_name":"issue_<issue>_<short_target>","deck":["TARGET_CARD_ID","REAL_SUPPORT_CARD_ID"],"add_cards":null,"remove_cards":null,"relics":null,"add_relics":null,"remove_relics":null,"gold":null,"current_hp":null,"max_hp":null,"max_energy":null,"next_normal_encounter":"FUZZY_WURM_CRAWLER_WEAK","notes":"small deterministic setup that satisfies the evidence plan"}, "required_evidence":[{"id":"unit-tests","kind":"unit_test","required":true,"must_show":"specific tests that prove the changed behavior"},{"id":"live-target-visible","kind":"screenshot","required":true,"must_show":"target card/relic/UI/tooltip state visibly proving the issue claim","target_visible_required":true,"text_visible_required":false,"allowed_fallback":null}] }`
 - `scenario_setup` is the deterministic pre-verification save recipe. Choose the correct `base_save_name` from the verified character identity, such as `base_regent`, `base_ironclad`, `base_silent`, `base_defect`, or `base_necrobinder`. Use a complete small `deck` of real card ids that lets normal gameplay reach the evidence state quickly. When a card needs support cards, use `list_cards` with the resolved owner/type/query constraints to select real support card ids from MCP metadata, and set enough energy/max_energy for the planned validation actions. Do not tell verification to use dev-console `fight`/`card` commands for card availability; card availability must come from this save recipe.
+- Never write `card_metadata_discovery.status="not_run"` merely because the issue target is not a card when `scenario_setup` contains cards. If the scenario has any card id, card metadata discovery for those scenario cards must pass or the phase must abort.
 - When validating effects that move, summon, return, discard, exhaust, or draw a named card, the scenario must place the card in a source pile where that effect can actually operate before the evidence step. If a card says it puts "this" into hand, the triggering copy must be outside hand before the trigger. A valid Make It So route is: start with Make It So in hand, play Make It So first so it enters discard, play two Skills, inspect the Make It So tooltip from discard for 2/3 progress, play the third Skill, then inspect Make It So in hand for the trigger count. If the same card also needs an in-hand tooltip before the effect, use a duplicate copy or include a validation action that moves/plays the inspected copy out of hand before the trigger. Do not assume a card already in hand can be put into hand again. A 5-card deck that leaves Make It So in hand for the whole test is invalid for trigger-count evidence.
 - `required_evidence` is the acceptance contract for verification. Include every proof required before a PR may open. If the issue asks for multiple visible UI claims, the required screenshot evidence must name all of them; do not collapse a multi-part request into proof for only one row or one state. For tooltip, label, wording, or text/UI issues, include a screenshot evidence item with `text_visible_required:true` and `must_show` naming the exact text or tooltip state. When more than one label/row is requested, put all requested labels/rows in `must_show`. Unit tests may be required too, but they are not a substitute for required visual evidence unless the issue is explicitly non-visual and you set `allowed_fallback` with a concrete reason.
 - For card-stat tooltip issues, default visual evidence is the in-hand card tooltip unless the issue explicitly names a non-hand surface or the validation capabilities show that another surface is required to expose the relevant state. If the issue requests multiple tooltip rows or states, require the screenshot evidence to show all requested rows or states together when possible, and otherwise explain the exact surface split in the evidence contract.

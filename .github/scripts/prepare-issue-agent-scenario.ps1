@@ -81,7 +81,82 @@ def parse_tool_json(text, tool_name):
     return data
 
 
-async def materialize_install():
+def normalize_setup_id(value, prefix):
+    text = str(value or "").strip().upper()
+    marker = f"{prefix}."
+    return text[len(marker):] if text.startswith(marker) else text
+
+
+def iter_visible_cards(state):
+    player = state.get("player") if isinstance(state, dict) else {}
+    if not isinstance(player, dict):
+        return
+    for pile in ("hand", "draw_pile", "discard_pile", "exhaust_pile"):
+        cards = player.get(pile)
+        if not isinstance(cards, list):
+            continue
+        for index, card in enumerate(cards):
+            if isinstance(card, dict):
+                yield pile, index, card
+
+
+def assert_loaded_state_matches_setup(setup, state):
+    if not isinstance(state, dict):
+        raise RuntimeError("Loaded game state was not a JSON object.")
+
+    state_type = state.get("state_type")
+    if setup.get("next_normal_encounter") and state_type != "monster":
+        raise RuntimeError(
+            f"Scenario declared next_normal_encounter={setup.get('next_normal_encounter')!r} "
+            f"but loaded state_type={state_type!r}, not monster."
+        )
+
+    deprecated_cards = []
+    for pile, index, card in iter_visible_cards(state):
+        name = str(card.get("name") or "")
+        description = str(card.get("description") or "")
+        if name.lower() == "deprecated card" or "card was removed in a recent update" in description.lower():
+            deprecated_cards.append({"pile": pile, "index": index, "name": name, "description": description})
+    if deprecated_cards:
+        raise RuntimeError(
+            "Scenario loaded Deprecated Card placeholders, which means the scenario deck contains invalid card ids: "
+            + json.dumps(deprecated_cards, ensure_ascii=False)
+        )
+
+    player = state.get("player") if isinstance(state.get("player"), dict) else {}
+    relics = player.get("relics") if isinstance(player.get("relics"), list) else []
+    present_relic_ids = {
+        normalize_setup_id(relic.get("id"), "RELIC")
+        for relic in relics
+        if isinstance(relic, dict)
+    }
+    expected_relics = []
+    if isinstance(setup.get("relics"), list):
+        expected_relics.extend(setup.get("relics") or [])
+    if isinstance(setup.get("add_relics"), list):
+        expected_relics.extend(setup.get("add_relics") or [])
+    for relic_id in expected_relics:
+        normalized = normalize_setup_id(relic_id, "RELIC")
+        if normalized and normalized not in present_relic_ids:
+            raise RuntimeError(
+                f"Scenario expected relic {relic_id!r}, but loaded relic ids were {sorted(present_relic_ids)}."
+            )
+
+    removed_relics = setup.get("remove_relics") if isinstance(setup.get("remove_relics"), list) else []
+    for relic_id in removed_relics:
+        normalized = normalize_setup_id(relic_id, "RELIC")
+        if normalized and normalized in present_relic_ids:
+            raise RuntimeError(f"Scenario removed relic {relic_id!r}, but it is still present after load.")
+
+    return {
+        "status": "ok",
+        "state_type": state_type,
+        "deprecated_card_count": len(deprecated_cards),
+        "present_relic_ids": sorted(present_relic_ids),
+    }
+
+
+async def materialize_only():
     setup = read_json(setup_path)
     kwargs = {
         "base_name": setup["base_save_name"],
@@ -99,14 +174,34 @@ async def materialize_install():
         "next_normal_encounter": setup.get("next_normal_encounter"),
     }
     materialized = parse_tool_json(await server.materialize_scenario_save(**kwargs), "materialize_scenario_save")
-    installed = parse_tool_json(await server.install_save_as_current(setup["scenario_name"], "scenario"), "install_save_as_current")
     write_json({
         "status": "pass",
         "mode": mode,
         "scenario_setup": setup,
         "materialized": materialized,
+    })
+
+
+async def install_only():
+    existing = read_json(output_path) if output_path.exists() else {"status": "pass"}
+    setup = read_json(setup_path)
+    installed = parse_tool_json(await server.install_save_as_current(setup["scenario_name"], "scenario"), "install_save_as_current")
+    existing["status"] = "pass"
+    existing["mode"] = mode
+    existing["scenario_setup"] = setup
+    existing["installed"] = installed
+    write_json(existing)
+
+
+async def materialize_install():
+    await materialize_only()
+    existing = read_json(output_path)
+    setup = read_json(setup_path)
+    installed = parse_tool_json(await server.install_save_as_current(setup["scenario_name"], "scenario"), "install_save_as_current")
+    existing.update({
         "installed": installed,
     })
+    write_json(existing)
 
 
 async def validate_load():
@@ -150,14 +245,20 @@ async def validate_load():
     existing["validated"] = validate
     existing["pre_load_menu_state"] = menu_state
     existing["loaded"] = loaded
+    existing["mode"] = mode
     existing["game_state"] = state
     existing["state_type"] = state.get("state_type") if state else None
     existing["loaded_character_id"] = (state or {}).get("character_id") or (state or {}).get("player", {}).get("character_id")
+    existing["scenario_state_validation"] = assert_loaded_state_matches_setup(setup, state)
     write_json(existing)
 
 
 if mode == "materialize_install":
     asyncio.run(materialize_install())
+elif mode == "materialize_only":
+    asyncio.run(materialize_only())
+elif mode == "install_only":
+    asyncio.run(install_only())
 elif mode == "validate_load":
     asyncio.run(validate_load())
 else:
@@ -205,8 +306,10 @@ try {
     $mcpDirectory = Get-McpDirectory -Server $server
     $outputPath = Join-Path $ValidationArtifactDir 'issue-agent-scenario-setup.json'
 
+    & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
+    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'materialize_only' -SetupPath $setupPath -OutputPath $outputPath
     & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Stop -McpConfigPath $McpConfigPath -ShutdownTimeoutSeconds 45
-    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'materialize_install' -SetupPath $setupPath -OutputPath $outputPath
+    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'install_only' -SetupPath $setupPath -OutputPath $outputPath
     & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
     Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'validate_load' -SetupPath $setupPath -OutputPath $outputPath
 
