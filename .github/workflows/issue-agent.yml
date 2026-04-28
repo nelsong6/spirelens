@@ -33,8 +33,12 @@ jobs:
         id: route
         shell: pwsh
         env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO_SLUG: ${{ github.repository }}
           ROUTE_LABEL_PREFIX: issue-agent-runner-
           STS2_RESOURCE_LABEL_PREFIX: issue-agent-sts2-
+          ROUTE_LABEL_POOL: ${{ vars.ISSUE_AGENT_ROUTE_LABEL_POOL || 'issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user' }}
           ISSUE_LABELS_JSON: ${{ toJSON(github.event.issue.labels.*.name) }}
         run: |
           $issueLabels = @()
@@ -43,10 +47,57 @@ jobs:
           }
 
           $routeLabels = @($issueLabels | Where-Object { [string]$_ -like "$($env:ROUTE_LABEL_PREFIX)*" })
-          if ($routeLabels.Count -ne 1) {
-            throw "Expected exactly one $($env:ROUTE_LABEL_PREFIX)* issue label before adding issue-agent, found: $($routeLabels -join ', ')"
+          if ($routeLabels.Count -gt 1) {
+            throw "Expected at most one $($env:ROUTE_LABEL_PREFIX)* issue label before adding issue-agent, found: $($routeLabels -join ', ')"
           }
-          $routeLabel = [string]$routeLabels[0]
+
+          $routeLabel = ""
+          if ($routeLabels.Count -eq 1) {
+            $routeLabel = [string]$routeLabels[0]
+          } else {
+            $routePool = @(
+              $env:ROUTE_LABEL_POOL -split ',' |
+                ForEach-Object { [string]$_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
+            if ($routePool.Count -eq 0) {
+              throw "ISSUE_AGENT_ROUTE_LABEL_POOL must contain at least one $($env:ROUTE_LABEL_PREFIX)* label."
+            }
+            $invalidRouteLabels = @($routePool | Where-Object { [string]$_ -notlike "$($env:ROUTE_LABEL_PREFIX)*" })
+            if ($invalidRouteLabels.Count -gt 0) {
+              throw "ISSUE_AGENT_ROUTE_LABEL_POOL entries must start with '$($env:ROUTE_LABEL_PREFIX)': $($invalidRouteLabels -join ', ')"
+            }
+            if ([string]::IsNullOrWhiteSpace($env:ISSUE_NUMBER)) {
+              throw "No issue number was provided; cannot auto-select an issue-agent route label."
+            }
+
+            $issueNumber = [int]$env:ISSUE_NUMBER
+            $routeLabel = [string]$routePool[$issueNumber % $routePool.Count]
+
+            function Test-GhApi {
+              param([string]$Path)
+              & gh api $Path *> $null
+              return $LASTEXITCODE -eq 0
+            }
+
+            $routeSuffixForLabel = $routeLabel.Substring($env:ROUTE_LABEL_PREFIX.Length)
+            if (-not (Test-GhApi "repos/$($env:REPO_SLUG)/labels/$routeLabel")) {
+              & gh api --method POST "repos/$($env:REPO_SLUG)/labels" `
+                -f "name=$routeLabel" `
+                -f "color=1d76db" `
+                -f "description=Route issue-agent workflow to $routeSuffixForLabel" *> $null
+              if ($LASTEXITCODE -ne 0 -and -not (Test-GhApi "repos/$($env:REPO_SLUG)/labels/$routeLabel")) {
+                throw "Failed to create route label '$routeLabel'."
+              }
+            }
+
+            & gh api --method POST "repos/$($env:REPO_SLUG)/issues/$($env:ISSUE_NUMBER)/labels" `
+              -f "labels[]=$routeLabel" *> $null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to apply route label '$routeLabel' to issue #$($env:ISSUE_NUMBER)."
+            }
+            Write-Host "Auto-selected route_label=$routeLabel from ISSUE_AGENT_ROUTE_LABEL_POOL."
+          }
 
           if (-not [string]::IsNullOrWhiteSpace($routeLabel) -and $routeLabel -notlike "$($env:ROUTE_LABEL_PREFIX)*") {
             throw "Runner route label must be empty or start with '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"

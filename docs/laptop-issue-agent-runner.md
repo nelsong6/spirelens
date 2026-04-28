@@ -268,8 +268,10 @@ Set-Location D:\actions-runner-user
 .\run.cmd
 ```
 
-Then queue issue-agent work by applying `issue-agent-runner-nelsonpc-user` to
-the issue before applying `issue-agent`.
+Then queue issue-agent work by applying `issue-agent`. To force this host, apply
+`issue-agent-runner-nelsonpc-user` before applying `issue-agent`. If no route
+label is present, the workflow auto-selects one route from
+`ISSUE_AGENT_ROUTE_LABEL_POOL` and adds the chosen route label to the issue.
 
 The workflow derives the live STS2 label from the route label:
 `issue-agent-runner-nelsonpc-user` requires
@@ -332,7 +334,7 @@ has expired or is missing.
 
 The issue-agent workflow expects:
 
-- every runner used for an issue has the issue's `issue-agent-runner-<host>` route label
+- every runner used for an issue has the chosen `issue-agent-runner-<host>` route label
 - exactly one live-game runner per host has `issue-agent-sts2-<host>`
 - live-game runners have `issue-agent-test-plan` and `issue-agent-verification`
 - code runners have `issue-agent-implementation`
@@ -351,8 +353,11 @@ Once the runner is online in GitHub:
 
 1. Confirm the machine appears under repository runners with label
    `issue-agent-runner-<host>`.
-2. Add the machine route label to a low-risk issue, then add `issue-agent`.
-3. Confirm the run:
+2. Add `issue-agent` to a low-risk issue and confirm the workflow auto-applies
+   one route label from `ISSUE_AGENT_ROUTE_LABEL_POOL`.
+3. To force a specific machine, add that machine's route label before adding
+   `issue-agent`.
+4. Confirm the run:
    - starts on the laptop
    - passes the STS2 bridge readiness check
    - launches Claude with MCP available
@@ -375,3 +380,13 @@ For example, a two-runner `nelsonpc-user` setup would be:
 | --- | --- |
 | Live STS2 runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-sts2-nelsonpc-user`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-implementation` |
+
+The default auto-route pool is:
+
+```text
+issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user
+```
+
+Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` if a machine should be
+temporarily removed from or added to automatic issue assignment. Explicit route
+labels on an issue always override the pool.

@@ -8,12 +8,16 @@ There is no repo-owned queue worker, scheduled task, filesystem lock, or outer l
 
 An issue is eligible for autonomous work when it has:
 
-- exactly one `issue-agent-runner-<host>` route label
 - `issue-agent`
 
-The route label must be present before `issue-agent` is added. The issue-agent
-workflow is triggered by the GitHub issue event, and GitHub passes the exact
-issue number and current issue labels into the run.
+An issue may also have one `issue-agent-runner-<host>` route label. If it does,
+that explicit route wins. If it does not, the workflow picks one route from
+`ISSUE_AGENT_ROUTE_LABEL_POOL`, applies that label to the issue for visibility,
+and uses that same route for every phase in the run. Multiple route labels are a
+configuration error.
+
+The issue-agent workflow is triggered by the GitHub issue event, and GitHub
+passes the exact issue number and current issue labels into the run.
 
 Queueing is provided by GitHub's self-hosted runner queue, not by workflow
 `concurrency`. Do not add a top-level issue-agent concurrency group: GitHub
@@ -32,11 +36,12 @@ Issue-agent labels are:
 
 The processing model is intentionally simple:
 
-1. Add exactly one `issue-agent-runner-<host>` label to the issue.
+1. Optionally add one `issue-agent-runner-<host>` label to force a specific host.
 2. Add `issue-agent` to queue the issue.
-3. GitHub Actions starts phase jobs on self-hosted Windows runners matching that route label.
-4. Each LLM phase launches a fresh Claude Code invocation with its own prompt, tool permissions, timeout, budget, logs, and handoff artifacts.
-5. Claude owns the issue work through the phase contract: test plan, implementation, verification, tests, screenshots, and evidence. GitHub mutations are wrapper-owned after phase artifacts are written.
+3. If no route label was provided, the route job picks one from `ISSUE_AGENT_ROUTE_LABEL_POOL` and labels the issue.
+4. GitHub Actions starts phase jobs on self-hosted Windows runners matching that route label.
+5. Each LLM phase launches a fresh Claude Code invocation with its own prompt, tool permissions, timeout, budget, logs, and handoff artifacts.
+6. Claude owns the issue work through the phase contract: test plan, implementation, verification, tests, screenshots, and evidence. GitHub mutations are wrapper-owned after phase artifacts are written.
 
 There is no second script that chooses issues, reads structured result files, or drains a local queue.
 
@@ -57,11 +62,22 @@ Each Windows issue-agent host should provide:
 The workflow verifies `claude auth status` before launching the phased agent. It does not load an Anthropic API key from a runner file.
 
 Routed hosts use issue labels shaped like `issue-agent-runner-<host>`. The
-workflow requires exactly one such route label and applies it to all Windows
-phase jobs. It also routes live STS2 test-plan and verification work through
+workflow applies one route label to all Windows phase jobs, whether that label
+was provided by a human or selected from `ISSUE_AGENT_ROUTE_LABEL_POOL`. It also
+routes live STS2 test-plan and verification work through
 `issue-agent-sts2-<host>`. Apply the `issue-agent-sts2-<host>` label to exactly
 one runner per physical STS2 game session so live-game jobs queue on that runner
 instead of running against the same game instance in parallel.
+
+Default auto-route pool:
+
+```text
+issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user
+```
+
+Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` to change the pool. The
+current picker uses the issue number modulo the pool size, so adjacent issues
+spread across the configured hosts predictably.
 
 Recommended two-runner host layout:
 
