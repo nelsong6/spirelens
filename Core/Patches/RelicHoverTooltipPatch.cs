@@ -15,6 +15,7 @@ namespace SpireLens.Core.Patches;
 public static class RelicHoverShowPatch
 {
     private const string VulnerableIconPath = "res://images/atlases/power_atlas.sprites/vulnerable_power.tres";
+    private const string WeakIconPath = "res://images/atlases/power_atlas.sprites/weak_power.tres";
     private const int InlineIconSize = 16;
 
     [HarmonyPostfix]
@@ -27,17 +28,32 @@ public static class RelicHoverShowPatch
             if (!viewStatsEnabled) return;
 
             var relicNode = __instance.Relic;
-            if (relicNode?.Model is not BagOfMarbles) return;
+            if (relicNode?.Model == null) return;
 
             var tree = Engine.GetMainLoop() as SceneTree;
             if (tree == null) return;
 
-            const string relicId = "RELIC.BAG_OF_MARBLES";
-            var agg = RunTracker.GetRelicAggregate(relicId);
-            if (agg == null || (agg.EnemiesAffected == 0 && agg.VulnerableApplied == 0)) return;
+            if (relicNode.Model is BagOfMarbles)
+            {
+                const string relicId = "RELIC.BAG_OF_MARBLES";
+                var agg = RunTracker.GetRelicAggregate(relicId);
+                if (agg == null || (agg.EnemiesAffected == 0 && agg.VulnerableApplied == 0)) return;
 
-            var body = BuildBodyBBCode(agg);
-            StatsTooltip.Show(tree, __instance, "Bag of Marbles", "SpireLens", body);
+                var body = BuildBagOfMarblesBodyBBCode(agg);
+                StatsTooltip.Show(tree, __instance, "Bag of Marbles", "SpireLens", body);
+                return;
+            }
+
+            if (relicNode.Model is RedMask)
+            {
+                const string relicId = "RELIC.RED_MASK";
+                var agg = RunTracker.GetRelicAggregate(relicId);
+                if (agg == null || (agg.EnemiesAffected == 0 && agg.WeakApplied == 0)) return;
+
+                var body = BuildRedMaskBodyBBCode(agg);
+                StatsTooltip.Show(tree, __instance, "Red Mask", "SpireLens", body);
+                return;
+            }
         }
         catch (Exception e)
         {
@@ -45,16 +61,30 @@ public static class RelicHoverShowPatch
         }
     }
 
-    private static string BuildBodyBBCode(RelicAggregate agg)
+    private static string BuildBagOfMarblesBodyBBCode(RelicAggregate agg)
     {
         var sb = new StringBuilder();
         Row3(sb, VulnerableLabel("enemies affected"), agg.EnemiesAffected.ToString(), "");
         return sb.ToString();
     }
 
+    private static string BuildRedMaskBodyBBCode(RelicAggregate agg)
+    {
+        var sb = new StringBuilder();
+        Row3(sb, WeakLabel("enemies affected"), agg.EnemiesAffected.ToString(), "");
+        Row3(sb, WeakLabel("weak applied"), agg.WeakApplied.ToString(), "");
+        return sb.ToString();
+    }
+
     private static string VulnerableLabel(string suffix)
     {
         var path = NormalizeResourcePath(VulnerableIconPath);
+        return $"[img={InlineIconSize}x{InlineIconSize}]{path}[/img] {suffix}";
+    }
+
+    private static string WeakLabel(string suffix)
+    {
+        var path = NormalizeResourcePath(WeakIconPath);
         return $"[img={InlineIconSize}x{InlineIconSize}]{path}[/img] {suffix}";
     }
 

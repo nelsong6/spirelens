@@ -10,7 +10,7 @@ namespace SpireLens.Core;
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 15;
+    public const int CurrentSchemaVersion = 16;
 
     // v1: aggregates keyed by card definition id (pooled across instances)
     // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
@@ -59,6 +59,9 @@ public class RunData
     //      enemies affected and Vulnerable stacks applied at combat start).
     //      Also additive; older v14 files remain resumable with the new
     //      field defaulting to empty.
+    // v16: add WeakApplied to RelicAggregate for Red Mask combat-start Weak
+    //      application. Also additive; older v15 files remain resumable with
+    //      the new field defaulting to 0.
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
@@ -315,17 +318,21 @@ public class BlockedDrawReasonAggregate
 
 /// <summary>
 /// Aggregated stats for a single relic across this run.
-/// First pass: Bag of Marbles combat-start Vulnerable application.
+/// Fields are shared across relics; each relic uses only the fields relevant to it.
 /// </summary>
 public class RelicAggregate
 {
-    // Total enemies across all combats this run that had Vulnerable applied
+    // Total enemies across all combats this run that had a debuff applied
     // by this relic at combat start.
     public int EnemiesAffected { get; set; }
 
     // Total Vulnerable stacks applied by this relic across all combats.
-    // For Bag of Marbles (1 Vulnerable per enemy) this equals EnemiesAffected.
+    // Used by Bag of Marbles (1 Vulnerable per enemy).
     public int VulnerableApplied { get; set; }
+
+    // Total Weak stacks applied by this relic across all combats.
+    // Used by Red Mask (1 Weak per enemy at combat start).
+    public int WeakApplied { get; set; }
 }
 
 /// <summary>
