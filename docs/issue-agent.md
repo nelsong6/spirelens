@@ -79,6 +79,28 @@ Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` to change the pool. The
 current picker uses the issue number modulo the pool size, so adjacent issues
 spread across the configured hosts predictably.
 
+If the repository uses GitHub Actions runner groups, set
+`ISSUE_AGENT_RUNNER_GROUP` to route all Windows issue-agent phases through that
+group while preserving the label routing above. Per-phase overrides are also
+supported:
+
+- `ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP`
+- `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
+- `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
+
+When a group variable is set, the workflow emits GitHub's grouped `runs-on`
+shape, for example:
+
+```yaml
+runs-on:
+  group: issue-agent-windows
+  labels:
+    - self-hosted
+    - windows
+    - issue-agent-runner-nelsonlaptop
+    - issue-agent-test-plan
+```
+
 Recommended two-runner host layout:
 
 | Runner role | Required custom labels |

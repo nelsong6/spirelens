@@ -280,6 +280,15 @@ The workflow derives the live STS2 label from the route label:
 session so GitHub's runner queue serializes live-game work without
 canceling pending issue-agent runs.
 
+If these self-hosted runners are restricted to a GitHub Actions runner group,
+set repository variable `ISSUE_AGENT_RUNNER_GROUP` to that group name. The
+workflow will target the group plus the same route, phase, and live-game labels.
+Use these optional overrides only when phases live in different groups:
+
+- `ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP`
+- `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
+- `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
+
 For a two-runner host, split labels by role:
 
 | Runner role | Labels |
@@ -395,6 +404,10 @@ issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user
 Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` if a machine should be
 temporarily removed from or added to automatic issue assignment. Explicit route
 labels on an issue always override the pool.
+
+Set repository variable `ISSUE_AGENT_RUNNER_GROUP` if the runner labels live
+inside a non-default GitHub Actions runner group. The workflow still requires
+the matching route/phase/live labels inside that group.
 
 While bringing up a new machine, set `ISSUE_AGENT_ROUTE_LABEL_POOL` to only the
 known-good host, for example:
