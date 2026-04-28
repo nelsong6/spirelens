@@ -329,6 +329,12 @@ The repository checkout must contain a working `.mcp.json` that points Claude at
 `spire-lens-mcp`. For STS2 work, the issue-agent path must use MCP tools rather
 than side channels.
 
+Do not edit tracked `.mcp.json` for machine-specific STS2 paths during a run.
+The workflow reads `.mcp.json` as a template, writes a per-job config under
+`RUNNER_TEMP\issue-agent-mcp\`, updates that temporary file with the selected
+host's `STS2_GAME_DIR`, and passes the temporary config to Claude and STS2 prep.
+`.mcp.json` remains blocked from issue-agent publication.
+
 Do not revive:
 
 - `LiveScenarios/`

@@ -261,7 +261,7 @@ jobs:
             -RepoSlug $env:REPO_SLUG `
             -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
             -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
+            -McpConfigPath $env:ISSUE_AGENT_MCP_CONFIG_PATH `
             -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-test-plan-events.jsonl") `
             -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-test-plan-debug.log") `
             -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-test-plan-summary.log") `
@@ -410,7 +410,7 @@ jobs:
             -RepoSlug $env:REPO_SLUG `
             -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
             -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
+            -McpConfigPath $env:ISSUE_AGENT_MCP_CONFIG_PATH `
             -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-events.jsonl") `
             -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-debug.log") `
             -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-summary.log") `
@@ -665,7 +665,7 @@ jobs:
         run: |
           & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\prepare-issue-agent-scenario.ps1") `
             -TestPlanPath (Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-test-plan.json") `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
+            -McpConfigPath $env:ISSUE_AGENT_MCP_CONFIG_PATH `
             -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
             -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
             -IssueNumber $env:ISSUE_NUMBER
@@ -690,7 +690,7 @@ jobs:
             -RepoSlug $env:REPO_SLUG `
             -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
             -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
+            -McpConfigPath $env:ISSUE_AGENT_MCP_CONFIG_PATH `
             -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-events.jsonl") `
             -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-debug.log") `
             -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-summary.log") `

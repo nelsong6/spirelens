@@ -64,18 +64,23 @@ function Resolve-Sts2GameDir {
     throw "Unable to find sts2.dll in any configured STS2 game directory candidate: $($gameDirCandidates -join '; ')"
 }
 
-function Update-McpGameDir {
+function New-JobMcpConfig {
     param(
         [string]$RepoRoot,
         [string]$GameDir
     )
 
-    $mcpConfigPath = Join-Path $RepoRoot '.mcp.json'
-    if (-not (Test-Path -LiteralPath $mcpConfigPath)) { return }
+    $sourceMcpConfigPath = Join-Path $RepoRoot '.mcp.json'
+    if (-not (Test-Path -LiteralPath $sourceMcpConfigPath)) {
+        throw "MCP config template was not found at '$sourceMcpConfigPath'."
+    }
 
-    $mcpConfig = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json
+    $mcpConfig = Get-Content -LiteralPath $sourceMcpConfigPath -Raw | ConvertFrom-Json
+
     $server = $mcpConfig.mcpServers.'spire-lens-mcp'
-    if ($null -eq $server) { return }
+    if ($null -eq $server) {
+        throw "MCP config template '$sourceMcpConfigPath' does not define mcpServers.spire-lens-mcp."
+    }
     if ($null -eq $server.env) {
         $server | Add-Member -NotePropertyName env -NotePropertyValue ([pscustomobject]@{})
     }
@@ -85,8 +90,19 @@ function Update-McpGameDir {
         $server.env | Add-Member -NotePropertyName STS2_GAME_DIR -NotePropertyValue $GameDir
     }
 
-    $mcpConfig | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $mcpConfigPath -Encoding utf8
-    Write-Host "Updated MCP config STS2_GAME_DIR for this job: $GameDir"
+    $mcpConfigRoot = Join-Path $env:RUNNER_TEMP "issue-agent-mcp"
+    New-Item -ItemType Directory -Force -Path $mcpConfigRoot | Out-Null
+    $safeCheckoutName = ([IO.Path]::GetFileName($CheckoutPath) -replace '[^A-Za-z0-9._-]', '-')
+    $jobMcpConfigPath = Join-Path $mcpConfigRoot "$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-$safeCheckoutName.mcp.json"
+    [System.IO.File]::WriteAllText(
+        $jobMcpConfigPath,
+        ($mcpConfig | ConvertTo-Json -Depth 20),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+
+    Write-Host "Generated per-job MCP config: $jobMcpConfigPath"
+    Write-Host "Per-job MCP config STS2_GAME_DIR: $GameDir"
+    return $jobMcpConfigPath
 }
 
 $candidates = @()
@@ -118,10 +134,11 @@ New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
 
 $gameDir = Resolve-Sts2GameDir -RepoRoot $repoRoot
 $sts2DataDir = Join-Path $gameDir 'data_sts2_windows_x86_64'
-Update-McpGameDir -RepoRoot $repoRoot -GameDir $gameDir
+$jobMcpConfigPath = New-JobMcpConfig -RepoRoot $repoRoot -GameDir $gameDir
 
 "ISSUE_AGENT_STS2_GAME_DIR=$gameDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 "ISSUE_AGENT_STS2_DATA_DIR=$sts2DataDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+"ISSUE_AGENT_MCP_CONFIG_PATH=$jobMcpConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
 if (-not $InstallMcp) { return }
 
@@ -184,6 +201,6 @@ if (-not (Test-Path -LiteralPath $restartScript)) {
 
 & $restartScript `
     -Mode Restart `
-    -McpConfigPath (Join-Path $repoRoot '.mcp.json') `
+    -McpConfigPath $jobMcpConfigPath `
     -StartupTimeoutSeconds 60 `
     -ShutdownTimeoutSeconds 45

@@ -149,6 +149,7 @@ For STS2 issue-agent work, `spire-lens-mcp` is a hard prerequisite.
 - `.mcp.json` must declare `spire-lens-mcp`
 - Claude must be able to list and connect to `spire-lens-mcp` before the issue agent starts
 - `spire-lens-mcp` must pass a minimal no-side-effect readiness probe before the main task begins
+- `.mcp.json` is a tracked template only; the workflow writes a per-job MCP config under `RUNNER_TEMP` with the selected host's STS2 path and passes that generated file to Claude
 - if any of those checks fail, stop immediately and report a blocker
 - do not fall back to raw TCP bridge calls, ad hoc PowerShell bridge scripts, Azure Python imports, Windows API clicking, or other non-MCP workarounds
 - missing MCP capability is a tooling gap to report, not a reason to invent side automation
