@@ -11,7 +11,7 @@
         "server.py"
       ],
       "env": {
-        "STS2_GAME_DIR": "D:\\SteamLibrary\\steamapps\\common\\Slay the Spire 2"
+        "STS2_GAME_DIR": "D:\\Programs\\SteamLibrary\\steamapps\\common\\Slay the Spire 2"
       }
     }
   }

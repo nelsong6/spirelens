@@ -59,7 +59,7 @@ if ($LASTEXITCODE -ne 0) {
 
 uv run --directory (Join-Path $mcpRoot 'mcp') python -m py_compile server.py
 
-$gameDir = 'D:\SteamLibrary\steamapps\common\Slay the Spire 2'
+$gameDir = 'D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2'
 $buildScript = Join-Path $mcpRoot 'build.ps1'
 if (-not (Test-Path -LiteralPath $buildScript)) {
     throw "SpireLens MCP build script was not found at '$buildScript'."

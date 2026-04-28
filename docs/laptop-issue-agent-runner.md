@@ -61,7 +61,20 @@ C:\Users\Nelson\Documents\Codex\logs
 Slay the Spire 2 is installed at:
 
 ```text
-D:\SteamLibrary\steamapps\common\Slay the Spire 2
+D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2
+```
+
+This must be the Steam-registered install from
+`D:\Programs\SteamLibrary\steamapps\appmanifest_2868840.acf`, not the older
+unregistered `D:\SteamLibrary` copy. On NELSONPC the aligned Steam build is
+`22823976`, and `sts2.dll` reports product version
+`0.1.0+89765e1e54a888b031c826143eb77005b353f75d`.
+
+Because the runner launches STS2 directly during validation, the game folder
+must contain `steam_appid.txt` with:
+
+```text
+2868840
 ```
 
 BaseLib is present in the game's `mods` folder.
@@ -158,7 +171,7 @@ with machine-specific paths:
 ```xml
 <Project>
   <PropertyGroup>
-    <Sts2Path>D:/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Path>
+    <Sts2Path>D:/Programs/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Path>
     <GodotPath>D:/automation/godot/Godot_v4.5.1-stable_mono_win64/Godot_v4.5.1-stable_mono_win64_console.exe</GodotPath>
   </PropertyGroup>
 </Project>
@@ -329,9 +342,9 @@ Observed validation for the user runner:
   Claude lookup, Claude auth, or Windows permissions.
 - A later STS2/MCP prep run failed because `spire-lens-mcp` could not compile
   against the machine's current STS2/publicized assembly context:
-  `ICombatState` was missing. Before adding `issue-agent-runner-nelsonpc-user`
-  back to `ISSUE_AGENT_ROUTE_LABEL_POOL`, confirm `spire-lens-mcp` builds on
-  that machine against the installed STS2 data directory.
+  `ICombatState` was missing. The MCP compatibility fix was pushed in
+  `nelsong6/spire-lens-mcp` commit `e3cf4b0`, and the local MCP build now
+  passes against the Steam-registered install above.
 
 If queueing issue-agent runs from the laptop with GitHub CLI labels, make sure
 GitHub CLI is authenticated:
