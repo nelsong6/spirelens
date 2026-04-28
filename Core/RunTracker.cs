@@ -37,6 +37,8 @@ namespace SpireLens.Core;
 /// </summary>
 public static class RunTracker
 {
+    private const string LetterOpenerRelicId = "LETTER_OPENER";
+    private const int LetterOpenerDamagePerTarget = 5;
     private const string ShivDefinitionId = "CARD.SHIV";
     private const string SovereignBladeLegacyDefinitionToken = "SOVEREIGN_BLADE";
     private const string SovereignBladeLegacyDefinitionId = "CARD.SOVEREIGN_BLADE";
@@ -165,6 +167,28 @@ public static class RunTracker
             {
                 result ??= new CardAggregate();
                 MergeAggregateInto(result, pending);
+            }
+
+            return result;
+        }
+    }
+
+    public static RelicAggregate? GetEffectiveRelicAggregate(string relicId)
+    {
+        if (string.IsNullOrWhiteSpace(relicId)) return null;
+
+        lock (_lock)
+        {
+            var normalizedRelicId = NormalizeRelicId(relicId);
+            RelicAggregate? result = null;
+
+            if (_currentRun != null && _currentRun.RelicAggregates.TryGetValue(normalizedRelicId, out var committed))
+                result = CloneRelicAggregate(committed);
+
+            if (_pendingCombat != null && _pendingCombat.CombatRelicAggregates.TryGetValue(normalizedRelicId, out var pending))
+            {
+                result ??= new RelicAggregate();
+                MergeRelicAggregateInto(result, pending);
             }
 
             return result;
@@ -931,6 +955,11 @@ public static class RunTracker
                 var runAgg = GetOrCreateAggregate(_currentRun, cardId);
                 MergeAggregateInto(runAgg, combatAgg);
             }
+            foreach (var (relicId, combatAgg) in _pendingCombat.CombatRelicAggregates)
+            {
+                var runAgg = GetOrCreateRelicAggregate(_currentRun, relicId);
+                MergeRelicAggregateInto(runAgg, combatAgg);
+            }
             _currentRun.Events.AddRange(_pendingCombat.CombatEvents);
 
             // Refresh run-level metadata from the current game state (floor may have advanced).
@@ -1311,6 +1340,40 @@ public static class RunTracker
             {
                 CoreMain.LogDebug($"TryGetMakeItSoSkillCounter failed: {e.Message}");
                 return false;
+            }
+        }
+    }
+
+    public static void NoteLetterOpenerBeforeCardPlayed(
+        CardPlay cardPlay,
+        int skillsPlayedIncludingThis,
+        int activationThreshold)
+    {
+        lock (_lock)
+        {
+            try
+            {
+                if (_pendingCombat == null) return;
+
+                var card = cardPlay?.Card;
+                if (card == null || card.Owner == null) return;
+                if (card.Type != CardType.Skill) return;
+
+                if (activationThreshold <= 0) return;
+                if (skillsPlayedIncludingThis <= 0 || skillsPlayedIncludingThis % activationThreshold != 0)
+                    return;
+
+                int targetCount = CountLetterOpenerTargets(card.CombatState);
+                if (targetCount <= 0) return;
+
+                var agg = GetOrCreateRelicAggregate(_pendingCombat, LetterOpenerRelicId);
+                agg.TimesActivated++;
+                agg.TotalTargets += targetCount;
+                agg.TotalAttemptedDamage += LetterOpenerDamagePerTarget * targetCount;
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"NoteLetterOpenerBeforeCardPlayed failed: {e.Message}");
             }
         }
     }
@@ -3186,6 +3249,28 @@ public static class RunTracker
         return agg;
     }
 
+    private static RelicAggregate GetOrCreateRelicAggregate(PendingCombat pending, string relicId)
+    {
+        var normalizedRelicId = NormalizeRelicId(relicId);
+        if (!pending.CombatRelicAggregates.TryGetValue(normalizedRelicId, out var agg))
+        {
+            agg = new RelicAggregate();
+            pending.CombatRelicAggregates[normalizedRelicId] = agg;
+        }
+        return agg;
+    }
+
+    private static RelicAggregate GetOrCreateRelicAggregate(RunData run, string relicId)
+    {
+        var normalizedRelicId = NormalizeRelicId(relicId);
+        if (!run.RelicAggregates.TryGetValue(normalizedRelicId, out var agg))
+        {
+            agg = new RelicAggregate();
+            run.RelicAggregates[normalizedRelicId] = agg;
+        }
+        return agg;
+    }
+
     private static int GetMakeItSoThreshold(CardModel card)
     {
         if (card is not MakeItSo makeItSo) return 0;
@@ -3219,6 +3304,28 @@ public static class RunTracker
         {
             return 0;
         }
+    }
+
+    private static int CountLetterOpenerTargets(ICombatState? combatState)
+    {
+        if (combatState is not CombatState concreteCombatState) return 0;
+
+        try
+        {
+            return concreteCombatState.HittableEnemies.Count(creature => creature.IsAlive && creature.IsHittable);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static string NormalizeRelicId(string relicId)
+    {
+        var normalized = relicId.Trim();
+        if (normalized.StartsWith("RELIC.", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["RELIC.".Length..];
+        return normalized.ToUpperInvariant();
     }
 
     private static CardAggregate CloneAggregate(CardAggregate source)
@@ -3261,6 +3368,16 @@ public static class RunTracker
         return clone;
     }
 
+    private static RelicAggregate CloneRelicAggregate(RelicAggregate source)
+    {
+        return new RelicAggregate
+        {
+            TimesActivated = source.TimesActivated,
+            TotalAttemptedDamage = source.TotalAttemptedDamage,
+            TotalTargets = source.TotalTargets,
+        };
+    }
+
     private static void MergeAggregateInto(CardAggregate target, CardAggregate source)
     {
         target.Plays += source.Plays;
@@ -3290,6 +3407,13 @@ public static class RunTracker
         target.TimesSummonedToHand += source.TimesSummonedToHand;
         MergeBlockedDrawReasonsInto(target.BlockedDrawReasons, source.BlockedDrawReasons);
         MergeAppliedEffectsInto(target.AppliedEffects, source.AppliedEffects);
+    }
+
+    private static void MergeRelicAggregateInto(RelicAggregate target, RelicAggregate source)
+    {
+        target.TimesActivated += source.TimesActivated;
+        target.TotalAttemptedDamage += source.TotalAttemptedDamage;
+        target.TotalTargets += source.TotalTargets;
     }
 
     private static void MergeBlockedDrawReasonsInto(
@@ -3591,6 +3715,7 @@ public static class RunTracker
 internal class PendingCombat
 {
     public Dictionary<string, CardAggregate> CombatAggregates { get; } = new();
+    public Dictionary<string, RelicAggregate> CombatRelicAggregates { get; } = new();
     public List<CardEvent> CombatEvents { get; } = new();
     public List<BlockChunk> PlayerBlockLedger { get; } = new();
     public Dictionary<AbstractModel, PlayerPowerOwnershipShare> PlayerPowerOwnershipByModifier { get; }
