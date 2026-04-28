@@ -377,16 +377,30 @@ jobs:
       - name: Push implementation branch
         id: publish_implementation
         if: steps.implementation_result.outputs.phase_status == 'pass'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
           $implementationPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
           $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
+          $defaultBranch = if ([string]::IsNullOrWhiteSpace($env:DEFAULT_BRANCH)) { "main" } else { $env:DEFAULT_BRANCH }
+          $publishRoot = Join-Path $env:RUNNER_TEMP "issue-agent-publish-$branch"
+          $patchPath = Join-Path $env:RUNNER_TEMP "issue-agent-implementation-$branch.patch"
 
           git add -A -- . ':!.github/workflows/issue-agent.yml'
           $stagedPaths = @(git diff --cached --name-only | ForEach-Object { ([string]$_).Replace('\', '/') })
           if ($stagedPaths.Count -eq 0) {
             throw "Implementation phase passed but produced no repository changes to commit."
+          }
+          git diff --cached --binary --output="$patchPath" -- . ':!.github/workflows/issue-agent.yml'
+
+          git fetch origin "+refs/heads/$($defaultBranch):refs/remotes/origin/$($defaultBranch)"
+          git worktree add -B $branch $publishRoot "origin/$defaultBranch"
+          git -C $publishRoot apply --index $patchPath
+          $stagedPaths = @(git -C $publishRoot diff --cached --name-only | ForEach-Object { ([string]$_).Replace('\', '/') })
+          if ($stagedPaths.Count -eq 0) {
+            throw "Implementation patch became empty when applied to origin/$defaultBranch."
           }
 
           if (Test-Path -LiteralPath $implementationPath) {
@@ -405,11 +419,11 @@ jobs:
             }
           }
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Issue #$($env:ISSUE_NUMBER) agent changes"
-          $commitSha = (git rev-parse HEAD).Trim()
-          git push origin "HEAD:refs/heads/$branch"
+          git -C $publishRoot config user.name "github-actions[bot]"
+          git -C $publishRoot config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C $publishRoot commit -m "Issue #$($env:ISSUE_NUMBER) agent changes"
+          $commitSha = (git -C $publishRoot rev-parse HEAD).Trim()
+          git -C $publishRoot push origin "HEAD:refs/heads/$branch"
 
           if (Test-Path -LiteralPath $implementationPath) {
             $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json

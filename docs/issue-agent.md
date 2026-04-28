@@ -160,7 +160,12 @@ Claude runs in three separate invocations:
 1. Test plan: reads the issue, identifies the target, current game facts, MCP/game-state needs, and validation plan. It cannot edit code.
 2. Implementation: consumes the test-plan handoff artifacts and applies code changes only if the plan is viable and appropriately scoped. It cannot read or mutate GitHub.
 3. Verification: consumes the test-plan and implementation handoff artifacts, runs tests, save-backed live MCP validation, screenshots, and final evidence checks. It has no GitHub token and cannot read or mutate GitHub.
-4. The workflow wrapper creates the branch, commit, push, and PR only after verification reports `status: pass`.
+4. The workflow wrapper creates, commits, and pushes the implementation branch after the implementation build passes, then opens the PR only after verification reports `status: pass`.
+
+When publishing an implementation branch, the wrapper stages the agent's code
+diff, reapplies that diff onto the current default branch, and pushes only that
+resulting commit. This keeps branch publication from reintroducing workflow-file
+history through the GitHub App token, which does not have workflow write scope.
 
 Verification should default to the save-backed route: materialize a scenario from the correct character base save, install it as current, validate/load it, inspect the live state, and only then configure the already-loaded combat. Quick helpers that start ad hoc runs or choose Neow options are intentionally out of the default path.
 

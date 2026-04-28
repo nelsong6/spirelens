@@ -451,6 +451,8 @@ The issue-agent workflow expects:
 The workflow itself still handles:
 
 - uploading logs, screenshots, and validation artifacts
+- publishing the final implementation branch from the current default branch,
+  with only the agent's staged code diff applied
 
 ## Sanity Check
 
