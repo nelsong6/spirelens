@@ -293,9 +293,33 @@ jobs:
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
           $patchPath = Join-Path $env:RUNNER_TEMP "issue-agent-implementation.patch"
-          git diff --binary --output="$patchPath" -- . ':!.github/workflows/issue-agent.yml'
+          $implementationPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
+
+          git add -A -- . ':!.github/workflows/issue-agent.yml'
+          git diff --cached --binary --output="$patchPath"
+          git reset --mixed --quiet
+
           if (-not (Test-Path -LiteralPath $patchPath)) { New-Item -ItemType File -Path $patchPath | Out-Null }
           $bytes = (Get-Item -LiteralPath $patchPath).Length
+
+          if (Test-Path -LiteralPath $implementationPath) {
+            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
+            $expectedPaths = @($implementation.changed_files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+            if ($expectedPaths.Count -gt 0) {
+              $patchText = if ($bytes -gt 0) { Get-Content -LiteralPath $patchPath -Raw } else { "" }
+              $missingPaths = @()
+              foreach ($path in $expectedPaths) {
+                $normalized = ([string]$path).Replace('\\', '/')
+                if ($normalized -eq ".github/workflows/issue-agent.yml") { continue }
+                $diffHeader = "diff --git a/$normalized b/$normalized"
+                if (-not $patchText.Contains($diffHeader)) { $missingPaths += $normalized }
+              }
+              if ($missingPaths.Count -gt 0) {
+                throw "Implementation result listed changed files absent from packaged patch: $($missingPaths -join ', ')"
+              }
+            }
+          }
+
           Write-Host "Packaged implementation patch: $patchPath ($bytes bytes)"
 
       - name: Upload implementation artifacts
