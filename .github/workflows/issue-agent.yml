@@ -239,7 +239,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
 
       - name: "LLM: Run implementation phase"
-        timeout-minutes: 12
+        timeout-minutes: 24
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           GH_TOKEN: ${{ github.token }}
