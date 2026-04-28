@@ -284,14 +284,32 @@ user desktop.
 If there is no administrator password available, use a second interactive runner
 instead of stopping the existing service. Configure it in a separate directory
 and give it a unique route label such as `issue-agent-runner-nelsonpc-user`.
-For a single-runner host, put every phase and live-game label on that runner:
+Do not put every phase label on one runner if the host is expected to run the
+test-plan and implementation phases in parallel. A single-runner host is a
+serial fallback only.
+
+For the live STS2 runner, use only the host route label, the live-game resource
+label, and the live STS2 phase labels:
 
 ```powershell
 $token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
 New-Item -ItemType Directory -Force D:\actions-runner-user | Out-Null
 Set-Location D:\actions-runner-user
 # install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user --labels issue-agent-runner-nelsonpc-user,issue-agent-sts2-nelsonpc-user,issue-agent-test-plan,issue-agent-implementation,issue-agent-verification --work _work
+.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user --labels issue-agent-runner-nelsonpc-user,issue-agent-sts2-nelsonpc-user,issue-agent-test-plan,issue-agent-verification --work _work
+.\run.cmd
+```
+
+For parallel implementation, configure a second interactive user runner in a
+different directory with the same route label and only the implementation phase
+label:
+
+```powershell
+$token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
+New-Item -ItemType Directory -Force D:\actions-runner-user-implementation | Out-Null
+Set-Location D:\actions-runner-user-implementation
+# install or copy the GitHub Actions runner files here before configuring
+.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-implementation --labels issue-agent-runner-nelsonpc-user,issue-agent-implementation --work _work
 .\run.cmd
 ```
 
@@ -316,12 +334,17 @@ Use these optional overrides only when phases live in different groups:
 - `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
 - `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
 
-For a two-runner host, split labels by role:
+For a parallel host, split labels by role:
 
 | Runner role | Labels |
 | --- | --- |
 | Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
+
+If `issue-agent-implementation` is present on the live STS2 runner, GitHub may
+start implementation there and leave `LLM: Plan validation evidence` queued
+until implementation finishes. That is expected runner-queue behavior, not a
+workflow dependency.
 
 The laptop is currently configured this way:
 

@@ -105,17 +105,17 @@ runs-on:
     - issue-agent-test-plan
 ```
 
-Recommended two-runner host layout:
+Required host layout for parallel test planning and implementation:
 
 | Runner role | Required custom labels |
 | --- | --- |
 | Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
 
-If a host has only one runner, put all labels on that runner:
-`issue-agent-runner-<host>`, `issue-agent-sts2-<host>`,
-`issue-agent-test-plan`, `issue-agent-implementation`, and
-`issue-agent-verification`.
+Do not put `issue-agent-implementation` on the live STS2 runner when the host is
+expected to run phases in parallel. A single runner with every phase label is a
+serial fallback only: whichever job starts first occupies the only matching
+runner and the other phase waits.
 
 ## Local Host Bring-Up
 
