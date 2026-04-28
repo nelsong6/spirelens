@@ -5,6 +5,8 @@ This codebase has two big goals:
 1. stay hot-reload friendly during development
 2. attribute run outcomes back to the card that actually caused them
 
+For the stable Slay the Spire 2 runtime mental model behind the hook choices here, read [docs/sts2-runtime-primer.md](sts2-runtime-primer.md). That primer is intended to reduce repeated rediscovery of game lifecycle, combat-history, async hook, pile, and attribution timing behavior.
+
 ## Runtime Topology
 
 ### Loader
@@ -47,7 +49,7 @@ This combat-boundary rule is important:
 
 - [Core/RunData.cs](../Core/RunData.cs) defines the serialized run shape.
 - [Core/RunStorage.cs](../Core/RunStorage.cs) handles load/save and resumability rules.
-- Schema changes are additive when possible. The current schema is `v14`.
+- Schema changes are additive when possible. The current schema is `v16`.
 
 Historical compatibility is pinned by:
 
@@ -109,10 +111,11 @@ That distinction matters for both tooltip wording and data integrity.
 
 Use this checklist:
 
-1. decide whether the stat should be per-instance, pooled, or effect-oriented
-2. record the observed game outcome, not just the requested amount, if those can diverge
-3. update [RunData.cs](../Core/RunData.cs) if persistence changes
-4. update fixtures under [Fixtures/RunSchema](../Fixtures/RunSchema/README.md)
-5. update [SchemaLoadingTests.cs](../Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs)
-6. update tooltip rendering in [CardHoverTooltipPatch.cs](../Core/Patches/CardHoverTooltipPatch.cs) if the stat is user-facing
-7. keep compact tooltip noise low
+1. read [docs/sts2-runtime-primer.md](sts2-runtime-primer.md) for hook timing and attribution traps
+2. decide whether the stat should be per-instance, pooled, effect-oriented, or relic-oriented
+3. record the observed game outcome, not just the requested amount, if those can diverge
+4. update [RunData.cs](../Core/RunData.cs) if persistence changes
+5. update fixtures under [Fixtures/RunSchema](../Fixtures/RunSchema/README.md)
+6. update [SchemaLoadingTests.cs](../Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs)
+7. update tooltip rendering in [CardHoverTooltipPatch.cs](../Core/Patches/CardHoverTooltipPatch.cs) if the stat is user-facing
+8. keep compact tooltip noise low

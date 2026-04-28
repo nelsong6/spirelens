@@ -4,7 +4,7 @@ Per-card attribution stats mod for [Slay the Spire 2](https://store.steampowered
 
 **Status:** Dev build - core per-instance card stats are live in-game, including damage/block attribution, observed draw and energy generation, Regent star-resource spend/gain tracking, forge granted from cards, blocked-draw attribution, recurring summon-to-hand tracking, applied-effect summaries, Artifact-blocked debuffs, removed-card viewing, pooled combat-generated card summaries, and dedicated poison application/damage rows. Not yet published to Nexus (M6).
 
-For codebase orientation, start with [AGENTS.md](AGENTS.md) and [docs/architecture.md](docs/architecture.md).
+For codebase orientation, start with [AGENTS.md](AGENTS.md), [docs/architecture.md](docs/architecture.md), and [docs/sts2-runtime-primer.md](docs/sts2-runtime-primer.md).
 
 ## Development Workflow
 
@@ -71,7 +71,7 @@ Open: [#10 Run outcome detection](https://github.com/nelsong6/spirelens/issues/1
 
 ## Storage
 
-Per-run JSON files at `%APPDATA%/SlayTheSpire2/SpireLens/runs/<run-id>.json` (Godot's `user://` path). Contains both aggregated stats (fast for UI) and a full event log (one entry per card-played / damage-received / card-upgraded / block-gained / card-removed event, for future analysis). Schema versioned - see [issue #4](https://github.com/nelsong6/spirelens/issues/4). The current schema is additive through `v14`; pooled `v1` files remain history-only, while per-instance `v2` through `v14` files are resumable under the current loader. Session preferences (checkbox state) at `prefs.json` in the same dir.
+Per-run JSON files at `%APPDATA%/SlayTheSpire2/SpireLens/runs/<run-id>.json` (Godot's `user://` path). Contains both aggregated stats (fast for UI) and a full event log (one entry per card-played / damage-received / card-upgraded / block-gained / card-removed event, for future analysis). Schema versioned - see [issue #4](https://github.com/nelsong6/spirelens/issues/4). The current schema is additive through `v16`; pooled `v1` files remain history-only, while per-instance `v2` through `v16` files are resumable under the current loader. Session preferences (checkbox state) at `prefs.json` in the same dir.
 
 ## Requirements
 
