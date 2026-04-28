@@ -19,8 +19,9 @@ configuration error.
 The issue-agent workflow is triggered by the GitHub issue event, and GitHub
 passes the exact issue number and current issue labels into the run.
 
-Queueing is provided by GitHub's self-hosted runner queue, not by workflow
-`concurrency`. Do not add a top-level issue-agent concurrency group: GitHub
+Queueing is provided by a per-host `issue-agent-lock` runner. The label-facing
+workflow holds that runner, dispatches the worker workflow, and waits until the
+worker finishes. Do not add a top-level issue-agent concurrency group: GitHub
 Actions concurrency keeps only one pending run per group and cancels older
 pending runs when newer runs enter the same group.
 
@@ -39,11 +40,21 @@ The processing model is intentionally simple:
 1. Optionally add one `issue-agent-runner-<host>` label to force a specific host.
 2. Add `issue-agent` to queue the issue.
 3. If no route label was provided, the route job picks one from `ISSUE_AGENT_ROUTE_LABEL_POOL` and labels the issue.
-4. GitHub Actions starts phase jobs on self-hosted Windows runners matching that route label.
-5. Each LLM phase launches a fresh Claude Code invocation with its own prompt, tool permissions, timeout, budget, logs, and handoff artifacts.
-6. Claude owns the issue work through the phase contract: test plan, implementation, verification, tests, screenshots, and evidence. GitHub mutations are wrapper-owned after phase artifacts are written.
+4. The label-facing workflow queues on the selected host's `issue-agent-lock`
+   runner.
+5. The lock job dispatches `Issue Agent Worker` and polls that worker run until
+   it reaches a final success/failure state.
+6. The worker workflow starts phase jobs on self-hosted Windows runners matching
+   the same route label.
+7. Each LLM phase launches a fresh Claude Code invocation with its own prompt,
+   tool permissions, timeout, budget, logs, and handoff artifacts.
+8. Claude owns the issue work through the phase contract: test plan,
+   implementation, verification, tests, screenshots, and evidence. GitHub
+   mutations are wrapper-owned after phase artifacts are written.
 
-There is no second script that chooses issues, reads structured result files, or drains a local queue.
+There is no second script that chooses issues, reads structured result files, or
+drains a local queue. GitHub Actions remains the queue layer; the lock runner is
+only a headless semaphore for one issue-agent worker per host.
 
 ## Source Freshness Contract
 
@@ -66,7 +77,9 @@ main snapshot. Later runs can see code merged by earlier runs.
 
 Each Windows issue-agent host should provide:
 
-- at least one self-hosted GitHub Actions runner with the host route label
+- one lightweight self-hosted GitHub Actions lock runner with
+  `issue-agent-runner-<host>` and `issue-agent-lock`
+- at least one self-hosted GitHub Actions phase runner with the host route label
   `issue-agent-runner-<host>`
 - Claude Code installed locally and discoverable either through repository
   variable `ISSUE_AGENT_CLAUDE_CLI_PATH` or one of the documented default
@@ -105,6 +118,7 @@ If the repository uses GitHub Actions runner groups, set
 group while preserving the label routing above. Per-phase overrides are also
 supported:
 
+- `ISSUE_AGENT_LOCK_RUNNER_GROUP`
 - `ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP`
 - `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
 - `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
@@ -126,15 +140,14 @@ Required host layout for parallel test planning and implementation:
 
 | Runner role | Required custom labels |
 | --- | --- |
+| Lock runner | `issue-agent-runner-<host>`, `issue-agent-lock` |
 | Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
 
-The workflow also runs a deterministic baseline health check on the selected
-`issue-agent-implementation` runner before either LLM phase starts. This does
-not require a separate runner; it briefly occupies the implementation runner to
-verify that current `main` builds and tests against that host's resolved STS2
-data directory. If baseline health fails, both LLM jobs stay gated off so the
-agent is not asked to diagnose or build on a broken starting point.
+The worker runs a deterministic baseline health check inside both LLM jobs
+before Claude starts. That preserves the baseline gate without consuming the
+implementation runner as a separate prerequisite job, so test-plan and
+implementation can still schedule in parallel on a properly split host.
 
 Do not put `issue-agent-implementation` on the live STS2 runner when the host is
 expected to run phases in parallel. A single runner with every phase label is a
@@ -165,14 +178,17 @@ In this environment, stateful STS2 work should go through approved MCP tools rat
 
 ## Phased Job Workflow
 
-The issue-agent workflow uses separate GitHub Actions jobs for each phase:
+The public `Issue Agent` workflow is only the label-triggered lock holder. It
+routes the issue, waits on the selected host's `issue-agent-lock` runner,
+dispatches `Issue Agent Worker`, and mirrors the worker's final conclusion.
 
-1. `Baseline main health`
-2. `LLM: Plan validation evidence`
-3. `LLM: Implement code change`
-4. `LLM: Verify in STS2`
-5. `Create pull request`
-6. `Summarize issue-agent run`
+The worker workflow uses separate GitHub Actions jobs for each phase:
+
+1. `LLM: Plan validation evidence`
+2. `LLM: Implement code change`
+3. `LLM: Verify in STS2`
+4. `Create pull request`
+5. `Summarize issue-agent run`
 
 Each phase has a fresh context, narrower tool permissions, its own timeout, its
 own budget, and explicit JSON/Markdown handoff artifacts. Because these are
@@ -180,7 +196,8 @@ separate Actions jobs, every Windows job must include both a phase label and the
 same `issue-agent-runner-<host>` route label. Live-game jobs also include
 `issue-agent-sts2-<host>`.
 
-Before Claude starts, baseline health checks current `main` with:
+Before Claude starts in the test-plan and implementation jobs, baseline health
+checks current `main` with:
 
 - `dotnet build SpireLens.csproj -c Debug -p:SkipModsDeploy=true`
 - `dotnet build Core/SpireLens.Core.csproj -c Debug -p:SkipModsDeploy=true`

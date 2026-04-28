@@ -1,5 +1,7 @@
 name: Issue Agent
 
+run-name: Issue Agent Lock #${{ github.event.issue.number }}
+
 on:
   issues:
     types:
@@ -7,29 +9,22 @@ on:
       - labeled
 
 permissions:
-  contents: write
-  id-token: write
+  actions: write
+  contents: read
   issues: write
-  pull-requests: write
-
-env:
-  ISSUE_AGENT_ARTIFACT_NAME: issue-agent-artifacts
 
 jobs:
   route:
-    name: "Route issue-agent runner"
+    name: "Route issue-agent lock"
     if: |
       (github.event.action == 'labeled' && github.event.label.name == 'issue-agent') ||
       (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'issue-agent'))
     runs-on: ubuntu-latest
     outputs:
-      test_plan_runs_on: ${{ steps.route.outputs.test_plan_runs_on }}
-      implementation_runs_on: ${{ steps.route.outputs.implementation_runs_on }}
-      verification_runs_on: ${{ steps.route.outputs.verification_runs_on }}
       route_label: ${{ steps.route.outputs.route_label }}
-      verification_resource_label: ${{ steps.route.outputs.verification_resource_label }}
+      lock_runs_on: ${{ steps.route.outputs.lock_runs_on }}
     steps:
-      - name: Resolve runner labels
+      - name: Resolve lock runner label
         id: route
         shell: pwsh
         env:
@@ -37,11 +32,8 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPO_SLUG: ${{ github.repository }}
           ROUTE_LABEL_PREFIX: issue-agent-runner-
-          STS2_RESOURCE_LABEL_PREFIX: issue-agent-sts2-
           ROUTE_LABEL_POOL: ${{ vars.ISSUE_AGENT_ROUTE_LABEL_POOL || 'issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user' }}
-          TEST_PLAN_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
-          IMPLEMENTATION_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
-          VERIFICATION_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_VERIFICATION_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
+          LOCK_RUNNER_GROUP: ${{ vars.ISSUE_AGENT_LOCK_RUNNER_GROUP || vars.ISSUE_AGENT_RUNNER_GROUP || '' }}
           ISSUE_LABELS_JSON: ${{ toJSON(github.event.issue.labels.*.name) }}
         run: |
           $issueLabels = @()
@@ -69,9 +61,6 @@ jobs:
             $invalidRouteLabels = @($routePool | Where-Object { [string]$_ -notlike "$($env:ROUTE_LABEL_PREFIX)*" })
             if ($invalidRouteLabels.Count -gt 0) {
               throw "ISSUE_AGENT_ROUTE_LABEL_POOL entries must start with '$($env:ROUTE_LABEL_PREFIX)': $($invalidRouteLabels -join ', ')"
-            }
-            if ([string]::IsNullOrWhiteSpace($env:ISSUE_NUMBER)) {
-              throw "No issue number was provided; cannot auto-select an issue-agent route label."
             }
 
             $issueNumber = [int]$env:ISSUE_NUMBER
@@ -102,816 +91,111 @@ jobs:
             Write-Host "Auto-selected route_label=$routeLabel from ISSUE_AGENT_ROUTE_LABEL_POOL."
           }
 
-          if (-not [string]::IsNullOrWhiteSpace($routeLabel) -and $routeLabel -notlike "$($env:ROUTE_LABEL_PREFIX)*") {
-            throw "Runner route label must be empty or start with '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
+          if ([string]::IsNullOrWhiteSpace($routeLabel) -or $routeLabel -notlike "$($env:ROUTE_LABEL_PREFIX)*") {
+            throw "Runner route label must start with '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
           }
 
-          $verificationResourceLabel = ""
-          if (-not [string]::IsNullOrWhiteSpace($routeLabel)) {
-            $routeSuffix = $routeLabel.Substring($env:ROUTE_LABEL_PREFIX.Length)
-            if ([string]::IsNullOrWhiteSpace($routeSuffix)) {
-              throw "Runner route label must include a host suffix after '$($env:ROUTE_LABEL_PREFIX)': $routeLabel"
-            }
-            $verificationResourceLabel = "$($env:STS2_RESOURCE_LABEL_PREFIX)$routeSuffix"
-          }
-
-          function Write-RunsOnOutput {
-            param(
-              [string]$Name,
-              [string[]]$Labels,
-              [string]$RunnerGroup = ""
-            )
-            $resolved = @($Labels)
-            if (-not [string]::IsNullOrWhiteSpace($routeLabel)) { $resolved += $routeLabel }
-            if ([string]::IsNullOrWhiteSpace($RunnerGroup)) {
-              $json = $resolved | ConvertTo-Json -Compress
-            } else {
-              $runsOn = [ordered]@{
-                group = $RunnerGroup
-                labels = $resolved
-              }
-              $json = $runsOn | ConvertTo-Json -Compress
-            }
-            "$Name=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            Write-Host "$Name=$json"
+          $labels = @('self-hosted', 'windows', 'issue-agent-lock', $routeLabel)
+          if ([string]::IsNullOrWhiteSpace($env:LOCK_RUNNER_GROUP)) {
+            $lockRunsOn = $labels | ConvertTo-Json -Compress
+          } else {
+            $lockRunsOn = ([ordered]@{
+              group = $env:LOCK_RUNNER_GROUP
+              labels = $labels
+            } | ConvertTo-Json -Compress)
           }
 
           "route_label=$routeLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "verification_resource_label=$verificationResourceLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "lock_runs_on=$lockRunsOn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           Write-Host "route_label=$routeLabel"
-          Write-Host "verification_resource_label=$verificationResourceLabel"
+          Write-Host "lock_runs_on=$lockRunsOn"
 
-          $testPlanLabels = @('self-hosted', 'windows', 'issue-agent-test-plan')
-          if (-not [string]::IsNullOrWhiteSpace($verificationResourceLabel)) { $testPlanLabels += $verificationResourceLabel }
-          Write-RunsOnOutput -Name 'test_plan_runs_on' -Labels $testPlanLabels -RunnerGroup $env:TEST_PLAN_RUNNER_GROUP
-          Write-RunsOnOutput -Name 'implementation_runs_on' -Labels @('self-hosted', 'windows', 'issue-agent-implementation') -RunnerGroup $env:IMPLEMENTATION_RUNNER_GROUP
-          $verificationLabels = @('self-hosted', 'windows', 'issue-agent-verification')
-          if (-not [string]::IsNullOrWhiteSpace($verificationResourceLabel)) { $verificationLabels += $verificationResourceLabel }
-          Write-RunsOnOutput -Name 'verification_runs_on' -Labels $verificationLabels -RunnerGroup $env:VERIFICATION_RUNNER_GROUP
-
-  baseline-health:
-    name: "Baseline main health"
+  hold-lock-and-dispatch:
+    name: "Hold lock and watch worker"
     needs: route
     if: needs.route.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-baseline
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Refresh checkout to latest main
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
-          Set-Location -LiteralPath $repoRoot
-          git fetch --prune origin main
-          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch latest origin/main." }
-          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-baseline"
-          git checkout -B $workBranch origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Unable to create issue-agent work branch from latest origin/main." }
-          $baseSha = (git rev-parse HEAD).Trim()
-          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
-
-      - name: Prepare baseline host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-          CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
-
-      - name: Build and test baseline main
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
-          if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
-
-          dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
-          if ($LASTEXITCODE -ne 0) { throw "Baseline loader build failed on main." }
-
-          dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
-          if ($LASTEXITCODE -ne 0) { throw "Baseline core build failed on main." }
-
-          dotnet build "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
-          if ($LASTEXITCODE -ne 0) { throw "Baseline test project build failed on main." }
-
-          dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --no-build "-p:Sts2DataDir=$sts2DataDir"
-          if ($LASTEXITCODE -ne 0) { throw "Baseline tests failed on main." }
-
-  claim-issue:
-    name: "Mark issue-agent run active"
-    needs: route
-    if: needs.route.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJson(needs.route.outputs.lock_runs_on) }}
+    timeout-minutes: 360
     env:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       REPO_SLUG: ${{ github.repository }}
+      ROUTE_LABEL: ${{ needs.route.outputs.route_label }}
+      WORKER_WORKFLOW_FILE: issue-agent-worker.yml
     steps:
-      - name: Replace queue label with running label
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${ISSUE_NUMBER}" ]; then
-            echo "No issue number provided; skipping label claim."
-            exit 0
-          fi
-
-          if ! gh api "repos/${REPO_SLUG}/labels/issue-agent-running" >/dev/null 2>&1; then
-            gh api --method POST "repos/${REPO_SLUG}/labels" \
-              -f name='issue-agent-running' \
-              -f color='1d76db' \
-              -f description='Issue-agent run in progress' >/dev/null || \
-              gh api "repos/${REPO_SLUG}/labels/issue-agent-running" >/dev/null
-          fi
-
-          issue_labels="$(gh api "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels" --jq '.[].name')"
-          has_issue_label() {
-            printf '%s\n' "${issue_labels}" | grep -Fxq "$1"
-          }
-
-          run_url="https://github.com/${REPO_SLUG}/actions/runs/${GITHUB_RUN_ID}"
-          gh api --method POST "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/comments" \
-            -f body="Issue-agent run started: ${run_url}" >/dev/null
-          if has_issue_label 'issue-agent-running'; then
-            echo "Issue #${ISSUE_NUMBER} already has issue-agent-running; leaving it in place."
-          else
-            gh api --method POST "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels" \
-              -f labels[]='issue-agent-running' >/dev/null
-          fi
-          if has_issue_label 'issue-agent'; then
-            gh api --method DELETE "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels/issue-agent" >/dev/null
-          else
-            echo "Issue #${ISSUE_NUMBER} does not have issue-agent; nothing to remove."
-          fi
-
-  test-plan:
-    name: "LLM: Plan validation evidence"
-    needs:
-      - route
-      - baseline-health
-    if: needs.route.result == 'success' && needs.baseline-health.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.test_plan_runs_on) }}
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-test-plan
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
-    outputs:
-      phase_status: ${{ steps.test_plan_result.outputs.phase_status }}
-      abort_reason: ${{ steps.test_plan_result.outputs.abort_reason }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Refresh checkout to latest main
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
-          Set-Location -LiteralPath $repoRoot
-          git fetch --prune origin main
-          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch latest origin/main." }
-          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-test-plan"
-          git checkout -B $workBranch origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Unable to create issue-agent work branch from latest origin/main." }
-          $baseSha = (git rev-parse HEAD).Trim()
-          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
-
-      - name: Prepare issue-agent host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-          CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
-            -InstallMcp `
-            -StartSts2
-
-      - name: Verify Claude subscription auth
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & $env:CLAUDE_CLI_PATH auth status
-          if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
-
-      - name: "LLM: Run test plan phase"
-        timeout-minutes: 10
-        env:
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+      - name: Dispatch worker and wait for completion
+        shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:ISSUE_NUMBER)) { throw "No issue number was provided." }
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\run-issue-agent-phases.ps1") `
-            -IssueNumber $env:ISSUE_NUMBER `
-            -RepoSlug $env:REPO_SLUG `
-            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
-            -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-test-plan-events.jsonl") `
-            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-test-plan-debug.log") `
-            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-test-plan-summary.log") `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -PhaseName test_plan
+          if ([string]::IsNullOrWhiteSpace($env:ROUTE_LABEL)) { throw "No route label was resolved." }
 
-      - name: Read test plan result
-        id: test_plan_result
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-test-plan.json"
-          $status = "missing"
-          $abortReason = ""
-          if (Test-Path -LiteralPath $path) {
-            $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $status = [string]$json.status
-            $abortReason = [string]$json.abort_reason
+          $dispatchToken = "$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-$($env:ISSUE_NUMBER)"
+          $targetTitle = "Issue Agent Worker #$($env:ISSUE_NUMBER) ($dispatchToken)"
+          $lockUrl = "https://github.com/$($env:REPO_SLUG)/actions/runs/$($env:GITHUB_RUN_ID)"
+
+          Write-Host "Dispatching $($env:WORKER_WORKFLOW_FILE) for issue #$($env:ISSUE_NUMBER) on $($env:ROUTE_LABEL)."
+          & gh api --method POST "repos/$($env:REPO_SLUG)/actions/workflows/$($env:WORKER_WORKFLOW_FILE)/dispatches" `
+            -f "ref=main" `
+            -f "inputs[issue_number]=$($env:ISSUE_NUMBER)" `
+            -f "inputs[route_label]=$($env:ROUTE_LABEL)" `
+            -f "inputs[lock_run_id]=$($env:GITHUB_RUN_ID)" `
+            -f "inputs[dispatch_token]=$dispatchToken"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to dispatch $($env:WORKER_WORKFLOW_FILE)."
           }
-          "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Upload test plan artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-agent-test-plan-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/claude-issue-agent-test-plan-*.jsonl
-            ${{ runner.temp }}/claude-issue-agent-test-plan-*.log
-            ${{ runner.temp }}/sts2-artifacts/issue-agent-test-plan.*
-            ${{ runner.temp }}/sts2-artifacts/issue-agent-result.*
-
-      - name: Fail blocked test plan
-        if: always() && steps.test_plan_result.outputs.phase_status != 'pass'
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          throw "Test plan did not pass. status=${{ steps.test_plan_result.outputs.phase_status }} abort_reason=${{ steps.test_plan_result.outputs.abort_reason }}"
-
-  implementation:
-    name: "LLM: Implement code change"
-    needs:
-      - route
-      - baseline-health
-    if: needs.route.result == 'success' && needs.baseline-health.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.implementation_runs_on) }}
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-implementation
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
-    outputs:
-      phase_status: ${{ steps.implementation_result.outputs.phase_status }}
-      abort_reason: ${{ steps.implementation_result.outputs.abort_reason }}
-      branch_name: ${{ steps.publish_implementation.outputs.branch_name }}
-      commit_sha: ${{ steps.publish_implementation.outputs.commit_sha }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Refresh checkout to latest main
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
-          Set-Location -LiteralPath $repoRoot
-          git fetch --prune origin main
-          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch latest origin/main." }
-          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-implementation"
-          git checkout -B $workBranch origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Unable to create issue-agent work branch from latest origin/main." }
-          $baseSha = (git rev-parse HEAD).Trim()
-          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
-
-      - name: Prepare issue-agent host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-          CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
-
-      - name: Verify Claude subscription auth
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & $env:CLAUDE_CLI_PATH auth status
-          if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
-
-      - name: "LLM: Run implementation phase"
-        timeout-minutes: 30
-        env:
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:ISSUE_NUMBER)) { throw "No issue number was provided." }
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\run-issue-agent-phases.ps1") `
-            -IssueNumber $env:ISSUE_NUMBER `
-            -RepoSlug $env:REPO_SLUG `
-            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
-            -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-events.jsonl") `
-            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-debug.log") `
-            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-implementation-summary.log") `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -PhaseName implementation
-
-      - name: Read implementation result
-        id: implementation_result
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
-          $status = "missing"
-          $abortReason = ""
-          if (Test-Path -LiteralPath $path) {
-            $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $status = [string]$json.status
-            $abortReason = [string]$json.abort_reason
-          }
-          "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Build implementation checkout
-        if: steps.implementation_result.outputs.phase_status == 'pass'
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
-          if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
-          dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
-          if ($LASTEXITCODE -ne 0) { throw "Implementation checkout loader build failed." }
-          dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
-          if ($LASTEXITCODE -ne 0) { throw "Implementation checkout core build failed." }
-
-      - name: Push implementation branch
-        id: publish_implementation
-        if: steps.implementation_result.outputs.phase_status == 'pass'
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          function Invoke-Git {
-            param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-            & git @Arguments
+          $workerRun = $null
+          $findDeadline = (Get-Date).ToUniversalTime().AddMinutes(5)
+          while ((Get-Date).ToUniversalTime() -lt $findDeadline) {
+            $runsJson = & gh api "repos/$($env:REPO_SLUG)/actions/workflows/$($env:WORKER_WORKFLOW_FILE)/runs?event=workflow_dispatch&per_page=50"
             if ($LASTEXITCODE -ne 0) {
-              throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+              throw "Failed to list worker workflow runs."
             }
-          }
-          function Normalize-RepoPath {
-            param([string]$Path)
-            return (([string]$Path).Replace('\/', '/') -replace '[\\/]+', '/')
-          }
 
-          $implementationPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
-          $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
-          $defaultBranch = if ([string]::IsNullOrWhiteSpace($env:DEFAULT_BRANCH)) { "main" } else { $env:DEFAULT_BRANCH }
-          $publishRoot = Join-Path $env:RUNNER_TEMP "issue-agent-publish-$branch"
-          $patchPath = Join-Path $env:RUNNER_TEMP "issue-agent-implementation-$branch.patch"
-
-          $blockedChanges = @(Invoke-Git status --short -- .github/workflows .mcp.json | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-          if ($blockedChanges.Count -gt 0) {
-            throw "Implementation phase changed GitHub workflow or runner-local config files, which issue-agent runs cannot publish: $($blockedChanges -join ', ')"
-          }
-
-          Invoke-Git add -A -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
-          $stagedPaths = @(Invoke-Git diff --cached --name-only -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json' | ForEach-Object { Normalize-RepoPath $_ })
-          if ($stagedPaths.Count -eq 0) {
-            throw "Implementation phase passed but produced no repository changes to commit."
-          }
-          Invoke-Git diff --cached --binary --output="$patchPath" -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
-
-          Invoke-Git fetch origin "+refs/heads/$($defaultBranch):refs/remotes/origin/$($defaultBranch)"
-          Invoke-Git worktree add -B $branch $publishRoot "origin/$defaultBranch"
-          Invoke-Git -C $publishRoot apply --index --whitespace=nowarn --binary $patchPath
-          $stagedPaths = @(Invoke-Git -C $publishRoot diff --cached --name-only | ForEach-Object { Normalize-RepoPath $_ })
-          if ($stagedPaths.Count -eq 0) {
-            throw "Implementation patch became empty when applied to origin/$defaultBranch."
-          }
-          $blockedStagedPaths = @($stagedPaths | Where-Object { $_ -like ".github/workflows/*" -or $_ -eq ".mcp.json" })
-          if ($blockedStagedPaths.Count -gt 0) {
-            throw "Implementation patch unexpectedly staged blocked files: $($blockedStagedPaths -join ', ')"
-          }
-
-          if (Test-Path -LiteralPath $implementationPath) {
-            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
-            $expectedPaths = @($implementation.changed_files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-            if ($expectedPaths.Count -gt 0) {
-              $missingPaths = @()
-              foreach ($path in $expectedPaths) {
-                $normalized = Normalize-RepoPath $path
-                if ($normalized -like ".github/workflows/*" -or $normalized -eq ".mcp.json") {
-                  throw "Implementation result listed a blocked file, which issue-agent runs cannot publish: $normalized"
-                }
-                if ($stagedPaths -notcontains $normalized) { $missingPaths += $normalized }
-              }
-              if ($missingPaths.Count -gt 0) {
-                throw "Implementation result listed changed files absent from staged commit: $($missingPaths -join ', ')"
-              }
+            $runs = ($runsJson | ConvertFrom-Json).workflow_runs
+            $workerRun = @($runs | Where-Object { [string]$_.display_title -eq $targetTitle } | Sort-Object created_at -Descending | Select-Object -First 1)
+            if ($workerRun.Count -gt 0) {
+              $workerRun = $workerRun[0]
+              break
             }
+
+            Write-Host "Waiting for worker run '$targetTitle' to appear..."
+            Start-Sleep -Seconds 15
           }
 
-          Invoke-Git -C $publishRoot config user.name "github-actions[bot]"
-          Invoke-Git -C $publishRoot config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          Invoke-Git -C $publishRoot commit -m "Issue #$($env:ISSUE_NUMBER) agent changes"
-          $commitSha = (Invoke-Git -C $publishRoot rev-parse HEAD).Trim()
-          Invoke-Git -C $publishRoot push origin "HEAD:refs/heads/$branch"
-
-          if (Test-Path -LiteralPath $implementationPath) {
-            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
-            if ($null -eq $implementation.PSObject.Properties['implementation_branch']) { $implementation | Add-Member -NotePropertyName implementation_branch -NotePropertyValue $null }
-            if ($null -eq $implementation.PSObject.Properties['implementation_commit']) { $implementation | Add-Member -NotePropertyName implementation_commit -NotePropertyValue $null }
-            $implementation.implementation_branch = $branch
-            $implementation.implementation_commit = $commitSha
-            $implementation | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $implementationPath -Encoding UTF8
+          if ($null -eq $workerRun -or [string]::IsNullOrWhiteSpace([string]$workerRun.id)) {
+            throw "Dispatched worker run did not appear within 5 minutes: $targetTitle"
           }
 
-          "branch_name=$branch" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "commit_sha=$commitSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Host "Pushed implementation branch: $branch ($commitSha)"
+          $workerRunId = [string]$workerRun.id
+          $workerUrl = [string]$workerRun.html_url
+          Write-Host "Worker run: $workerUrl"
 
-      - name: Upload implementation artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-agent-implementation-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/claude-issue-agent-implementation-*.jsonl
-            ${{ runner.temp }}/claude-issue-agent-implementation-*.log
-            ${{ runner.temp }}/sts2-artifacts/issue-agent-implementation.*
-            ${{ runner.temp }}/sts2-artifacts/issue-agent-result.*
-
-      - name: Fail blocked implementation
-        if: always() && steps.implementation_result.outputs.phase_status != 'pass'
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          throw "Implementation did not pass. status=${{ steps.implementation_result.outputs.phase_status }} abort_reason=${{ steps.implementation_result.outputs.abort_reason }}"
-
-  screenshot-storage-outputs:
-    name: "Read screenshot storage outputs"
-    needs: route
-    if: needs.route.result == 'success'
-    uses: nelsong6/pipeline-templates/.github/workflows/tofu-outputs-template.yml@main
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
-      storage_container: tfstate
-      state_key: spirelens/issue-agent-screenshot-storage.tfstate
-  verification:
-    name: "LLM: Verify in STS2"
-    needs:
-      - route
-      - test-plan
-      - implementation
-      - screenshot-storage-outputs
-    if: needs.route.result == 'success' && needs.test-plan.result == 'success' && needs.implementation.result == 'success' && needs.screenshot-storage-outputs.result == 'success'
-    runs-on: ${{ fromJson(needs.route.outputs.verification_runs_on) }}
-    env:
-      ISSUE_AGENT_CHECKOUT_PATH: issue-agent-src/${{ github.run_id }}-${{ github.run_attempt }}-verification
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.implementation.outputs.branch_name }}
-          path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
-
-      - name: Attach verification checkout to local work branch
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
-          Set-Location -LiteralPath $repoRoot
-          $workBranch = "issue-agent-work/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)-verification"
-          git checkout -B $workBranch HEAD
-          if ($LASTEXITCODE -ne 0) { throw "Unable to create verification work branch from implementation checkout." }
-          $baseSha = (git rev-parse HEAD).Trim()
-          "ISSUE_AGENT_BASE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ISSUE_AGENT_WORK_BRANCH=$workBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Issue-agent verification checkout attached at $baseSha on local branch $workBranch."
-
-      - name: Download test plan artifacts
-        if: always()
-        uses: actions/download-artifact@v4
-        with:
-          name: issue-agent-test-plan-${{ github.run_id }}
-          path: ${{ runner.temp }}/downloaded-test-plan
-
-      - name: Download implementation artifacts
-        if: always()
-        uses: actions/download-artifact@v4
-        with:
-          name: issue-agent-implementation-${{ github.run_id }}
-          path: ${{ runner.temp }}/downloaded-implementation
-
-      - name: Stage handoff artifacts
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP "sts2-artifacts") | Out-Null
-          Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "downloaded-test-plan") -Recurse -File -Filter "issue-agent-test-plan.*" -ErrorAction SilentlyContinue |
-            Copy-Item -Destination (Join-Path $env:RUNNER_TEMP "sts2-artifacts") -Force
-          Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "downloaded-implementation") -Recurse -File -Filter "issue-agent-implementation.*" -ErrorAction SilentlyContinue |
-            Copy-Item -Destination (Join-Path $env:RUNNER_TEMP "sts2-artifacts") -Force
-
-
-      - name: Prepare issue-agent host
-        env:
-          CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
-          CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $scriptPath = Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH) ".github\scripts\prepare-issue-agent-job.ps1"
-          & $scriptPath `
-            -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
-            -InstallMcp
-      - name: Deploy implementation to STS2
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
-          if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
-          dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
-          if ($LASTEXITCODE -ne 0) { throw "SpireLens loader build/deploy failed." }
-          dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
-          if ($LASTEXITCODE -ne 0) { throw "SpireLens core build/deploy failed." }
-
-      - name: Prepare STS2 scenario save
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\prepare-issue-agent-scenario.ps1") `
-            -TestPlanPath (Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-test-plan.json") `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -IssueNumber $env:ISSUE_NUMBER
-
-      - name: Verify Claude subscription auth
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & $env:CLAUDE_CLI_PATH auth status
-          if ($LASTEXITCODE -ne 0) { throw "Claude Code is not authenticated for the runner user." }
-
-      - name: "LLM: Run verification phase"
-        timeout-minutes: 18
-        env:
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:ISSUE_NUMBER)) { throw "No issue number was provided." }
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\run-issue-agent-phases.ps1") `
-            -IssueNumber $env:ISSUE_NUMBER `
-            -RepoSlug $env:REPO_SLUG `
-            -RepoRoot $env:ISSUE_AGENT_REPO_ROOT `
-            -ClaudeCliPath $env:CLAUDE_CLI_PATH `
-            -McpConfigPath (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".mcp.json") `
-            -StreamLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-events.jsonl") `
-            -DebugLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-debug.log") `
-            -SummaryLogPath (Join-Path $env:RUNNER_TEMP "claude-issue-agent-verification-summary.log") `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -PhaseName verification
-
-      - name: Read verification result
-        id: verification_result
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-verification.json"
-          $status = "skipped"
-          $abortReason = ""
-          if (Test-Path -LiteralPath $path) {
-            $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $status = [string]$json.status
-            $abortReason = [string]$json.abort_reason
+          & gh api --method POST "repos/$($env:REPO_SLUG)/issues/$($env:ISSUE_NUMBER)/comments" `
+            -f "body=Issue-agent worker run started: $workerUrl`nLock holder: $lockUrl" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Unable to comment with worker run link; continuing."
           }
-          "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Create pull request
-        id: create_pr
-        if: steps.verification_result.outputs.phase_status == 'pass'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
-          function Invoke-Git {
-            param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-            & git @Arguments
+          while ($true) {
+            $runJson = & gh api "repos/$($env:REPO_SLUG)/actions/runs/$workerRunId"
             if ($LASTEXITCODE -ne 0) {
-              throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+              throw "Failed to read worker run $workerRunId."
             }
+
+            $run = $runJson | ConvertFrom-Json
+            $status = [string]$run.status
+            $conclusion = [string]$run.conclusion
+            Write-Host "Worker status: status=$status conclusion=$conclusion url=$workerUrl"
+
+            if ($status -eq "completed") {
+              if ($conclusion -eq "success") {
+                Write-Host "Worker completed successfully."
+                exit 0
+              }
+
+              throw "Worker completed with conclusion '$conclusion': $workerUrl"
+            }
+
+            Start-Sleep -Seconds 30
           }
-
-          $artifactDir = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
-          $implementationPath = Join-Path $artifactDir "issue-agent-implementation.json"
-          $resultPath = Join-Path $artifactDir "issue-agent-result.json"
-          $implementation = $null
-          if (Test-Path -LiteralPath $implementationPath) {
-            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
-          }
-
-          $branch = "${{ needs.implementation.outputs.branch_name }}"
-          if ([string]::IsNullOrWhiteSpace($branch)) {
-            throw "Implementation branch output was empty; cannot open a PR."
-          }
-          $title = if ($implementation -and $implementation.pr_title) { [string]$implementation.pr_title } else { "Issue #$($env:ISSUE_NUMBER) agent changes" }
-          $body = if ($implementation -and $implementation.pr_body) { [string]$implementation.pr_body } else { "Automated issue-agent changes for #$($env:ISSUE_NUMBER). Verification passed before this PR was opened by the workflow wrapper." }
-          $closingPattern = "(?im)\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#$([regex]::Escape($env:ISSUE_NUMBER))\b"
-          if ($body -notmatch $closingPattern) {
-            $body = $body.TrimEnd() + "`n`nCloses #$($env:ISSUE_NUMBER)`n"
-          }
-          $bodyPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-body.md"
-          $body | Set-Content -LiteralPath $bodyPath -Encoding UTF8
-
-          $blockedChanges = @(Invoke-Git status --short -- .github/workflows .mcp.json | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-          if ($blockedChanges.Count -gt 0) {
-            throw "Verification produced GitHub workflow or runner-local config changes, which issue-agent runs cannot publish: $($blockedChanges -join ', ')"
-          }
-
-          Invoke-Git config user.name "github-actions[bot]"
-          Invoke-Git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          $changed = @(Invoke-Git status --porcelain -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json' | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-          if ($changed.Count -gt 0) {
-            Invoke-Git add --all -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
-            Invoke-Git commit -m "Issue #$($env:ISSUE_NUMBER) verification adjustments"
-            Invoke-Git push origin "HEAD:refs/heads/$branch"
-          }
-
-          $prUrl = gh pr create --repo $env:REPO_SLUG --base main --head $branch --title $title --body-file $bodyPath
-          if ($LASTEXITCODE -ne 0) { throw "gh pr create failed with exit code $LASTEXITCODE." }
-          $prNumber = ($prUrl -split '/')[-1]
-          "pr_url=$prUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "pr_number=$prNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          foreach ($jsonPath in @($implementationPath, $resultPath)) {
-            if (-not (Test-Path -LiteralPath $jsonPath)) { continue }
-            $json = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
-            if ($null -eq $json.PSObject.Properties['opened_pr']) { $json | Add-Member -NotePropertyName opened_pr -NotePropertyValue $null }
-            if ($null -eq $json.PSObject.Properties['opened_pr_url']) { $json | Add-Member -NotePropertyName opened_pr_url -NotePropertyValue $null }
-            $json.opened_pr = $prNumber
-            $json.opened_pr_url = $prUrl
-            $json | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
-          }
-
-      - name: Azure login for screenshot publishing
-        if: always()
-        env:
-          AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-issue-agent
-        uses: azure/login@v2
-        with:
-          client-id: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).github_uploader_client_id }}
-          tenant-id: ${{ vars.ARM_TENANT_ID }}
-          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
-      - name: Publish screenshot previews
-        if: always()
-        env:
-          AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-issue-agent
-          AZURE_SCREENSHOT_STORAGE_ACCOUNT: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).storage_account_name }}
-          AZURE_SCREENSHOT_CONTAINER: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).container_name }}
-          AZURE_SCREENSHOT_CONTAINER_URL: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).container_url }}
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\publish-issue-agent-screenshots.ps1") `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -PreviewMarkdownPath (Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-screenshot-previews.md") `
-            -StorageAccountName $env:AZURE_SCREENSHOT_STORAGE_ACCOUNT `
-            -ContainerName $env:AZURE_SCREENSHOT_CONTAINER `
-            -ContainerUrl $env:AZURE_SCREENSHOT_CONTAINER_URL `
-            -RunId $env:GITHUB_RUN_ID
-      - name: Summarize issue-agent run
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
-          ISSUE_AGENT_SCREENSHOT_PREVIEWS_PATH: ${{ runner.temp }}/sts2-artifacts/issue-agent-screenshot-previews.md
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP "sts2-artifacts") | Out-Null
-          $combinedEvents = Join-Path $env:RUNNER_TEMP "claude-issue-agent-events.jsonl"
-          $combinedSummary = Join-Path $env:RUNNER_TEMP "claude-issue-agent-summary.log"
-          $combinedDebug = Join-Path $env:RUNNER_TEMP "claude-issue-agent-debug.log"
-          Remove-Item -LiteralPath $combinedEvents, $combinedSummary, $combinedDebug -ErrorAction SilentlyContinue
-
-          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter "claude-issue-agent-*-events.jsonl" -File -ErrorAction SilentlyContinue |
-            Sort-Object Name |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $combinedEvents -Encoding UTF8 }
-          Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "downloaded-test-plan"), (Join-Path $env:RUNNER_TEMP "downloaded-implementation") -Recurse -Filter "claude-issue-agent-*-events.jsonl" -File -ErrorAction SilentlyContinue |
-            Sort-Object FullName |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $combinedEvents -Encoding UTF8 }
-
-          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter "claude-issue-agent-*-summary.log" -File -ErrorAction SilentlyContinue |
-            Sort-Object Name |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $combinedSummary -Encoding UTF8 }
-          Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "downloaded-test-plan"), (Join-Path $env:RUNNER_TEMP "downloaded-implementation") -Recurse -Filter "claude-issue-agent-*-summary.log" -File -ErrorAction SilentlyContinue |
-            Sort-Object FullName |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $combinedSummary -Encoding UTF8 }
-
-          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter "claude-issue-agent-*-debug.log" -File -ErrorAction SilentlyContinue |
-            Sort-Object Name |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $combinedDebug -Encoding UTF8 }
-          Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "downloaded-test-plan"), (Join-Path $env:RUNNER_TEMP "downloaded-implementation") -Recurse -Filter "claude-issue-agent-*-debug.log" -File -ErrorAction SilentlyContinue |
-            Sort-Object FullName |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Add-Content -LiteralPath $combinedDebug -Encoding UTF8 }
-
-          & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\summarize-issue-agent.ps1") `
-            -EventLogPath $combinedEvents `
-            -SummaryLogPath $combinedSummary `
-            -DebugLogPath $combinedDebug `
-            -ScreenshotDir (Join-Path $env:RUNNER_TEMP "sts2-screenshots") `
-            -ValidationArtifactDir (Join-Path $env:RUNNER_TEMP "sts2-artifacts") `
-            -ArtifactName "issue-agent artifacts for run $($env:GITHUB_RUN_ID)" `
-            -RepoSlug $env:REPO_SLUG `
-            -RunId $env:GITHUB_RUN_ID `
-            -IssueNumber $env:ISSUE_NUMBER `
-            -HeadSha $env:GITHUB_SHA `
-            -RefName $env:GITHUB_REF_NAME
-
-      - name: Upload issue-agent artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ISSUE_AGENT_ARTIFACT_NAME }}-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/claude-issue-agent-*.jsonl
-            ${{ runner.temp }}/claude-issue-agent-*.log
-            ${{ runner.temp }}/downloaded-test-plan/**/*
-            ${{ runner.temp }}/downloaded-implementation/**/*
-            ${{ runner.temp }}/sts2-screenshots/**/*.png
-            ${{ runner.temp }}/sts2-artifacts/**/*
-
-      - name: Fail blocked issue-agent run
-        if: always() && steps.verification_result.outputs.phase_status != 'pass'
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          throw "Issue-agent did not reach verified pass. test_plan=${{ needs.test-plan.outputs.phase_status }} implementation=${{ needs.implementation.outputs.phase_status }} verification=${{ steps.verification_result.outputs.phase_status }} verification_reason=${{ steps.verification_result.outputs.abort_reason }}"
-
-  release-issue:
-    name: "Release issue-agent running label"
-    needs:
-      - route
-      - baseline-health
-      - claim-issue
-      - test-plan
-      - implementation
-      - screenshot-storage-outputs
-      - verification
-    if: always() && needs.route.result == 'success'
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
-      REPO_SLUG: ${{ github.repository }}
-    steps:
-      - name: Remove running label
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${ISSUE_NUMBER}" ]; then
-            echo "No issue number provided; skipping label release."
-            exit 0
-          fi
-
-          issue_labels="$(gh api "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels" --jq '.[].name')"
-          if printf '%s\n' "${issue_labels}" | grep -Fxq 'issue-agent-running'; then
-            gh api --method DELETE "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/labels/issue-agent-running" >/dev/null || true
-            echo "Removed issue-agent-running from #${ISSUE_NUMBER}."
-          else
-            echo "Issue #${ISSUE_NUMBER} does not have issue-agent-running; nothing to release."
-          fi

@@ -11,6 +11,7 @@ machine, typically the work laptop.
 Bring one Windows machine online as a self-hosted GitHub Actions runner with:
 
 - a host route label such as `issue-agent-runner-nelsonlaptop`
+- one lock runner label: `issue-agent-lock`
 - one live-game runner label such as `issue-agent-sts2-nelsonlaptop`
 - phase labels for the runner role: `issue-agent-test-plan`,
   `issue-agent-implementation`, and/or `issue-agent-verification`
@@ -250,7 +251,7 @@ authenticated.
 ```powershell
 pwsh -NoProfile -File .\ops\windows-worker\Register-LocalIssueAgentRunner.ps1 `
   -RepositorySlug nelsong6/spirelens `
-  -RunnerLabels issue-agent-runner-nelsonlaptop,issue-agent-sts2-nelsonlaptop,issue-agent-test-plan,issue-agent-verification
+  -RunnerLabels issue-agent-runner-nelsonlaptop,issue-agent-lock
 ```
 
 The script will:
@@ -287,6 +288,19 @@ and give it a unique route label such as `issue-agent-runner-nelsonpc-user`.
 Do not put every phase label on one runner if the host is expected to run the
 test-plan and implementation phases in parallel. A single-runner host is a
 serial fallback only.
+
+For the lock runner, use only the host route label and `issue-agent-lock`. This
+runner does not run Claude or STS2; it holds the host-wide queue slot while the
+worker workflow runs:
+
+```powershell
+$token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
+New-Item -ItemType Directory -Force D:\actions-runner-user-lock | Out-Null
+Set-Location D:\actions-runner-user-lock
+# install or copy the GitHub Actions runner files here before configuring
+.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-lock --labels issue-agent-runner-nelsonpc-user,issue-agent-lock --work _work
+.\run.cmd
+```
 
 For the live STS2 runner, use only the host route label, the live-game resource
 label, and the live STS2 phase labels:
@@ -330,6 +344,7 @@ set repository variable `ISSUE_AGENT_RUNNER_GROUP` to that group name. The
 workflow will target the group plus the same route, phase, and live-game labels.
 Use these optional overrides only when phases live in different groups:
 
+- `ISSUE_AGENT_LOCK_RUNNER_GROUP`
 - `ISSUE_AGENT_TEST_PLAN_RUNNER_GROUP`
 - `ISSUE_AGENT_IMPLEMENTATION_RUNNER_GROUP`
 - `ISSUE_AGENT_VERIFICATION_RUNNER_GROUP`
@@ -338,6 +353,7 @@ For a parallel host, split labels by role:
 
 | Runner role | Labels |
 | --- | --- |
+| Lock runner | `issue-agent-runner-<host>`, `issue-agent-lock` |
 | Live STS2 runner | `issue-agent-runner-<host>`, `issue-agent-sts2-<host>`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-<host>`, `issue-agent-implementation` |
 
@@ -346,10 +362,11 @@ start implementation there and leave `LLM: Plan validation evidence` queued
 until implementation finishes. That is expected runner-queue behavior, not a
 workflow dependency.
 
-The laptop is currently configured this way:
+Target laptop configuration:
 
 | Runner | Role | Labels |
 | --- | --- | --- |
+| `sts2-lock` | Lock runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-lock` |
 | `sts2-side-a` | Live STS2 runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-sts2-nelsonlaptop`, `issue-agent-test-plan`, `issue-agent-verification` |
 | `sts2-side-b` | Code implementation runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-implementation` |
 
@@ -440,6 +457,7 @@ has expired or is missing.
 The issue-agent workflow expects:
 
 - every runner used for an issue has the chosen `issue-agent-runner-<host>` route label
+- exactly one lock runner per host has `issue-agent-lock`
 - exactly one live-game runner per host has `issue-agent-sts2-<host>`
 - live-game runners have `issue-agent-test-plan` and `issue-agent-verification`
 - code runners have `issue-agent-implementation`
@@ -476,15 +494,17 @@ For a second machine, use the same route/phase/live label pattern with a unique
 host suffix:
 
 - `issue-agent-runner-<host>` goes on every runner for that machine.
+- `issue-agent-lock` goes on exactly one lightweight lock runner.
 - `issue-agent-sts2-<host>` goes on exactly one live-game runner.
 - `issue-agent-test-plan` and `issue-agent-verification` go on the live-game
   runner.
 - `issue-agent-implementation` goes on the implementation runner.
 
-For example, a two-runner `nelsonpc-user` setup would be:
+For example, a three-runner `nelsonpc-user` setup would be:
 
 | Runner role | Labels |
 | --- | --- |
+| Lock runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-lock` |
 | Live STS2 runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-sts2-nelsonpc-user`, `issue-agent-test-plan`, `issue-agent-verification` |
 | Code implementation runner | `issue-agent-runner-nelsonpc-user`, `issue-agent-implementation` |
 
