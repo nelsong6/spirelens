@@ -5,7 +5,7 @@ param(
     [string]$GitHubPatSecretName = "github-pat",
     [string]$GitHubPat = "",
     [string]$RunnerRoot = "",
-    [string]$RunnerLabels = "issue-agent",
+    [string]$RunnerLabels = "",
     [string]$RunnerGroup = "",
     [string]$RunnerNamePrefix = "issue-agent",
     [bool]$RunAsService = $true
@@ -212,7 +212,26 @@ $RunnerLabelsList = @(
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 )
 if ($RunnerLabelsList.Count -eq 0) {
-    throw "RunnerLabels must include at least one label."
+    throw "RunnerLabels must include a route label such as 'issue-agent-runner-nelsonlaptop' plus 'issue-agent-worker'."
+}
+
+if (-not ($RunnerLabelsList -contains "issue-agent-worker")) {
+    throw "RunnerLabels must include 'issue-agent-worker'."
+}
+
+if (-not ($RunnerLabelsList | Where-Object { $_ -like "issue-agent-runner-*" })) {
+    throw "RunnerLabels must include one route label matching 'issue-agent-runner-*'."
+}
+
+$oldPhaseLabels = @(
+    "issue-agent",
+    "issue-agent-test-plan",
+    "issue-agent-implementation",
+    "issue-agent-verification"
+)
+$badLabels = @($RunnerLabelsList | Where-Object { $oldPhaseLabels -contains $_ -or $_ -like "issue-agent-sts2-*" })
+if ($badLabels.Count -gt 0) {
+    throw "RunnerLabels contains obsolete issue-agent labels: $($badLabels -join ', '). Use only the host route label plus 'issue-agent-worker'."
 }
 
 $RunnerLabels = [string]::Join(",", $RunnerLabelsList)

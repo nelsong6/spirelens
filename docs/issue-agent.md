@@ -14,9 +14,10 @@ An issue is eligible for autonomous work when it has:
 - `issue-agent`
 
 Glimmung receives the GitHub issue event and dispatches
-`.github/workflows/issue-agent.yaml` with `lease_id`, `host`, and
-`issue_number`. `host` is the selected runner route label, such as
-`issue-agent-runner-nelsonlaptop`.
+`.github/workflows/issue-agent.yaml` with `lease_id`, `host`, `issue_number`,
+and `issue_title`. `host` is the selected runner route label, such as
+`issue-agent-runner-nelsonlaptop`. The workflow run name is built from those
+inputs so Actions runs show the issue number, issue title, and selected host.
 
 Queueing is provided by Glimmung's per-host lease state in Cosmos. Do not add a
 top-level issue-agent concurrency group: GitHub Actions concurrency keeps only
@@ -30,6 +31,10 @@ Issue-agent labels are:
 - `issue-agent-blocked`
 - `issue-agent-complete`
 - `issue-agent-pr-open`
+
+Runner route labels such as `issue-agent-runner-nelsonlaptop` belong on GitHub
+Actions runners and in Glimmung host names. They are not issue routing labels.
+Applying one to an issue does not force Glimmung to pick that host.
 
 ## Processing Model
 
@@ -88,6 +93,10 @@ Glimmung hosts are named with the same label shape as the GitHub runner route:
 `issue-agent-runner-<host>`. The workflow uses that route label plus
 `issue-agent-worker` for every Windows phase. Do not add phase-specific labels
 unless a future host has truly different runner capabilities.
+
+Windows issue-agent steps should use PowerShell. Do not introduce `shell: bash`
+into Windows self-hosted jobs unless the host has been deliberately provisioned
+for that, because it can resolve to WSL and fail before checkout.
 
 If the repository uses GitHub Actions runner groups, set
 `ISSUE_AGENT_RUNNER_GROUP` to route all Windows issue-agent phases through that
@@ -243,14 +252,13 @@ When assigning an agent relic-stat work:
 - For unlicensed reference repos, including `rmac-silva/RelicTracker`, do not copy code, file structure, tooltip strings, formatting, or implementation organization.
 - For MIT reference repos, including `ForgottenArbiter/StsRelicStats`, preserve attribution if any concrete design is reused, but still prefer a SpireLens-native implementation over transliterating Java/BaseMod patterns.
 - Implement through SpireLens's existing `RunTracker`, `RunData`, schema fixtures, tests, runtime options, and tooltip conventions.
-- Prefer observed outcomes over intended relic text or generic trigger animation counts. A generic `RelicModel.Flash()` count can be useful as a fallback or debugging clue, but user-facing stats should use richer observed outcomes when available.
 - Classify each relic issue as `relic-only`, `card-modifier`, `shared-outcome`, or `economy/map` so overlap with card stats is handled deliberately instead of by accident.
 
 Useful per-relic issue prompt language:
 
 ```md
 Reference-code boundary:
-You may inspect existing relic stats mods to identify StS2 relic class names, method names, hook candidates, and behavioral clues. Do not copy code, structure, tooltip strings, or formatting from unlicensed repositories. Implement original SpireLens-native code using the existing tracker, schema, tests, and tooltip style. Prefer observed outcomes over listed intent or generic trigger counts.
+You may inspect existing relic stats mods to identify StS2 relic class names, method names, hook candidates, and behavioral clues. Do not copy code, structure, tooltip strings, or formatting from unlicensed repositories. Implement original SpireLens-native code using the existing tracker, schema, tests, and tooltip style.
 ```
 
 ## Visibility

@@ -1,466 +1,388 @@
-# Laptop Issue-Agent Runner
+# Windows Issue-Agent Runner Setup
 
-This is the active issue-agent host path.
+This is the setup guide for local Windows machines that can run SpireLens
+issue-agent work against a real Slay the Spire 2 install.
 
-The repo no longer treats Azure VMSS or a builder VM as the primary deployment
-target for live `issue-agent` work. The expected host is now a local Windows
-machine, typically the work laptop.
+The current model is:
 
-## Goal
+1. Add the `issue-agent` label to an issue.
+2. Glimmung owns queueing and picks one available host.
+3. Glimmung dispatches `.github/workflows/issue-agent.yaml` with a lease id,
+   issue metadata, and a `host` value such as `issue-agent-runner-nelsonlaptop`.
+4. GitHub Actions runs every Windows phase on runners with:
+   - `issue-agent-worker`
+   - the selected route label, for example `issue-agent-runner-nelsonlaptop`
 
-Bring one Windows machine online as a self-hosted GitHub Actions runner with:
+Do not use GitHub Actions concurrency as the queue. It evicts pending runs. Do
+not use issue labels to force host routing unless Glimmung is explicitly changed
+to support that. Old labels like `issue-agent-runner-nelsonpc-user` on issues
+are historical clutter, not scheduler input.
 
-- a host route label such as `issue-agent-runner-nelsonlaptop`
-- worker runner label `issue-agent-worker`
-- Claude Code installed locally
-- Slay the Spire 2 installed locally
-- STS2 Modding MCP installed locally
-- Claude Code authenticated once as the interactive runner account
-- an interactive runner process started from the logged-in Steam user session
+## Labels
 
-## Host Requirements
+Issue labels:
 
-Install these once on the laptop:
+- `issue-agent`: queues the issue.
+- `issue-agent-running`: applied by the workflow after it claims the issue.
+- `issue-agent-blocked`, `issue-agent-complete`, `issue-agent-pr-open`: status
+  labels used by the workflow and human triage.
 
-- GitHub Actions runner files
+Runner labels:
+
+- `issue-agent-worker`: every runner that may execute issue-agent jobs.
+- `issue-agent-runner-<host>`: route label for every runner on one Glimmung
+  host, for example `issue-agent-runner-nelsonlaptop`.
+
+Do not add the old phase labels to runners:
+
+- `issue-agent-test-plan`
+- `issue-agent-implementation`
+- `issue-agent-verification`
+- `issue-agent-sts2-<host>`
+
+The workflow intentionally lets any runner on the selected host take any Windows
+phase. Glimmung serializes whole issues per host; GitHub can schedule phase jobs
+across that host's worker runners.
+
+## Current Runner Inventory
+
+As of 2026-04-28, the intended runner shape is:
+
+| Machine | Runner name | Custom labels |
+| --- | --- | --- |
+| NELSONLAPTOP | `issue-agent-nelsonlaptop-a` | `issue-agent-runner-nelsonlaptop`, `issue-agent-worker` |
+| NELSONLAPTOP | `issue-agent-nelsonlaptop-b` | `issue-agent-runner-nelsonlaptop`, `issue-agent-worker` |
+| NELSONPC | `issue-agent-NELSONPC-user` | `issue-agent-runner-nelsonpc-user`, `issue-agent-worker` |
+| NELSONPC | `issue-agent-NELSONPC-user-implementation` | `issue-agent-runner-nelsonpc-user`, `issue-agent-worker` |
+
+Any old runner that has only the default labels `self-hosted`, `Windows`, and
+`X64` cannot receive issue-agent work. That is acceptable for stale disabled
+services, but do not rely on those runners.
+
+## Host Prerequisites
+
+Install and verify these for the same Windows account that will run
+`run.cmd`:
+
 - Git
-- GitHub CLI
+- GitHub CLI, authenticated with `gh auth status`
 - .NET 9 SDK
-- Godot .NET 4.5.1 for publish/export
+- Godot .NET 4.5.1, if publish/export validation is needed
 - Python 3.12
+- `uv`
+- Node.js and npm
+- Claude Code CLI
+- ripgrep
 - Steam
 - Slay the Spire 2
-- Claude Code
-- STS2 Modding MCP checkout and its local dependencies
+- BaseLib in the STS2 `mods` folder
+- SpireLens mod checkout
+- `spire-lens-mcp` checkout and local dependencies
 
-## NELSONPC Setup Snapshot
+The runner must be able to run:
 
-`NELSONPC` has been prepared as a Windows issue-agent candidate with:
-
-- Git `2.54.0.windows.1`
-- GitHub CLI `2.91.0`
-- Node.js `24.15.0` and npm `11.12.1`
-- Corepack with pnpm `10.33.2` and Yarn `4.14.1`
-- Python `3.12.10`, `pipx`, and `uv`
-- PowerShell `7.6.1`
-- .NET SDK `9.0.313`
-- Godot .NET `4.5.1.stable.mono`
-- Claude Code CLI `2.1.121`, installed, on user `PATH`, and authenticated
-- ripgrep `15.1.0`
-
-Local workspace folders:
-
-```text
-C:\Users\Nelson\Documents\Codex\repos
-C:\Users\Nelson\Documents\Codex\scratch
-C:\Users\Nelson\Documents\Codex\logs
+```powershell
+git --version
+gh auth status
+dotnet --info
+python --version
+uv --version
+node --version
+npm --version
+claude auth status
+rg --version
 ```
 
-Slay the Spire 2 is installed at:
+Use PowerShell for Windows runner scripts. Do not assume `bash` is safe on
+Windows self-hosted runners; it can resolve to a broken WSL install.
 
-```text
-D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2
-```
+## STS2 Version Alignment
 
-This must be the Steam-registered install from
-`D:\Programs\SteamLibrary\steamapps\appmanifest_2868840.acf`, not the older
-unregistered `D:\SteamLibrary` copy. As of 2026-04-27, NELSONPC is on Steam
-branch `public-beta`, build `22931561`, depot manifest `9066164797111423434`,
-and `sts2.dll` reports product version
-`0.1.0+dc286199d0203e9dc5bcbef57d373870c5c0e996`.
+A host is not ready just because the repo builds. It must use the same Steam
+branch/build as the known-good STS2 host.
 
-Do not treat a local MCP build as a substitute for STS2 version alignment. A
-new host stays out of Glimmung's SpireLens host pool until its Steam branch,
-build id, depot manifest, and `sts2.dll` product version match the known-good
-STS2 host.
+The current known-good STS2 values are:
 
-Host smoke runs on 2026-04-27 verified that NELSONLAPTOP and NELSONPC are now
-aligned on those fields:
+| Field | Value |
+| --- | --- |
+| Steam branch | `public-beta` |
+| Build id | `22931561` |
+| Depot manifest | `9066164797111423434` |
+| `sts2.dll` product version | `0.1.0+dc286199d0203e9dc5bcbef57d373870c5c0e996` |
+| Required type check | `MegaCrit.Sts2.Core.Combat.ICombatState` resolves |
 
-| Host | Run | Branch | Build | Manifest | Product version | `ICombatState` |
-| --- | --- | --- | --- | --- | --- | --- |
-| NELSONLAPTOP / `sts2-side-a` | `25038679174` | `public-beta` | `22931561` | `9066164797111423434` | `0.1.0+dc286199d0203e9dc5bcbef57d373870c5c0e996` | `true` |
-| NELSONPC / `issue-agent-NELSONPC-user` | `25038680101` | `public-beta` | `22931561` | `9066164797111423434` | `0.1.0+dc286199d0203e9dc5bcbef57d373870c5c0e996` | `true` |
-
-Because the runner launches STS2 directly during validation, the game folder
-must contain `steam_appid.txt` with:
+The game folder must contain `steam_appid.txt` with:
 
 ```text
 2868840
 ```
 
-BaseLib is present in the game's `mods` folder.
+Example smoke check:
 
-Godot .NET 4.5.1 is installed at:
+```powershell
+$gameDir = 'D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2'
+$manifest = 'D:\Programs\SteamLibrary\steamapps\appmanifest_2868840.acf'
+$sts2Dll = Join-Path $gameDir 'data_sts2_windows_x86_64\sts2.dll'
 
-```text
-D:\automation\godot\Godot_v4.5.1-stable_mono_win64
+Select-String -Path $manifest -Pattern 'buildid|TargetBuildID|manifest|BetaKey'
+Get-Item $sts2Dll | Select-Object FullName, LastWriteTime, @{Name='ProductVersion'; Expression={$_.VersionInfo.ProductVersion}}
+$asm = [Reflection.Assembly]::LoadFrom($sts2Dll)
+$asm.GetType('MegaCrit.Sts2.Core.Combat.ICombatState', $false) -ne $null
 ```
 
-Claude Code CLI is available as:
+The type check must print `True`.
 
-```text
-C:\Users\Nelson\AppData\Roaming\npm\claude.ps1
+Then prove MCP builds against that install:
+
+```powershell
+git -C D:\repos\spire-lens-mcp status --short --branch
+D:\repos\spire-lens-mcp\build.ps1 -GameDir $gameDir -Configuration Release
 ```
 
-The earlier install path also exists at:
+Keep a host out of Glimmung's route pool until STS2 version alignment and MCP
+build both pass.
 
-```text
-D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe
+## Claude Setup
+
+Issue-agent jobs use the local Claude Code subscription login for the Windows
+account running the Actions runner. The workflow does not load an Anthropic API
+key from a runner file.
+
+From the same account that will run `run.cmd`:
+
+```powershell
+claude auth status
+claude
+claude auth status
 ```
 
-New interactive terminals should resolve `claude`.
-
-Claude setup has three separate gates:
-
-1. Get Claude Code installed and resolvable as `claude`.
-2. Authenticate Claude for the same Windows account that runs the GitHub Actions runner.
-3. Run Claude with permission bypass enabled for issue-agent jobs.
-
-Current Claude status on this machine:
-
-```text
-Version: 2.1.121
-Auth: logged in via claude.ai
-Subscription: max
-```
-
-The issue-agent workflow runs `claude auth status` before each LLM phase. This
-passes for the interactive `Nelson` user, but the current Windows service
-`actions.runner.nelsong6-card-utility-stats.issue-agent-NELSONPC` runs as
-`NT AUTHORITY\NETWORK SERVICE`. Do not rely on that service mode for this
-machine: it does not have the interactive user's Claude auth or tool PATH.
-
-For NELSONPC, prefer the same pattern used on the other working PC: stop the
-Windows service and run the runner interactively from the logged-in `Nelson`
-desktop session. The service account does not inherit the interactive user's
-Claude auth, Steam session, user `PATH`, or `uv` setup.
-
-If the Windows account does not have an administrator password, stopping or
-reconfiguring the existing service is blocked. In that case, do not spend time
-trying to make `NETWORK SERVICE` behave like the desktop user. Register a
-separate interactive runner under the logged-in `Nelson` account with its own
-runner name and route label, then queue issues with that label. This avoids
-needing admin rights to stop the existing service and keeps the interactive
-runner attached to the user account that already has Claude, Steam, and `uv`
-ready.
-
-Observed NELSONPC test runs:
-
-- Routing issue #105 with `issue-agent-runner-nelsonpc` successfully routed
-  jobs to `issue-agent-NELSONPC`.
-- The first run failed because the service could not find Claude. Repository
-  variable `ISSUE_AGENT_CLAUDE_CLI_PATH` is now set to
-  `D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`.
-- The second run found Claude, but implementation failed because Claude was not
-  authenticated for the runner user (`NETWORK SERVICE`).
-- The test-plan setup also failed because the service account could not resolve
-  `uv`.
-- Under the interactive `Nelson` user, both `claude auth status` and
-  `uv --version` pass.
-
-After auth, bypass Claude's interactive permission prompts for issue-agent jobs.
-The workflow script currently invokes Claude with:
+The workflow runs `claude auth status` before each LLM phase and invokes Claude
+with:
 
 ```text
 --permission-mode bypassPermissions
 ```
 
-That is the intended runner mode. Do not queue issue-agent work with default
-interactive permissions, because the job can stall or fail waiting for approval.
-If a run still reports `permission_denied`, treat it as a workflow phase policy
-or tool allow/deny configuration issue, not as a missing interactive approval.
+If a run reports `permission_denied`, treat it as a workflow policy or tool
+allow/deny problem, not as an expected interactive approval prompt.
 
-Runner readiness order:
-
-```text
-get claude -> auth claude -> bypass permissions -> queue issue
-```
-
-The local CardUtilityStats checkout uses an ignored `Directory.Build.props`
-with machine-specific paths:
-
-```xml
-<Project>
-  <PropertyGroup>
-    <Sts2Path>D:/Programs/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Path>
-    <GodotPath>D:/automation/godot/Godot_v4.5.1-stable_mono_win64/Godot_v4.5.1-stable_mono_win64_console.exe</GodotPath>
-  </PropertyGroup>
-</Project>
-```
-
-Do not commit this file; it is ignored because the paths are host-specific.
-
-## Build Versus Publish
-
-For CardUtilityStats, Godot is required for the full mod workflow.
-
-`dotnet build -c Release` compiles and deploys the DLL, manifest, and runtime
-dependencies to the Slay the Spire 2 `mods` folder. This is sufficient for
-code-only DLL changes.
-
-`dotnet publish -c Release` invokes Godot headlessly and exports
-`CardUtilityStats.pck`. Use publish when an issue touches assets, export
-behavior, Nexus packaging, or any validation path that should match a runner
-where Godot visibly launches.
-
-On `NELSONPC`, publish currently writes the `.pck` but emits Godot export
-warnings because the export scanner sees C# files under `Core` and `Tests` and
-expects `CardUtilityStats.sln`. That is a repository export-configuration issue,
-not a missing machine prerequisite.
-
-Common Claude CLI locations supported by the workflow:
+If Claude is installed somewhere unusual, set repository variable
+`ISSUE_AGENT_CLAUDE_CLI_PATH`. Common supported locations include:
 
 - `D:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`
 - `C:\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`
 - `%USERPROFILE%\automation\claude-code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`
 - `%APPDATA%\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe`
 
-If you want a different location, set repository variable
-`ISSUE_AGENT_CLAUDE_CLI_PATH`.
+## Register Worker Runners
 
-## Claude Subscription Auth
+Use two runner directories per host when you want test planning and
+implementation to run in parallel.
 
-The issue-agent workflow uses the local Claude Code login for the Windows
-account running the interactive runner. Log in once from that same account
-before queueing jobs:
+Download or copy the GitHub Actions runner files into each directory. Then
+register each directory against `nelsong6/spirelens`.
+
+The helper `ops/windows-worker/Register-LocalIssueAgentRunner.ps1` can register
+one runner directory, but it must be called with both required labels. It now
+rejects the old `issue-agent` runner label and the old phase labels.
+
+Laptop example:
 
 ```powershell
-claude auth status
-claude
+$repo = 'nelsong6/spirelens'
+$url = 'https://github.com/nelsong6/spirelens'
+$labels = 'issue-agent-runner-nelsonlaptop,issue-agent-worker'
+
+$token = gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token
+Set-Location C:\actions-runner-card-utility-stats
+.\config.cmd --unattended --url $url --token $token --name issue-agent-nelsonlaptop-a --work _work --labels $labels --replace
+
+$token = gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token
+Set-Location C:\actions-runner-card-utility-stats-implementation
+.\config.cmd --unattended --url $url --token $token --name issue-agent-nelsonlaptop-b --work _work --labels $labels --replace
 ```
 
-If `claude auth status` does not report a logged-in Claude.ai account, launch
-`claude` interactively and complete the browser login. The workflow runs
-`claude auth status` as a preflight and fails early if the runner account is not
-authenticated.
-
-## Register The Runner
-
-1. Install the GitHub Actions runner files somewhere stable such as
-   `D:\actions-runner-spirelens`, `C:\actions-runner-spirelens`,
-   `D:\actions-runner`, `C:\actions-runner`, or `%USERPROFILE%\actions-runner`.
-2. If `GITHUB_PAT` is not already set, make it available locally before running
-   the helper script.
-3. Run the local registration helper from an elevated PowerShell session if you
-   want the runner installed or repaired as a Windows service:
+NELSONPC example:
 
 ```powershell
-pwsh -NoProfile -File .\ops\windows-worker\Register-LocalIssueAgentRunner.ps1 `
-  -RepositorySlug nelsong6/spirelens `
-  -RunnerLabels issue-agent-runner-nelsonlaptop,issue-agent-worker
-```
+$repo = 'nelsong6/spirelens'
+$url = 'https://github.com/nelsong6/spirelens'
+$labels = 'issue-agent-runner-nelsonpc-user,issue-agent-worker'
 
-The script will:
-
-- reuse `GITHUB_PAT` if already set, or
-- read `github-pat` from Key Vault if `-KeyVaultName` is supplied, then
-- register the machine as a repository-scoped runner, and
-- run it as a Windows service by default
-
-If the runner files are not under one of those default paths, pass
-`-RunnerRoot`.
-
-## Running Live STS2 Jobs
-
-For live STS2 validation, run the runner interactively from the logged-in Steam
-user session instead of as a Windows service:
-
-```powershell
-$svc = 'actions.runner.nelsong6-card-utility-stats.issue-agent-NELSONPC'
-Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
-Set-Location D:\actions-runner
-.\run.cmd
-```
-
-Stopping the service may require an elevated PowerShell session. Leave the
-`run.cmd` window open while issue-agent jobs run. The interactive runner must
-show as session 1, not session 0. A Windows service launches STS2 in session 0,
-which does not provide the same Steam client/session context as the logged-in
-user desktop.
-
-If there is no administrator password available, use a separate interactive
-runner instead of stopping the existing service. Configure it in a separate
-directory and give it a unique route label such as
-`issue-agent-runner-nelsonpc-user`.
-
-For every issue-agent worker runner on that host, use the host route label plus
-`issue-agent-worker`:
-
-```powershell
-$token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
-New-Item -ItemType Directory -Force D:\actions-runner-user | Out-Null
+$token = gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token
 Set-Location D:\actions-runner-user
-# install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-a --labels issue-agent-runner-nelsonpc-user,issue-agent-worker --work _work
-.\run.cmd
+.\config.cmd --unattended --url $url --token $token --name issue-agent-NELSONPC-user --work _work --labels $labels --replace
+
+$token = gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token
+Set-Location D:\actions-runner-user-implementation
+.\config.cmd --unattended --url $url --token $token --name issue-agent-NELSONPC-user-implementation --work _work --labels $labels --replace
 ```
 
-For parallel test planning and implementation, configure a second interactive
-user runner in a different directory with the same labels:
+If a directory is already registered and needs to be renamed, GitHub runner
+names cannot be changed in place. Stop `run.cmd`, remove or delete the old
+registration, then register the directory again with the new name.
+
+Normal removal path:
 
 ```powershell
-$token = gh api -X POST repos/nelsong6/spirelens/actions/runners/registration-token --jq .token
-New-Item -ItemType Directory -Force D:\actions-runner-user-b | Out-Null
-Set-Location D:\actions-runner-user-b
-# install or copy the GitHub Actions runner files here before configuring
-.\config.cmd --url https://github.com/nelsong6/spirelens --token $token --name issue-agent-NELSONPC-user-b --labels issue-agent-runner-nelsonpc-user,issue-agent-worker --work _work
+$removeToken = gh api -X POST repos/nelsong6/spirelens/actions/runners/remove-token --jq .token
+.\config.cmd remove --token $removeToken
+```
+
+If removal is blocked by an old disabled Windows service and you cannot elevate,
+delete the stale runner in GitHub, back up local `.runner` and `.credentials*`
+files, and re-register. Do not delete runner work directories unless you are
+intentionally clearing local Actions workspaces.
+
+## Run Interactively
+
+Live STS2 validation must run from the logged-in Steam user's desktop session.
+A Windows service runner launches jobs from a service account/session 0, which
+does not have the same Steam, Claude, PATH, or desktop context.
+
+Run each worker from the interactive account:
+
+```powershell
+Set-Location C:\actions-runner-card-utility-stats
 .\run.cmd
 ```
 
-Then queue issue-agent work by applying `issue-agent`. Glimmung chooses the host
-from its registered host pool and dispatches `.github/workflows/issue-agent.yaml`
-with that host label.
+In another terminal:
 
-If these self-hosted runners are restricted to a GitHub Actions runner group,
-set repository variable `ISSUE_AGENT_RUNNER_GROUP` to that group name. The
-workflow will target the group plus the same route and worker labels.
-Use this optional override when worker runners live in a different group:
+```powershell
+Set-Location C:\actions-runner-card-utility-stats-implementation
+.\run.cmd
+```
 
-- `ISSUE_AGENT_WORKER_RUNNER_GROUP`
+Verify the processes are not service-session runners:
 
-For a parallel host, use the same labels on every worker runner:
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.Name -eq 'Runner.Listener.exe' } |
+  Select-Object ProcessId,ParentProcessId,Name,CommandLine
+```
 
-| Runner role | Labels |
-| --- | --- |
-| Worker runner | `issue-agent-runner-<host>`, `issue-agent-worker` |
+The runner should belong to the logged-in user session. If it runs as
+`NETWORK SERVICE`, live STS2 validation is not reliable.
 
-Target laptop configuration:
+## Reboot Persistence
 
-| Runner | Role | Labels |
-| --- | --- | --- |
-| `sts2-side-a` | Worker runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-worker` |
-| `sts2-side-b` | Worker runner | `issue-agent-runner-nelsonlaptop`, `issue-agent-worker` |
+Use [docs/reboot-safe-issue-agent-runner.md](./reboot-safe-issue-agent-runner.md)
+for the admin scheduled-task path. That path is best when you can register
+logon tasks with elevated rights.
 
-NELSONPC currently has this non-admin runner registered and online:
+Without elevation, user Startup folder launchers are acceptable for interactive
+user machines. On NELSONLAPTOP the current startup launchers are:
 
-- Runner root: `D:\actions-runner-user`
-- Runner name: `issue-agent-NELSONPC-user`
-- Routing label: `issue-agent-runner-nelsonpc-user`
-- Worker label: `issue-agent-worker`
-- Runner log: `D:\actions-runner-user\_codex-logs\runner.out.log`
+```text
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Start GitHub Runner issue-agent-nelsonlaptop-a.cmd
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Start GitHub Runner issue-agent-nelsonlaptop-b.cmd
+```
 
-Because `D:\repos\spire-lens-mcp` was originally created by the old
-`NETWORK SERVICE` runner, the interactive user also needs the Git safe-directory
-exception:
+Each file should simply `cd` to the runner directory and run `run.cmd`.
+
+## Glimmung Host Registration
+
+The Glimmung host name must match the route label that appears on the runners.
+Examples:
+
+- `issue-agent-runner-nelsonlaptop`
+- `issue-agent-runner-nelsonpc-user`
+
+Each host should advertise capabilities compatible with the SpireLens workflow,
+currently:
+
+```json
+{
+  "os": "windows",
+  "apps": ["sts2"],
+  "machine": "nelsonlaptop"
+}
+```
+
+The SpireLens workflow registration currently uses:
+
+```json
+{
+  "project": "spirelens",
+  "name": "issue-agent",
+  "workflow_filename": "issue-agent.yaml",
+  "workflow_ref": "main",
+  "trigger_label": "issue-agent",
+  "default_requirements": {
+    "apps": ["sts2"]
+  }
+}
+```
+
+Check live state before queueing:
+
+```powershell
+Invoke-RestMethod https://glimmung.romaine.life/v1/state | ConvertTo-Json -Depth 10
+```
+
+A host is available when it is not drained and `current_lease_id` is `null`.
+
+## Local Repo And MCP Config
+
+The repository checkout must contain a working `.mcp.json` that points Claude at
+`spire-lens-mcp`. For STS2 work, the issue-agent path must use MCP tools rather
+than side channels.
+
+Do not revive:
+
+- `LiveScenarios/`
+- `ops/live-worker/`
+- request queues such as `request.json`, `ready.json`, `accepted.json`, or
+  `result.json`
+- `D:\automation\spirelens-live-bridge`
+
+If the MCP surface is missing a needed capability, report that as a blocker.
+
+If a checkout was created by a different Windows account, add a Git safe
+directory exception for the interactive runner account:
 
 ```powershell
 git config --global --add safe.directory D:/repos/spire-lens-mcp
 ```
 
-Observed validation for the user runner:
+## Baseline Checks
 
-- Issue #105 routed to `issue-agent-NELSONPC-user`.
-- The implementation job passed host preparation and Claude subscription auth.
-- Claude ran successfully under the interactive `Nelson` account with
-  `--permission-mode bypassPermissions`.
-- The run later failed in project build/test logic, not in runner registration,
-  Claude lookup, Claude auth, or Windows permissions.
-- A later STS2/MCP prep run failed because `spire-lens-mcp` could not compile
-  against the machine's current STS2/publicized assembly context. Do not paper
-  over that class of failure with compatibility edits alone: first prove the
-  machine is on the same Steam branch/build/product hash as the known-good
-  host, then prove `MegaCrit.Sts2.Core.Combat.ICombatState` resolves from the
-  raw game assembly, then build MCP from a clean checkout.
-- After switching NELSONPC to Steam `public-beta`, the raw assembly check
-  reports `ICombatState=True` and `spire-lens-mcp` builds cleanly against that
-  install with commit `4b03b0d`.
-
-Before adding any host to Glimmung's SpireLens host pool, use that runner as a
-host smoke test and confirm:
-
-- Steam resolves Slay the Spire 2 to the intended current install, not an older
-  checkout, copied install, or stale publicized assembly directory.
-- The Steam branch, build id, depot manifest, and `sts2.dll` product version
-  match the known-good STS2 host.
-- The resolved game assembly is the current raw STS2 assembly under that
-  Steam-registered install, for example
-  `D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll`
-  on NELSONPC.
-- That `sts2.dll` exposes
-  `MegaCrit.Sts2.Core.Combat.ICombatState`.
-- `spire-lens-mcp` builds cleanly from a clean checkout against the resolved
-  STS2 data directory.
-- The runner process is the same logged-in interactive Windows account that has
-  Claude auth, Steam access, `uv`, and the expected user `PATH`.
-
-A quick local Steam path, assembly, and MCP build smoke check:
+Before queueing real work on a new host, run:
 
 ```powershell
-$gameDir = 'D:\Programs\SteamLibrary\steamapps\common\Slay the Spire 2'
-$manifest = 'D:\Programs\SteamLibrary\steamapps\appmanifest_2868840.acf'
-$sts2Dll = Join-Path $gameDir 'data_sts2_windows_x86_64\sts2.dll'
-Select-String -Path $manifest -Pattern 'buildid|TargetBuildID|manifest|BetaKey'
-Get-Item $sts2Dll | Select-Object FullName, LastWriteTime, @{Name='ProductVersion'; Expression={$_.VersionInfo.ProductVersion}}
-$asm = [Reflection.Assembly]::LoadFrom($sts2Dll)
-$asm.GetType('MegaCrit.Sts2.Core.Combat.ICombatState', $false) -ne $null
-git -C D:\repos\spire-lens-mcp status --short --branch
-D:\repos\spire-lens-mcp\build.ps1 -GameDir $gameDir -Configuration Release
+dotnet build SpireLens.csproj -c Debug -p:SkipModsDeploy=true
+dotnet build Core/SpireLens.Core.csproj -c Debug -p:SkipModsDeploy=true
+dotnet build Tests/SpireLens.Core.Tests/SpireLens.Core.Tests.csproj -c Debug
+dotnet test Tests/SpireLens.Core.Tests/SpireLens.Core.Tests.csproj -c Debug --no-build
 ```
 
-The type check must print `True`, and the branch/build/product fields must
-match the known-good host. If either check fails, keep the runner out of the
-auto-route pool until the STS2 install is aligned. Only after those checks pass
-should the MCP build and a real issue-agent run be treated as meaningful.
-
-If queueing issue-agent runs from the laptop with GitHub CLI labels, make sure
-GitHub CLI is authenticated:
+Then check GitHub sees the runners:
 
 ```powershell
-gh auth status
-gh auth login
+gh api repos/nelsong6/spirelens/actions/runners --paginate `
+  --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
 ```
 
-`gh auth login` is only needed when `gh auth status` reports that the local token
-has expired or is missing.
+Expected:
 
-## Workflow Expectations
+- both runners for the host are `online`
+- both have `issue-agent-worker`
+- both have the same `issue-agent-runner-<host>` route label
+- neither is busy before a smoke test
 
-The issue-agent workflow expects:
+## Smoke Test
 
-- every runner used for an issue has the chosen `issue-agent-runner-<host>` route label
-- every runner used for issue-agent work has `issue-agent-worker`
-- the repo checkout contains a working `.mcp.json`
-- Claude can list and connect to `spire-lens-mcp`
-- STS2 is available locally when the issue requires live validation
-- Claude Code is authenticated for the interactive runner account
+1. Confirm Glimmung state lists the host as free.
+2. Add `issue-agent` to a low-risk issue.
+3. Confirm the workflow run name includes the issue number/title and selected
+   host.
+4. Confirm both Windows jobs pass:
+   - `Heartbeat glimmung lease`
+   - `Prepare issue-agent host`
+   - `Build and test baseline main`
+   - `Verify Claude subscription auth`
+5. Confirm Claude can use `spire-lens-mcp`.
+6. Confirm artifacts upload even if the task later fails.
 
-The workflow itself still handles:
-
-- uploading logs, screenshots, and validation artifacts
-- publishing the final implementation branch from the current default branch,
-  with only the agent's staged code diff applied
-
-## Sanity Check
-
-Once the runner is online in GitHub:
-
-1. Confirm the machine appears under repository runners with label
-   `issue-agent-runner-<host>` and `issue-agent-worker`.
-2. Confirm `https://glimmung.romaine.life/v1/state` lists the host as free and
-   matching SpireLens requirements.
-3. Add `issue-agent` to a low-risk issue.
-4. Confirm the run:
-   - starts on the laptop
-   - passes the STS2 bridge readiness check
-   - launches Claude with MCP available
-   - uploads the expected artifacts
-
-## Secondary Machines
-
-For a second machine, use the same route/phase/live label pattern with a unique
-host suffix:
-
-- `issue-agent-runner-<host>` goes on every worker runner for that machine.
-- `issue-agent-worker` goes on every worker runner for that machine.
-
-For example, a two-runner `nelsonpc-user` setup would be:
-
-| Runner role | Labels |
-| --- | --- |
-| Worker runner A | `issue-agent-runner-nelsonpc-user`, `issue-agent-worker` |
-| Worker runner B | `issue-agent-runner-nelsonpc-user`, `issue-agent-worker` |
-
-Add a new Glimmung host only after its worker runners pass host prep, Claude
-auth, STS2 branch/build/product-hash alignment, `ICombatState` presence,
-`spire-lens-mcp` build, and a low-risk real issue-agent run.
+Do not requeue many issues until this smoke path passes on the host.

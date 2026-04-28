@@ -1,6 +1,6 @@
 name: Issue Agent
 
-run-name: Issue Agent #${{ inputs.issue_number }} (${{ inputs.host }})
+run-name: "#${{ github.event.inputs.issue_number }} ${{ github.event.inputs.issue_title }} (${{ github.event.inputs.host }})"
 
 # Glimmung is the entry point. The webhook on glimmung.romaine.life
 # receives the GitHub `issues` event, claims a host venue, and fires

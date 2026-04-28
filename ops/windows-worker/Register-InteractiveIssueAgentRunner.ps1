@@ -2,7 +2,10 @@ param(
     [string]$RunnerRoot = "",
     [string]$TaskName = "SpireLens Issue Agent Interactive Runner",
     [string]$LogDir = "C:\\ProgramData\\SpireLens\\issue-agent-runner",
-    [string]$RunnerServiceNamePrefix = "actions.runner.nelsong6-spirelens.",
+    [string[]]$RunnerServiceNamePrefix = @(
+        "actions.runner.nelsong6-spirelens.",
+        "actions.runner.nelsong6-card-utility-stats."
+    ),
     [string]$Sts2LaunchTaskName = "",
     [switch]$KeepRunnerServices,
     [switch]$NoStart
@@ -55,13 +58,21 @@ function Resolve-RunnerRoot {
 }
 
 function Stop-ServiceBackedRunners {
-    param([string]$ServiceNamePrefix)
+    param([string[]]$ServiceNamePrefix)
 
-    if ([string]::IsNullOrWhiteSpace($ServiceNamePrefix)) {
+    if ($null -eq $ServiceNamePrefix -or $ServiceNamePrefix.Count -eq 0) {
         return
     }
 
-    $services = @(Get-Service | Where-Object { $_.Name -like "$ServiceNamePrefix*" })
+    $services = @(Get-Service | Where-Object {
+        $serviceName = $_.Name
+        foreach ($prefix in $ServiceNamePrefix) {
+            if (-not [string]::IsNullOrWhiteSpace($prefix) -and $serviceName -like "$prefix*") {
+                return $true
+            }
+        }
+        return $false
+    })
     foreach ($service in $services) {
         Write-Step "Disabling service-backed runner '$($service.Name)'"
         if ($service.Status -ne 'Stopped') {
