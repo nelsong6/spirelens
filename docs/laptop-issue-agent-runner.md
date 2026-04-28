@@ -346,6 +346,32 @@ Observed validation for the user runner:
   `nelsong6/spire-lens-mcp` commit `e3cf4b0`, and the local MCP build now
   passes against the Steam-registered install above.
 
+Before adding any host to `ISSUE_AGENT_ROUTE_LABEL_POOL`, use that runner as a
+host smoke test and confirm:
+
+- Steam resolves Slay the Spire 2 to the intended current install, not an older
+  checkout, copied install, or stale publicized assembly directory.
+- The resolved game assembly is the current raw STS2 assembly at
+  `D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll`.
+- That `sts2.dll` contains
+  `MegaCrit.Sts2.Core.Combat.ICombatState`.
+- `spire-lens-mcp` builds cleanly from a clean checkout against the resolved
+  STS2 data directory.
+- The runner process is the same logged-in interactive Windows account that has
+  Claude auth, Steam access, `uv`, and the expected user `PATH`.
+
+A quick local assembly/version check:
+
+```powershell
+$sts2Dll = 'D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll'
+Get-Item $sts2Dll | Select-Object FullName, LastWriteTime, @{Name='ProductVersion'; Expression={$_.VersionInfo.ProductVersion}}
+[Reflection.Assembly]::LoadFrom($sts2Dll).GetType('MegaCrit.Sts2.Core.Combat.ICombatState', $false) -ne $null
+```
+
+The type check must print `True`. If it prints `False`, the runner is building
+against the wrong or stale STS2 assembly context and should stay out of the
+auto-route pool until that is fixed.
+
 If queueing issue-agent runs from the laptop with GitHub CLI labels, make sure
 GitHub CLI is authenticated:
 

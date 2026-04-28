@@ -77,7 +77,10 @@ issue-agent-runner-nelsonlaptop,issue-agent-runner-nelsonpc-user
 
 Set repository variable `ISSUE_AGENT_ROUTE_LABEL_POOL` to change the pool. The
 current picker uses the issue number modulo the pool size, so adjacent issues
-spread across the configured hosts predictably.
+spread across the configured hosts predictably. Only include hosts that have
+passed the local runner smoke checks in
+[docs/laptop-issue-agent-runner.md](./laptop-issue-agent-runner.md), especially
+the STS2 assembly/MCP build check for any newly added machine.
 
 If the repository uses GitHub Actions runner groups, set
 `ISSUE_AGENT_RUNNER_GROUP` to route all Windows issue-agent phases through that
