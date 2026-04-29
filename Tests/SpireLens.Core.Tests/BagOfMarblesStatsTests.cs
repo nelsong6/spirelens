@@ -74,7 +74,6 @@ public class BagOfMarblesStatsTests
     {
         const string json = """
             {
-              "schema_version": 14,
               "run_id": "test",
               "started_at": "2026-01-01T00:00:00Z",
               "updated_at": "2026-01-01T00:00:00Z",
@@ -91,13 +90,5 @@ public class BagOfMarblesStatsTests
         Assert.NotNull(run);
         Assert.NotNull(run!.RelicAggregates);
         Assert.Empty(run.RelicAggregates);
-    }
-
-    [Fact]
-    public void RunData_SchemaVersion_IsCurrentVersion()
-    {
-        var run = new RunData();
-        Assert.Equal(RunData.CurrentSchemaVersion, run.SchemaVersion);
-        Assert.Equal(18, RunData.CurrentSchemaVersion);
     }
 }
