@@ -13,6 +13,25 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Invoke-LoggedStep {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$Body
+    )
+    # Wrap an unbounded sub-op with a BEGIN/END timestamped log line so a hang
+    # always names itself in the GH Actions log instead of stalling silently.
+    $start = Get-Date
+    Write-Host ("::group::{0}" -f $Name)
+    Write-Host ("[{0}] BEGIN: {1}" -f $start.ToString('o'), $Name)
+    try {
+        & $Body
+        $secs = ((Get-Date) - $start).TotalSeconds
+        Write-Host ("[{0}] END:   {1} ({2:N1}s)" -f (Get-Date).ToString('o'), $Name, $secs)
+    } finally {
+        Write-Host '::endgroup::'
+    }
+}
+
 function Write-SetupArtifact {
     param([hashtable]$Data)
     New-Item -ItemType Directory -Force -Path $ValidationArtifactDir | Out-Null
@@ -306,12 +325,24 @@ try {
     $mcpDirectory = Get-McpDirectory -Server $server
     $outputPath = Join-Path $ValidationArtifactDir 'issue-agent-scenario-setup.json'
 
-    & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
-    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'materialize_only' -SetupPath $setupPath -OutputPath $outputPath
-    & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Stop -McpConfigPath $McpConfigPath -ShutdownTimeoutSeconds 45
-    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'install_only' -SetupPath $setupPath -OutputPath $outputPath
-    & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
-    Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'validate_load' -SetupPath $setupPath -OutputPath $outputPath
+    Invoke-LoggedStep -Name 'Restart STS2 (materialize phase)' -Body {
+        & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
+    }
+    Invoke-LoggedStep -Name 'MCP materialize_only' -Body {
+        Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'materialize_only' -SetupPath $setupPath -OutputPath $outputPath
+    }
+    Invoke-LoggedStep -Name 'Stop STS2 before save install' -Body {
+        & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Stop -McpConfigPath $McpConfigPath -ShutdownTimeoutSeconds 45
+    }
+    Invoke-LoggedStep -Name 'MCP install_only' -Body {
+        Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'install_only' -SetupPath $setupPath -OutputPath $outputPath
+    }
+    Invoke-LoggedStep -Name 'Restart STS2 (validate phase)' -Body {
+        & (Join-Path $RepoRoot '.github\scripts\restart-sts2.ps1') -Mode Restart -McpConfigPath $McpConfigPath -StartupTimeoutSeconds 90 -ShutdownTimeoutSeconds 45
+    }
+    Invoke-LoggedStep -Name 'MCP validate_load' -Body {
+        Invoke-McpPython -McpDirectory $mcpDirectory -Mode 'validate_load' -SetupPath $setupPath -OutputPath $outputPath
+    }
 
     $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
     if ([string]$result.status -ne 'pass') { throw "Scenario setup did not pass." }

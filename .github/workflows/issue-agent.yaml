@@ -60,6 +60,7 @@ jobs:
         # the proof. We assert state=active and host=inputs.host before doing
         # any real work. If verify fails, the workflow exits clean and the
         # host returns to the pool via workflow_run.completed.
+        timeout-minutes: 3
         shell: bash
         env:
           GLIMMUNG_BASE: ${{ env.GLIMMUNG_BASE }}
@@ -83,6 +84,7 @@ jobs:
 
       - name: Resolve runner labels
         id: route
+        timeout-minutes: 2
         shell: pwsh
         env:
           ROUTE_LABEL_PREFIX: issue-agent-runner-
@@ -123,6 +125,7 @@ jobs:
       REPO_SLUG: ${{ github.repository }}
     steps:
       - name: Replace queue label with running label
+        timeout-minutes: 3
         shell: bash
         run: |
           set -euo pipefail
@@ -156,6 +159,27 @@ jobs:
             echo "Issue #${ISSUE_NUMBER} does not have issue-agent; nothing to remove."
           fi
 
+      - name: Comment with run link
+        # Posts a single "Issue-agent run started: <run url>" line on the issue
+        # so a human watching the issue page can jump to the live run without
+        # waiting for the end-of-run summary comment from summarize-issue-agent.
+        # Best-effort: if the comment fails, the run still proceeds.
+        timeout-minutes: 3
+        shell: bash
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HOST_LABEL: ${{ inputs.host }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ISSUE_NUMBER}" ]; then
+            echo "No issue number provided; skipping run-start comment."
+            exit 0
+          fi
+          body="Issue-agent run started: ${RUN_URL} (host: \`${HOST_LABEL}\`)"
+          if ! gh api --method POST "repos/${REPO_SLUG}/issues/${ISSUE_NUMBER}/comments" -f "body=${body}" >/dev/null; then
+            echo "::warning::Unable to post run-start comment on #${ISSUE_NUMBER}; continuing."
+          fi
+
   test-plan:
     name: "LLM: Plan validation evidence"
     needs:
@@ -171,6 +195,7 @@ jobs:
 
     steps:
       - name: Checkout repository
+        timeout-minutes: 5
         uses: actions/checkout@v4
         with:
           ref: main
@@ -178,6 +203,7 @@ jobs:
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
 
       - name: Refresh checkout to latest main
+        timeout-minutes: 3
         shell: pwsh
         run: |
           $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
@@ -193,6 +219,7 @@ jobs:
           Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
 
       - name: Prepare issue-agent host
+        timeout-minutes: 10
         env:
           CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
           CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
@@ -205,25 +232,35 @@ jobs:
             -StartSts2
 
       - name: Build and test baseline main
+        timeout-minutes: 8
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
           $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
           if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
 
+          Write-Host '::group::dotnet build SpireLens.csproj (loader)'
           dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline loader build failed on main." }
 
+          Write-Host '::group::dotnet build SpireLens.Core.csproj'
           dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline core build failed on main." }
 
+          Write-Host '::group::dotnet build SpireLens.Core.Tests.csproj'
           dotnet build "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline test project build failed on main." }
 
+          Write-Host '::group::dotnet test SpireLens.Core.Tests'
           dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --no-build "-p:Sts2DataDir=$sts2DataDir"
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline tests failed on main." }
 
       - name: Verify Claude subscription auth
+        timeout-minutes: 2
         shell: pwsh
         run: |
           & $env:CLAUDE_CLI_PATH auth status
@@ -254,6 +291,7 @@ jobs:
       - name: Read test plan result
         id: test_plan_result
         if: always()
+        timeout-minutes: 2
         shell: pwsh
         run: |
           $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-test-plan.json"
@@ -269,6 +307,7 @@ jobs:
 
       - name: Upload test plan artifacts
         if: always()
+        timeout-minutes: 5
         uses: actions/upload-artifact@v4
         with:
           name: issue-agent-test-plan-${{ github.run_id }}
@@ -280,6 +319,7 @@ jobs:
 
       - name: Fail blocked test plan
         if: always() && steps.test_plan_result.outputs.phase_status != 'pass'
+        timeout-minutes: 1
         shell: pwsh
         run: |
           throw "Test plan did not pass. status=${{ steps.test_plan_result.outputs.phase_status }} abort_reason=${{ steps.test_plan_result.outputs.abort_reason }}"
@@ -301,6 +341,7 @@ jobs:
 
     steps:
       - name: Checkout repository
+        timeout-minutes: 5
         uses: actions/checkout@v4
         with:
           ref: main
@@ -308,6 +349,7 @@ jobs:
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
 
       - name: Refresh checkout to latest main
+        timeout-minutes: 3
         shell: pwsh
         run: |
           $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
@@ -323,6 +365,7 @@ jobs:
           Write-Host "Issue-agent checkout refreshed to origin/main at $baseSha on local branch $workBranch."
 
       - name: Prepare issue-agent host
+        timeout-minutes: 10
         env:
           CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
           CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
@@ -333,25 +376,35 @@ jobs:
             -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH
 
       - name: Build and test baseline main
+        timeout-minutes: 8
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
           $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
           if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
 
+          Write-Host '::group::dotnet build SpireLens.csproj (loader)'
           dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline loader build failed on main." }
 
+          Write-Host '::group::dotnet build SpireLens.Core.csproj'
           dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline core build failed on main." }
 
+          Write-Host '::group::dotnet build SpireLens.Core.Tests.csproj'
           dotnet build "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline test project build failed on main." }
 
+          Write-Host '::group::dotnet test SpireLens.Core.Tests'
           dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --no-build "-p:Sts2DataDir=$sts2DataDir"
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Baseline tests failed on main." }
 
       - name: Verify Claude subscription auth
+        timeout-minutes: 2
         shell: pwsh
         run: |
           & $env:CLAUDE_CLI_PATH auth status
@@ -382,6 +435,7 @@ jobs:
       - name: Read implementation result
         id: implementation_result
         if: always()
+        timeout-minutes: 2
         shell: pwsh
         run: |
           $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
@@ -397,19 +451,27 @@ jobs:
 
       - name: Build implementation checkout
         if: steps.implementation_result.outputs.phase_status == 'pass'
+        timeout-minutes: 6
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
           $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
           if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
+
+          Write-Host '::group::dotnet build SpireLens.csproj (loader, implementation checkout)'
           dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Implementation checkout loader build failed." }
+
+          Write-Host '::group::dotnet build SpireLens.Core.csproj (implementation checkout)'
           dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir" -p:SkipModsDeploy=true
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "Implementation checkout core build failed." }
 
       - name: Push implementation branch
         id: publish_implementation
         if: steps.implementation_result.outputs.phase_status == 'pass'
+        timeout-minutes: 6
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: pwsh
@@ -495,6 +557,7 @@ jobs:
 
       - name: Upload implementation artifacts
         if: always()
+        timeout-minutes: 5
         uses: actions/upload-artifact@v4
         with:
           name: issue-agent-implementation-${{ github.run_id }}
@@ -506,6 +569,7 @@ jobs:
 
       - name: Fail blocked implementation
         if: always() && steps.implementation_result.outputs.phase_status != 'pass'
+        timeout-minutes: 1
         shell: pwsh
         run: |
           throw "Implementation did not pass. status=${{ steps.implementation_result.outputs.phase_status }} abort_reason=${{ steps.implementation_result.outputs.abort_reason }}"
@@ -537,6 +601,7 @@ jobs:
 
     steps:
       - name: Checkout repository
+        timeout-minutes: 5
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -544,6 +609,7 @@ jobs:
           path: ${{ env.ISSUE_AGENT_CHECKOUT_PATH }}
 
       - name: Attach verification checkout to local work branch
+        timeout-minutes: 2
         shell: pwsh
         run: |
           $repoRoot = Join-Path $env:GITHUB_WORKSPACE $env:ISSUE_AGENT_CHECKOUT_PATH
@@ -558,6 +624,7 @@ jobs:
 
       - name: Download test plan artifacts
         if: always()
+        timeout-minutes: 5
         uses: actions/download-artifact@v4
         with:
           name: issue-agent-test-plan-${{ github.run_id }}
@@ -565,6 +632,7 @@ jobs:
 
       - name: Download implementation artifacts
         if: always()
+        timeout-minutes: 5
         uses: actions/download-artifact@v4
         with:
           name: issue-agent-implementation-${{ github.run_id }}
@@ -572,6 +640,7 @@ jobs:
 
       - name: Stage handoff artifacts
         if: always()
+        timeout-minutes: 2
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP "sts2-artifacts") | Out-Null
@@ -582,6 +651,7 @@ jobs:
 
 
       - name: Prepare issue-agent host
+        timeout-minutes: 10
         env:
           CONFIGURED_CLAUDE_CLI_PATH: ${{ vars.ISSUE_AGENT_CLAUDE_CLI_PATH }}
           CONFIGURED_STS2_GAME_DIR: ${{ vars.ISSUE_AGENT_STS2_GAME_DIR }}
@@ -591,18 +661,27 @@ jobs:
           & $scriptPath `
             -CheckoutPath $env:ISSUE_AGENT_CHECKOUT_PATH `
             -InstallMcp
+
       - name: Deploy implementation to STS2
+        timeout-minutes: 6
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
           $sts2DataDir = $env:ISSUE_AGENT_STS2_DATA_DIR
           if ([string]::IsNullOrWhiteSpace($sts2DataDir)) { throw "ISSUE_AGENT_STS2_DATA_DIR was not set." }
+
+          Write-Host '::group::dotnet build SpireLens.csproj (loader, deploy)'
           dotnet build "SpireLens.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "SpireLens loader build/deploy failed." }
+
+          Write-Host '::group::dotnet build SpireLens.Core.csproj (deploy)'
           dotnet build "Core\SpireLens.Core.csproj" -c Debug "-p:Sts2DataDir=$sts2DataDir"
+          Write-Host '::endgroup::'
           if ($LASTEXITCODE -ne 0) { throw "SpireLens core build/deploy failed." }
 
       - name: Prepare STS2 scenario save
+        timeout-minutes: 12
         shell: pwsh
         run: |
           & (Join-Path $env:ISSUE_AGENT_REPO_ROOT ".github\scripts\prepare-issue-agent-scenario.ps1") `
@@ -613,6 +692,7 @@ jobs:
             -IssueNumber $env:ISSUE_NUMBER
 
       - name: Verify Claude subscription auth
+        timeout-minutes: 2
         shell: pwsh
         run: |
           & $env:CLAUDE_CLI_PATH auth status
@@ -643,6 +723,7 @@ jobs:
       - name: Read verification result
         id: verification_result
         if: always()
+        timeout-minutes: 2
         shell: pwsh
         run: |
           $path = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-verification.json"
@@ -659,6 +740,7 @@ jobs:
       - name: Create pull request
         id: create_pr
         if: steps.verification_result.outputs.phase_status == 'pass'
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           REPO_SLUG: ${{ github.repository }}
@@ -740,6 +822,7 @@ jobs:
 
       - name: Azure login for screenshot publishing
         if: always()
+        timeout-minutes: 3
         env:
           AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-issue-agent
         uses: azure/login@v2
@@ -750,6 +833,7 @@ jobs:
 
       - name: Publish screenshot previews
         if: always()
+        timeout-minutes: 5
         env:
           AZURE_CONFIG_DIR: ${{ runner.temp }}/azure-issue-agent
           AZURE_SCREENSHOT_STORAGE_ACCOUNT: ${{ fromJSON(needs.screenshot-storage-outputs.outputs.outputs_json).storage_account_name }}
@@ -764,8 +848,10 @@ jobs:
             -ContainerName $env:AZURE_SCREENSHOT_CONTAINER `
             -ContainerUrl $env:AZURE_SCREENSHOT_CONTAINER_URL `
             -RunId $env:GITHUB_RUN_ID
+
       - name: Summarize issue-agent run
         if: always()
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           REPO_SLUG: ${{ github.repository }}
@@ -814,6 +900,7 @@ jobs:
 
       - name: Upload issue-agent artifacts
         if: always()
+        timeout-minutes: 10
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ISSUE_AGENT_ARTIFACT_NAME }}-${{ github.run_id }}
@@ -827,6 +914,7 @@ jobs:
 
       - name: Fail blocked issue-agent run
         if: always() && steps.verification_result.outputs.phase_status != 'pass'
+        timeout-minutes: 1
         shell: pwsh
         run: |
           throw "Issue-agent did not reach verified pass. test_plan=${{ needs.test-plan.outputs.phase_status }} implementation=${{ needs.implementation.outputs.phase_status }} verification=${{ steps.verification_result.outputs.phase_status }} verification_reason=${{ steps.verification_result.outputs.abort_reason }}"
@@ -848,6 +936,7 @@ jobs:
       REPO_SLUG: ${{ github.repository }}
     steps:
       - name: Remove running label
+        timeout-minutes: 3
         shell: bash
         run: |
           set -euo pipefail
@@ -878,6 +967,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release lease
+        timeout-minutes: 3
         shell: bash
         run: |
           set -euo pipefail
