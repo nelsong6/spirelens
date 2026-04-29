@@ -2,27 +2,6 @@
 
 This repo is a hot-reloadable Slay the Spire 2 mod focused on per-card attribution: not just what a card says it should do, but what it actually caused in the run.
 
-## GitHub Source Of Truth
-
-This repo now uses a **pull-only** workflow with GitHub as the source of truth. The policy is documented in [docs/pull-only-workflow.md](docs/pull-only-workflow.md).
-
-- Do not read from the local filesystem for repository state.
-- Do not write to the local filesystem for repository changes.
-- Do not use local `git` or local `gh` as the normal mutation path.
-- Read and write repo state through GitHub-backed tools only.
-- If a remote branch, commit, or PR cannot be produced, stop and report blocked.
-
-## Scratch Workspace Guard Rails
-
-When local filesystem access is helpful for drafting, validation, or temporary analysis:
-
-- Treat `D:\repos\...` checkouts as read-only reference context.
-- Do not edit tracked files in place under `D:\repos\...` unless the user explicitly approves that exact exception.
-- Prefer a disposable workspace outside the repo tree, such as `D:\automation\scratch\...`.
-- Publish the final repository change through GitHub-backed tools only.
-- Delete or discard the scratch workspace after the remote change is published.
-- Avoid local `git` commands entirely for repo work unless the user explicitly approves that exact exception.
-
 ## Mod Policy
 
 The Slay the Spire 2 install (`D:\SteamLibrary\steamapps\common\Slay the Spire 2\mods\`) runs **only** the user's own mods plus their required prereqs. No third-party mods.
@@ -45,9 +24,10 @@ When inspecting `mods/`, treat any non-(SpireLens|BaseLib|SpireLensMcp) entry as
   - Nothing is promoted to the permanent run file until combat ends.
   - Reload between combats / between floors is supported and expected.
   - Mid-combat restore is intentionally out of scope.
-- The data model is additive through schema `v16`.
-  - [Core/RunData.cs](D:/repos/SpireLens/Core/RunData.cs:13) is the source of truth for the current schema.
-  - [Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1) and the checked-in fixtures pin what remains resumable.
+- The persisted shape evolves additively without an explicit version number.
+  - [Core/RunData.cs](D:/repos/SpireLens/Core/RunData.cs:1) is the source of truth for the current shape.
+  - [Core/RunStorage.cs](D:/repos/SpireLens/Core/RunStorage.cs:1) detects the historic pooled shape structurally; everything else is current per-instance.
+  - [Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1) and the checked-in fixtures pin known shapes that must remain loadable.
 - Card identity is per physical card when the card has stable deck identity.
   - Instance numbers never get reused within a run.
   - Combat-generated cards that do not meaningfully exist in the deck may use pooled summaries instead of fake deck-instance identities.
@@ -62,7 +42,6 @@ When inspecting `mods/`, treat any non-(SpireLens|BaseLib|SpireLensMcp) entry as
 ## Start Here
 
 - Read [README.md](D:/repos/SpireLens/README.md:1) for the product-level overview.
-- Read [docs/pull-only-workflow.md](docs/pull-only-workflow.md) for the repo's GitHub-native workflow policy.
 - Read [docs/architecture.md](D:/repos/SpireLens/docs/architecture.md:1) for subsystem layout and data flow.
 - Read [docs/sts2-runtime-primer.md](docs/sts2-runtime-primer.md) before changing card/relic attribution hooks; it captures stable Slay the Spire 2 lifecycle, combat-history, async hook, pile, and attribution timing behavior.
 - For tracking behavior, start in [Core/RunTracker.cs](D:/repos/SpireLens/Core/RunTracker.cs:18).
@@ -73,9 +52,9 @@ When inspecting `mods/`, treat any non-(SpireLens|BaseLib|SpireLensMcp) entry as
 ## When Changing Behavior
 
 - If you add persisted fields:
-  - bump `RunData.CurrentSchemaVersion`
-  - add or update fixture files under [Fixtures/RunSchema](D:/repos/SpireLens/Fixtures/RunSchema/README.md:1)
-  - update [SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1)
+  - keep them additive so old run files still load via missing-field defaults
+  - add a fixture file under [Fixtures/RunSchema](D:/repos/SpireLens/Fixtures/RunSchema/README.md:1) capturing the new shape
+  - update [SchemaLoadingTests.cs](D:/repos/SpireLens/Tests/SpireLens.Core.Tests/SchemaLoadingTests.cs:1) to assert the new shape loads and any new fields land where expected
 - If you change tooltip presentation:
   - preserve the compact-vs-full distinction
   - keep labels self-describing
