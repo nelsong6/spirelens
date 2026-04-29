@@ -57,7 +57,10 @@ These fixture files pin the on-disk run-file shapes that the mod has written.
   Legacy-but-resumable additive schema. Adds Red Mask Weak tracking to relic
   aggregates.
 - `v17-orichalcum-run.json`
-  Current schema. Adds Orichalcum additional block gained tracking to relic
+  Legacy-but-resumable additive schema. Adds Orichalcum additional block gained tracking to relic
+  aggregates.
+- `v18-pocketwatch-run.json`
+  Current schema. Adds Pocketwatch additional cards drawn tracking to relic
   aggregates.
 
 Why these exist:

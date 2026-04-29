@@ -120,6 +120,6 @@ public class OrichalcumStatsTests
     {
         var run = new RunData();
         Assert.Equal(RunData.CurrentSchemaVersion, run.SchemaVersion);
-        Assert.Equal(17, RunData.CurrentSchemaVersion);
+        Assert.Equal(18, RunData.CurrentSchemaVersion);
     }
 }

@@ -56,6 +56,17 @@ public static class RelicHoverShowPatch
                 return;
             }
 
+            if (relicNode.Model is Pocketwatch)
+            {
+                const string relicId = "RELIC.POCKETWATCH";
+                var agg = RunTracker.GetRelicAggregate(relicId);
+                if (agg == null || agg.AdditionalCardsDrawn == 0) return;
+
+                var body = BuildPocketwatchBodyBBCode(agg);
+                StatsTooltip.Show(tree, __instance, "Pocketwatch", "SpireLens", body);
+                return;
+            }
+
             if (relicNode.Model is Orichalcum)
             {
                 const string relicId = "RELIC.ORICHALCUM";
@@ -85,6 +96,13 @@ public static class RelicHoverShowPatch
         var sb = new StringBuilder();
         Row3(sb, WeakLabel("enemies affected"), agg.EnemiesAffected.ToString(), "");
         Row3(sb, WeakLabel("weak applied"), agg.WeakApplied.ToString(), "");
+        return sb.ToString();
+    }
+
+    private static string BuildPocketwatchBodyBBCode(RelicAggregate agg)
+    {
+        var sb = new StringBuilder();
+        Row3(sb, "additional cards drawn", agg.AdditionalCardsDrawn.ToString(), "");
         return sb.ToString();
     }
 

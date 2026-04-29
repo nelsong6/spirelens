@@ -278,9 +278,24 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV17Fixture()
+    public void HistoricalLoad_AcceptsLegacyResumableV17Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v17-orichalcum-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.Equal(17, loaded!.SourceSchemaVersion);
+        Assert.True(loaded.IsLegacy);
+        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
+        var relicAgg = loaded.Data.RelicAggregates["RELIC.ORICHALCUM"];
+        Assert.Equal(12, relicAgg.AdditionalBlockGained);
+    }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsCurrentV18Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v18-pocketwatch-run.json"));
 
         Assert.NotNull(loaded);
         Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
@@ -288,8 +303,8 @@ public class SchemaLoadingTests
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Null(loaded.CompatibilityNote);
-        var relicAgg = loaded.Data.RelicAggregates["RELIC.ORICHALCUM"];
-        Assert.Equal(12, relicAgg.AdditionalBlockGained);
+        Assert.Equal(12, loaded.Data.RelicAggregates["RELIC.ORICHALCUM"].AdditionalBlockGained);
+        Assert.Equal(6, loaded.Data.RelicAggregates["RELIC.POCKETWATCH"].AdditionalCardsDrawn);
     }
 
     [Fact]
@@ -497,14 +512,25 @@ public class SchemaLoadingTests
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV17Fixture()
+    public void ResumableLoad_AcceptsLegacyResumableV17Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v17-orichalcum-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(17, resumed!.SchemaVersion);
         var relicAgg = resumed.RelicAggregates["RELIC.ORICHALCUM"];
         Assert.Equal(12, relicAgg.AdditionalBlockGained);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsCurrentV18Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v18-pocketwatch-run.json"));
+
+        Assert.NotNull(resumed);
+        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
+        Assert.Equal(12, resumed.RelicAggregates["RELIC.ORICHALCUM"].AdditionalBlockGained);
+        Assert.Equal(6, resumed.RelicAggregates["RELIC.POCKETWATCH"].AdditionalCardsDrawn);
     }
 
     [Fact]
