@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using System.Text;
 using Godot;
 using HarmonyLib;
@@ -17,7 +18,11 @@ public static class RelicHoverShowPatch
     private const string VulnerableIconPath = "res://images/atlases/power_atlas.sprites/vulnerable_power.tres";
     private const string WeakIconPath = "res://images/atlases/power_atlas.sprites/weak_power.tres";
     private const string BlockIconPath = "res://images/ui/combat/block.png";
+    private const string VigorIconPath = "res://images/atlases/power_atlas.sprites/vigor_power.tres";
     private const int InlineIconSize = 16;
+
+    private static readonly Type? AkabekoType =
+        AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.Relics.Akabeko");
 
     [HarmonyPostfix]
     public static void Postfix(NRelicInventoryHolder __instance)
@@ -77,6 +82,17 @@ public static class RelicHoverShowPatch
                 StatsTooltip.Show(tree, __instance, "Orichalcum", "SpireLens", body);
                 return;
             }
+
+            if (AkabekoType != null && AkabekoType.IsInstanceOfType(relicNode.Model))
+            {
+                const string relicId = "RELIC.AKABEKO";
+                var agg = RunTracker.GetRelicAggregate(relicId);
+                if (agg == null || agg.VigorGained == 0) return;
+
+                var body = BuildAkabekoBodyBBCode(agg);
+                StatsTooltip.Show(tree, __instance, "Akabeko", "SpireLens", body);
+                return;
+            }
         }
         catch (Exception e)
         {
@@ -113,6 +129,13 @@ public static class RelicHoverShowPatch
         return sb.ToString();
     }
 
+    private static string BuildAkabekoBodyBBCode(RelicAggregate agg)
+    {
+        var sb = new StringBuilder();
+        Row3(sb, VigorLabel("vigor gained"), agg.VigorGained.ToString(), "");
+        return sb.ToString();
+    }
+
     private static string VulnerableLabel(string suffix)
     {
         var path = NormalizeResourcePath(VulnerableIconPath);
@@ -128,6 +151,12 @@ public static class RelicHoverShowPatch
     private static string BlockLabel(string suffix)
     {
         var path = NormalizeResourcePath(BlockIconPath);
+        return $"[img={InlineIconSize}x{InlineIconSize}]{path}[/img] {suffix}";
+    }
+
+    private static string VigorLabel(string suffix)
+    {
+        var path = NormalizeResourcePath(VigorIconPath);
         return $"[img={InlineIconSize}x{InlineIconSize}]{path}[/img] {suffix}";
     }
 

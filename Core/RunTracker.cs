@@ -57,6 +57,7 @@ public static class RunTracker
     private static int _pendingPlayerBlockClearAmount;
     private static bool _pendingPlayerBlockClearArmed;
     private static bool _pendingOrichalcumBlockAttribution;
+    private static bool _pendingAkabekoVigorAttribution;
     private static bool _shivAvailableThisRun;
     private static CardModel? _shivDeckViewCard;
     private const decimal PoisonOwnershipEpsilon = 0.0001m;
@@ -947,6 +948,7 @@ public static class RunTracker
                 runRelicAgg.WeakApplied += pendingRelicAgg.WeakApplied;
                 runRelicAgg.AdditionalCardsDrawn += pendingRelicAgg.AdditionalCardsDrawn;
                 runRelicAgg.AdditionalBlockGained += pendingRelicAgg.AdditionalBlockGained;
+                runRelicAgg.VigorGained += pendingRelicAgg.VigorGained;
             }
 
             // Refresh run-level metadata from the current game state (floor may have advanced).
@@ -1277,6 +1279,7 @@ public static class RunTracker
     private const string RedMaskRelicId = "RELIC.RED_MASK";
     private const string PocketwatchRelicId = "RELIC.POCKETWATCH";
     private const string OrichalcumRelicId = "RELIC.ORICHALCUM";
+    private const string AkabekoRelicId = "RELIC.AKABEKO";
 
     /// <summary>
     /// Record a Bag of Marbles combat-start Vulnerable application.
@@ -1423,6 +1426,63 @@ public static class RunTracker
     }
 
     /// <summary>
+    /// Arm the one-shot flag that attributes the next player VigorPower gain to
+    /// Akabeko. Called from <see cref="Patches.AkabekoAfterSideTurnStartPatch"/>
+    /// when Akabeko's <c>AfterSideTurnStart</c> fires on the player's side at
+    /// combat start (round 1).
+    /// </summary>
+    public static void ArmAkabekoVigorAttribution()
+    {
+        lock (_lock)
+        {
+            _pendingAkabekoVigorAttribution = true;
+        }
+    }
+
+    /// <summary>
+    /// Clear the Akabeko Vigor attribution flag without recording. Safety reset
+    /// if Vigor was not applied this combat start.
+    /// </summary>
+    public static void DisarmAkabekoVigorAttribution()
+    {
+        lock (_lock)
+        {
+            _pendingAkabekoVigorAttribution = false;
+        }
+    }
+
+    /// <summary>
+    /// Record Vigor gained from Akabeko's combat-start effect. Called from
+    /// <see cref="Patches.HookBeforePowerAmountChangedAkabekoPatch"/> when the
+    /// attribution flag is armed and the player gains VigorPower.
+    /// </summary>
+    public static void RecordAkabekoVigorGained(int amount)
+    {
+        if (amount <= 0) return;
+
+        lock (_lock)
+        {
+            try
+            {
+                if (!_pendingAkabekoVigorAttribution) return;
+                _pendingAkabekoVigorAttribution = false;
+
+                _pendingCombat ??= new PendingCombat();
+                if (!_pendingCombat.RelicAggregates.TryGetValue(AkabekoRelicId, out var agg))
+                {
+                    agg = new RelicAggregate();
+                    _pendingCombat.RelicAggregates[AkabekoRelicId] = agg;
+                }
+                agg.VigorGained += amount;
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordAkabekoVigorGained failed: {e.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Return the committed relic aggregate for a relic id, merged with any
     /// pending combat data. Used by the relic tooltip to show current-run stats.
     /// </summary>
@@ -1441,6 +1501,7 @@ public static class RunTracker
                     WeakApplied = committed.WeakApplied,
                     AdditionalCardsDrawn = committed.AdditionalCardsDrawn,
                     AdditionalBlockGained = committed.AdditionalBlockGained,
+                    VigorGained = committed.VigorGained,
                 };
             }
 
@@ -1452,6 +1513,7 @@ public static class RunTracker
                 result.WeakApplied += pending.WeakApplied;
                 result.AdditionalCardsDrawn += pending.AdditionalCardsDrawn;
                 result.AdditionalBlockGained += pending.AdditionalBlockGained;
+                result.VigorGained += pending.VigorGained;
             }
 
             return result;
