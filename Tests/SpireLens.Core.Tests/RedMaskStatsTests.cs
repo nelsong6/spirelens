@@ -70,7 +70,7 @@ public class RedMaskStatsTests
     }
 
     [Fact]
-    public void RunData_V15WithoutWeakApplied_DeserializesWithZeroDefault()
+    public void RunData_FromOlderShapeWithoutWeakApplied_DeserializesWithZeroDefault()
     {
         const string json = """
             {

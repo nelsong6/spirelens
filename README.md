@@ -6,17 +6,6 @@ Per-card attribution stats mod for [Slay the Spire 2](https://store.steampowered
 
 For codebase orientation, start with [AGENTS.md](AGENTS.md), [docs/architecture.md](docs/architecture.md), and [docs/sts2-runtime-primer.md](docs/sts2-runtime-primer.md).
 
-## Development Workflow
-
-This repo now runs in **pull-only** mode for assistant-driven work, with GitHub as the source of truth.
-
-- Assistant sessions should read and write repository state through GitHub-backed tools only.
-- Local filesystem reads and writes are out of bounds for normal repo work.
-- Changes should materialize as remote artifacts: branch, commit, and pull request.
-- If a remote artifact cannot be produced, the work should stop as blocked rather than leaving hidden local state behind.
-
-The detailed policy lives in [docs/pull-only-workflow.md](docs/pull-only-workflow.md).
-
 ## Why
 
 Existing stats mods answer "how often did I *pick* this card" ([SlayTheStats](https://www.nexusmods.com/slaythespire2/mods/349)) or "how much value did this *relic* provide" ([Relic Stats](https://www.nexusmods.com/slaythespire2/mods/327)). Nothing tracks how much of what each card *attempted* actually mattered. A 6-damage Strike into a 4-HP enemy and a 6-damage Strike into a fresh elite look the same on a play counter, but they have very different value.
@@ -71,7 +60,7 @@ Open: [#10 Run outcome detection](https://github.com/nelsong6/spirelens/issues/1
 
 ## Storage
 
-Per-run JSON files at `%APPDATA%/SlayTheSpire2/SpireLens/runs/<run-id>.json` (Godot's `user://` path). Contains both aggregated stats (fast for UI) and a full event log (one entry per card-played / damage-received / card-upgraded / block-gained / card-removed event, for future analysis). Schema versioned - see [issue #4](https://github.com/nelsong6/spirelens/issues/4). The current schema is additive through `v16`; pooled `v1` files remain history-only, while per-instance `v2` through `v16` files are resumable under the current loader. Session preferences (checkbox state) at `prefs.json` in the same dir.
+Per-run JSON files at `%APPDATA%/SlayTheSpire2/SpireLens/runs/<run-id>.json` (Godot's `user://` path). Contains both aggregated stats (fast for UI) and a full event log (one entry per card-played / damage-received / card-upgraded / block-gained / card-removed event, for future analysis). The on-disk shape evolves additively and is detected structurally on load: files containing `instance_numbers_by_def` or `def_counters` use the per-instance shape, while older pooled-shape files lack both fields. Pooled-shape files are history-only; per-instance files remain resumable under the current loader. Session preferences (checkbox state) at `prefs.json` in the same dir.
 
 ## Requirements
 

@@ -186,7 +186,9 @@ jobs:
             Start-Sleep -Seconds 60
           }
           "@
-          Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden
+          $proc = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden -PassThru
+          $pidFile = Join-Path $env:RUNNER_TEMP "issue-agent-heartbeat.pid"
+          $proc.Id | Out-File -FilePath $pidFile -Encoding ascii
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -296,6 +298,19 @@ jobs:
             ${{ runner.temp }}/sts2-artifacts/issue-agent-test-plan.*
             ${{ runner.temp }}/sts2-artifacts/issue-agent-result.*
 
+      - name: Stop background heartbeat
+        if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $pidFile = Join-Path $env:RUNNER_TEMP "issue-agent-heartbeat.pid"
+          if (Test-Path -LiteralPath $pidFile) {
+            $heartbeatPid = (Get-Content -LiteralPath $pidFile -Raw).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($heartbeatPid)) {
+              Stop-Process -Id ([int]$heartbeatPid) -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $pidFile -ErrorAction SilentlyContinue
+          }
+
       - name: Fail blocked test plan
         if: always() && steps.test_plan_result.outputs.phase_status != 'pass'
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -326,7 +341,8 @@ jobs:
       - name: Start background heartbeat
         # Implementation is the longest phase (30-min timeout) and can
         # outrun the lease TTL if it stalls. Background loop keeps the
-        # heartbeat fresh; killed automatically when the runner cleans up.
+        # heartbeat fresh; PID is written to disk so the post step can
+        # stop it (self-hosted runners do not auto-kill child processes).
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           $script = @"
@@ -337,7 +353,9 @@ jobs:
             Start-Sleep -Seconds 60
           }
           "@
-          Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden
+          $proc = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden -PassThru
+          $pidFile = Join-Path $env:RUNNER_TEMP "issue-agent-heartbeat.pid"
+          $proc.Id | Out-File -FilePath $pidFile -Encoding ascii
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -543,6 +561,19 @@ jobs:
             ${{ runner.temp }}/sts2-artifacts/issue-agent-implementation.*
             ${{ runner.temp }}/sts2-artifacts/issue-agent-result.*
 
+      - name: Stop background heartbeat
+        if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $pidFile = Join-Path $env:RUNNER_TEMP "issue-agent-heartbeat.pid"
+          if (Test-Path -LiteralPath $pidFile) {
+            $heartbeatPid = (Get-Content -LiteralPath $pidFile -Raw).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($heartbeatPid)) {
+              Stop-Process -Id ([int]$heartbeatPid) -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $pidFile -ErrorAction SilentlyContinue
+          }
+
       - name: Fail blocked implementation
         if: always() && steps.implementation_result.outputs.phase_status != 'pass'
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -591,7 +622,9 @@ jobs:
             Start-Sleep -Seconds 60
           }
           "@
-          Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden
+          $proc = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden -PassThru
+          $pidFile = Join-Path $env:RUNNER_TEMP "issue-agent-heartbeat.pid"
+          $proc.Id | Out-File -FilePath $pidFile -Encoding ascii
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -764,9 +797,24 @@ jobs:
             Invoke-Git push origin "HEAD:refs/heads/$branch"
           }
 
-          $prUrl = gh pr create --repo $env:REPO_SLUG --base main --head $branch --title $title --body-file $bodyPath
-          if ($LASTEXITCODE -ne 0) { throw "gh pr create failed with exit code $LASTEXITCODE." }
-          $prNumber = ($prUrl -split '/')[-1]
+          # Build the PR via REST so JSON serialization escapes any quotes,
+          # backticks, or other shell-hostile characters in $title or $body.
+          # gh pr create has --body-file but no --title-file, so the title
+          # would otherwise round-trip through PowerShell native arg parsing.
+          $payload = [ordered]@{
+            title = $title
+            body  = $body
+            head  = $branch
+            base  = "main"
+          } | ConvertTo-Json -Compress -Depth 5
+          $payloadPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-payload.json"
+          $payload | Set-Content -LiteralPath $payloadPath -Encoding UTF8 -NoNewline
+
+          $prJson = gh api --method POST "repos/$($env:REPO_SLUG)/pulls" --input $payloadPath
+          if ($LASTEXITCODE -ne 0) { throw "gh api repos/$($env:REPO_SLUG)/pulls failed with exit code $LASTEXITCODE." }
+          $prData = $prJson | ConvertFrom-Json
+          $prUrl = [string]$prData.html_url
+          $prNumber = [string]$prData.number
           "pr_url=$prUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "pr_number=$prNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
@@ -866,6 +914,19 @@ jobs:
             ${{ runner.temp }}/downloaded-implementation/**/*
             ${{ runner.temp }}/sts2-screenshots/**/*.png
             ${{ runner.temp }}/sts2-artifacts/**/*
+
+      - name: Stop background heartbeat
+        if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $pidFile = Join-Path $env:RUNNER_TEMP "issue-agent-heartbeat.pid"
+          if (Test-Path -LiteralPath $pidFile) {
+            $heartbeatPid = (Get-Content -LiteralPath $pidFile -Raw).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($heartbeatPid)) {
+              Stop-Process -Id ([int]$heartbeatPid) -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $pidFile -ErrorAction SilentlyContinue
+          }
 
       - name: Fail blocked issue-agent run
         if: always() && steps.verification_result.outputs.phase_status != 'pass'

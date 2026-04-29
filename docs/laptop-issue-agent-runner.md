@@ -22,10 +22,8 @@ are historical clutter, not scheduler input.
 
 Issue labels:
 
-- `issue-agent`: queues the issue.
-- `issue-agent-running`: applied by the workflow after it claims the issue.
-- `issue-agent-blocked`, `issue-agent-complete`, `issue-agent-pr-open`: status
-  labels used by the workflow and human triage.
+- `issue-agent`: queues the issue. The workflow removes it on claim.
+- `issue-agent-running`: applied by the workflow after it claims the issue, removed by the release job.
 
 Runner labels:
 

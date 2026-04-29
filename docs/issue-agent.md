@@ -27,10 +27,7 @@ the same group.
 Issue-agent labels are:
 
 - `issue-agent` means runnable / queued. The workflow removes this label when it claims the issue.
-- `issue-agent-running` means an issue-agent run is active for this issue.
-- `issue-agent-blocked`
-- `issue-agent-complete`
-- `issue-agent-pr-open`
+- `issue-agent-running` means an issue-agent run is active for this issue. The workflow adds it on claim and removes it in the release job.
 
 Runner route labels such as `issue-agent-runner-nelsonlaptop` belong on GitHub
 Actions runners and in Glimmung host names. They are not issue routing labels.
