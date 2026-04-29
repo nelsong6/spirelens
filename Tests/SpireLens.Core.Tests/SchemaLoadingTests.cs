@@ -299,7 +299,7 @@ public class SchemaLoadingTests
 
         Assert.NotNull(loaded);
         Assert.Equal(18, loaded!.SourceSchemaVersion);
-        Assert.False(loaded.IsLegacy);
+        Assert.True(loaded.IsLegacy);
         Assert.True(loaded.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.NotNull(loaded.CompatibilityNote);
