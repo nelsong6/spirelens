@@ -10,7 +10,7 @@ namespace SpireLens.Core;
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 17;
+    public const int CurrentSchemaVersion = 18;
 
     // v1: aggregates keyed by card definition id (pooled across instances)
     // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
@@ -62,8 +62,11 @@ public class RunData
     // v16: add WeakApplied to RelicAggregate for Red Mask combat-start Weak
     //      application. Also additive; older v15 files remain resumable with
     //      the new field defaulting to 0.
-    // v17: add AdditionalCardsDrawn to RelicAggregate for Pocketwatch turn-
-    //      start draw bonus tracking. Also additive; older v16 files remain
+    // v17: add AdditionalBlockGained to RelicAggregate for Orichalcum end-of-turn
+    //      block contribution. Also additive; older v16 files remain resumable with
+    //      the new field defaulting to 0.
+    // v18: add AdditionalCardsDrawn to RelicAggregate for Pocketwatch turn-
+    //      start draw bonus tracking. Also additive; older v17 files remain
     //      resumable with the new field defaulting to 0.
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
@@ -338,8 +341,12 @@ public class RelicAggregate
     public int WeakApplied { get; set; }
 
     // Total additional cards drawn by this relic across the run.
-    // Used by Pocketwatch (draws 3 extra cards when ≤3 cards played last turn).
+    // Used by Pocketwatch (draws 3 extra cards when 3 or fewer cards were played last turn).
     public int AdditionalCardsDrawn { get; set; }
+
+    // Total block gained from this relic across all combats.
+    // Used by Orichalcum (gains block at end of turn when player has no block).
+    public int AdditionalBlockGained { get; set; }
 }
 
 /// <summary>

@@ -564,6 +564,14 @@ function Test-TextMentionsUnavailableEvidence {
     return $Text -match '(?i)(not achievable|not available|unavailable|not renderable|cannot render|cannot be made visible|without mouse hover|no hover support|unit tests? (directly |exclusively |fully )?verif|verified exclusively through unit tests)'
 }
 
+function Test-TextMentionsFailedTests {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    if ($Text -match '(?i)\b(partial|regressions?|failing)\b') { return $true }
+    return $Text -match '(?i)\b[1-9][0-9]*\s+(?:\S+\s+){0,4}(?:fail(?:ed|s|ures?)?|regressions?)\b'
+}
+
 function Set-VerificationGuardAbort {
     param(
         [object]$Result,
@@ -622,6 +630,26 @@ function Apply-VerificationEvidenceGuard {
     $evidenceResults = ConvertTo-Array (Get-PropertyValue -Object $Result -Name 'evidence_results')
     if ($evidenceResults.Count -eq 0) {
         return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'artifact_contract_missing' -GuardNote 'Verification cannot pass because it did not write evidence_results for the test-plan evidence contract.'
+    }
+
+    $unitTests = Get-PropertyValue -Object $Result -Name 'unit_tests'
+    if ($null -ne $unitTests) {
+        $unitPassed = Get-PropertyValue -Object $unitTests -Name 'passed'
+        $unitStatus = [string](Get-PropertyValue -Object $unitTests -Name 'status')
+        $unitNotes = [string](Get-PropertyValue -Object $unitTests -Name 'notes')
+        $unitText = Get-TextBlob @($unitStatus, $unitNotes)
+        if ($unitPassed -eq $false -or (Test-TextMentionsFailedTests -Text $unitText)) {
+            return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'unit_tests_failed' -GuardNote 'Verification cannot pass because unit test results mention failed, partial, or regressed tests. Fix the tests or abort with unit_tests_failed.'
+        }
+    }
+
+    $unitEvidenceText = Get-TextBlob @(
+        $evidenceResults |
+            Where-Object { [string](Get-PropertyValue -Object $_ -Name 'kind') -eq 'unit_test' } |
+            ForEach-Object { [string](Get-PropertyValue -Object $_ -Name 'notes') }
+    )
+    if (Test-TextMentionsFailedTests -Text $unitEvidenceText) {
+        return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'unit_tests_failed' -GuardNote 'Verification cannot pass because unit-test evidence notes mention failed or regressed tests.'
     }
 
     $screenshotValidation = Get-PropertyValue -Object $Result -Name 'screenshot_validation'
@@ -1095,6 +1123,7 @@ dotnet build "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug "
 dotnet test "Tests\SpireLens.Core.Tests\SpireLens.Core.Tests.csproj" -c Debug --no-build "-p:Sts2DataDir=`$sts2DataDir"
 ``````
 
+- The full test command above is a hard gate. If any test fails after the implementation checkout is deployed, verification must abort with unit_tests_failed; do not call failures "pre-existing", "outside the contract", "partial", or "follow-up" when baseline main passed earlier in this workflow.
 - Default live validation fixture: the workflow has already materialized, installed, validated, and loaded the scenario save before this LLM phase starts. Read `issue-agent-scenario-setup.json` first, then inspect the live state with `get_game_state`. Do not call save materialization, save installation, current-run validation, current-run loading, save listing, save inspection, or scenario-command discovery tools. Do not use live MCP tools to arrange hand/draw/discard/exhaust piles. If needed after combat loads, `configure_live_combat` may set only sparse live properties such as enemy HP, current energy/stars, player powers, or enemy powers; card availability must come from the scenario save/deck and normal gameplay. If the game is at Neow, menu, the wrong character, transition-only state, or any unexpected state after loading, abort with `mcp_state_mismatch` or `game_state_unreachable`; do not choose Neow options, start ad hoc runs, or enter random debug rooms.
 - For SpireLens card-stat tooltip evidence, use `bridge_health`, `set_spirelens_view_stats_enabled(true)`, `list_visible_cards(surface)`, then `show_card_tooltip(surface, card_index, card_id)` on the target visible card, then `capture_screenshot`. Prefer `card_id` over card_index alone when validating a named card. For deck, draw pile, discard pile, or exhaust pile evidence, call `open_card_pile(pile)` first, use the matching surface name with `list_visible_cards`/`show_card_tooltip`, capture the screenshot, then call `close_card_pile()`. If `list_visible_cards` cannot find the target, `show_card_tooltip` returns an error, the bridge health check fails, or the captured screenshot still shows the wrong/stale tooltip after one retry, abort with `target_evidence_missing` or `game_state_unreachable`; do not keep trying arbitrary indices. Prefer this route over ad hoc mouse/hover attempts.
 - For SpireLens relic-stat tooltip evidence, use `bridge_health`, `set_spirelens_view_stats_enabled(true)`, `list_visible_relics(surface)`, then `show_relic_tooltip(surface, relic_id=...)` on the target visible relic, then `capture_screenshot`. Prefer `player_relic_bar` for owned relic stats unless the test plan explicitly names `relic_select` or `treasure`. Prefer `relic_id` over relic_index alone. If `list_visible_relics` cannot find the target, `show_relic_tooltip` returns an error, the bridge health check fails, or the captured screenshot still shows the wrong/stale tooltip after one retry, abort with `target_evidence_missing` or `game_state_unreachable`; do not use card tooltip tools or arbitrary mouse hover attempts as substitutes.

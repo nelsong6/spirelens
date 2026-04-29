@@ -59,6 +59,7 @@ $warnings = New-Object System.Collections.Generic.List[string]
 if ([string]::IsNullOrWhiteSpace($ScreenshotDir) -or -not (Test-Path -LiteralPath $ScreenshotDir)) {
     Add-PublishWarning "Screenshot directory not found: $ScreenshotDir"
     Write-PreviewMarkdown
+    $global:LASTEXITCODE = 0
     return
 }
 
@@ -99,3 +100,9 @@ foreach ($file in $files) {
 }
 
 Write-PreviewMarkdown
+
+# Azure CLI failures above are captured as warnings because screenshot previews are
+# a convenience layer over the uploaded artifact evidence. Clear the native exit
+# code so a handled preview-publish warning does not fail the whole issue-agent run.
+$global:LASTEXITCODE = 0
+exit 0

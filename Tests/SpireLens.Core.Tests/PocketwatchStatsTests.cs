@@ -63,11 +63,11 @@ public class PocketwatchStatsTests
     }
 
     [Fact]
-    public void RunData_V16WithoutAdditionalCardsDrawn_DeserializesWithZeroDefault()
+    public void RunData_V17WithoutAdditionalCardsDrawn_DeserializesWithZeroDefault()
     {
         const string json = """
             {
-              "schema_version": 16,
+              "schema_version": 17,
               "run_id": "test",
               "started_at": "2026-01-01T00:00:00Z",
               "updated_at": "2026-01-01T00:00:00Z",
@@ -94,8 +94,8 @@ public class PocketwatchStatsTests
     }
 
     [Fact]
-    public void RunData_SchemaVersion_IsBumpedTo17()
+    public void RunData_SchemaVersion_IsBumpedTo18()
     {
-        Assert.Equal(17, RunData.CurrentSchemaVersion);
+        Assert.Equal(18, RunData.CurrentSchemaVersion);
     }
 }

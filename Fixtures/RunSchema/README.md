@@ -47,17 +47,28 @@ These fixture files pin the on-disk run-file shapes that the mod has written.
   Legacy-but-resumable additive schema. Adds categorized blocked-draw reasons so draw cards can say
   why missing draws were prevented, alongside the v12 attempted/actual gap.
 - `v14-per-instance-make-it-so-run.json`
-  Current schema. Adds per-card summon-to-hand tracking for cards like
+  Legacy-but-resumable additive schema. Adds per-card summon-to-hand tracking for cards like
   `Make It So`, alongside the existing forge, blocked-draw, and per-instance
   attribution data.
+- `v15-bag-of-marbles-run.json`
+  Legacy-but-resumable additive schema. Adds relic aggregate storage for Bag of
+  Marbles combat-start Vulnerable tracking.
+- `v16-red-mask-run.json`
+  Legacy-but-resumable additive schema. Adds Red Mask Weak tracking to relic
+  aggregates.
+- `v17-orichalcum-run.json`
+  Legacy-but-resumable additive schema. Adds Orichalcum additional block gained tracking to relic
+  aggregates.
+- `v18-pocketwatch-run.json`
+  Current schema. Adds Pocketwatch additional cards drawn tracking to relic
+  aggregates.
 
 Why these exist:
 
 - schema work should be validated against real checked-in examples, not memory
 - `v1 -> v2` is not a lossless migration, so the old pooled shape needs to stay
   visible when changing loader behavior
-- additive follow-on schemas (like `v2 -> v3`, `v4 -> v5`, `v5 -> v6`, `v6 -> v7`, `v7 -> v8`, `v8 -> v9`, `v9 -> v10`, `v10 -> v11`, `v11 -> v12`, and `v12 -> v13`) still need fixture coverage so
-- additive follow-on schemas (like `v2 -> v3`, `v4 -> v5`, `v5 -> v6`, `v6 -> v7`, `v7 -> v8`, `v8 -> v9`, `v9 -> v10`, `v10 -> v11`, `v11 -> v12`, `v12 -> v13`, and `v13 -> v14`) still need fixture coverage so
+- additive follow-on schemas still need fixture coverage so
   "old but resumable" behavior stays intentional
 - future tests can read these files directly without having to reconstruct old
   JSON by hand

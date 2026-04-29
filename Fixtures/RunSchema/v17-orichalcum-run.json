@@ -1,0 +1,63 @@
+{
+  "schema_version": 17,
+  "run_id": "fixture-v17-orichalcum",
+  "started_at": "2026-04-29T10:00:00Z",
+  "updated_at": "2026-04-29T10:12:00Z",
+  "ended_at": "2026-04-29T10:15:00Z",
+  "character": "IRONCLAD",
+  "ascension": 5,
+  "floor_reached": 8,
+  "outcome": "win",
+  "game_start_time": 1745920800,
+  "aggregates": {
+    "CARD.BASH#1": {
+      "plays": 2,
+      "total_intended": 16,
+      "total_blocked": 0,
+      "total_overkill": 1,
+      "total_effective": 15,
+      "kills": 1,
+      "total_energy_spent": 4,
+      "total_energy_generated": 0,
+      "total_stars_spent": 0,
+      "total_stars_generated": 0,
+      "total_forge_generated": 0,
+      "total_block_gained": 0,
+      "total_block_effective": 0,
+      "total_block_wasted": 0,
+      "times_drawn": 2,
+      "times_discarded": 0,
+      "times_placed_on_top_from_hand": 0,
+      "times_placed_on_top_from_discard": 0,
+      "times_exhausted_other_cards": 0,
+      "times_exhausted": 0,
+      "total_hp_lost": 0,
+      "times_cards_drawn": 0,
+      "times_cards_draw_attempted": 0,
+      "times_cards_draw_blocked": 0,
+      "blocked_draw_reasons": {},
+      "times_summoned_to_hand": 0,
+      "applied_effects": {},
+      "floor_added": 1,
+      "initial_upgrade_level": 0,
+      "removed": false
+    }
+  },
+  "relic_aggregates": {
+    "RELIC.ORICHALCUM": {
+      "enemies_affected": 0,
+      "vulnerable_applied": 0,
+      "weak_applied": 0,
+      "additional_block_gained": 12
+    }
+  },
+  "events": [],
+  "instance_numbers_by_def": {
+    "CARD.BASH": [
+      1
+    ]
+  },
+  "def_counters": {
+    "CARD.BASH": 1
+  }
+}
