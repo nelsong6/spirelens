@@ -17,9 +17,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v1-pooled-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(1, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.False(loaded.SupportsResume);
+        Assert.False(loaded!.SupportsResume);
         Assert.False(loaded.HasPerInstanceIdentity);
         Assert.Contains("historical data", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CARD.STRIKE_KIN", loaded.Data.Aggregates.Keys);
@@ -31,11 +29,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v2-per-instance-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(2, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CARD.STRIKE_KIN#1", loaded.Data.Aggregates.Keys);
         Assert.Equal(1, loaded.Data.DefCounters["CARD.STRIKE_KIN"]);
     }
@@ -46,11 +41,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v3-per-instance-effects-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(3, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         var agg = loaded.Data.Aggregates["CARD.NECROBINDER_POWER#1"];
         var effect = agg.AppliedEffects["POWER.NECROBINDER_TRIGGER"];
         Assert.Equal("Necrobinder Trigger", effect.DisplayName);
@@ -63,9 +55,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v4-per-instance-effects-exhaust-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(4, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         var agg = loaded.Data.Aggregates["CARD.NECROBINDER_POWER#1"];
         Assert.Equal(1, agg.TimesExhausted);
@@ -78,9 +68,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v5-per-instance-block-ledger-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(5, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         var agg = loaded.Data.Aggregates["CARD.DEFEND_KIN#1"];
         Assert.Equal(6, agg.TotalBlockEffective);
@@ -93,9 +81,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v6-per-instance-artifact-block-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(6, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Equal(6, loaded.Data.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
         var effect = loaded.Data.Aggregates["CARD.BASH_KIN#1"].AppliedEffects["POWER.WEAK"];
@@ -109,9 +95,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v7-per-instance-poison-damage-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(7, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         var effect = loaded.Data.Aggregates["CARD.DEADLY_POISON#1"].AppliedEffects["POWER.POISON"];
         Assert.Equal(9m, effect.TotalTriggeredEffectiveDamage);
@@ -124,9 +108,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v8-per-instance-regent-stars-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(8, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Equal(2, loaded.Data.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
         Assert.Equal(2, loaded.Data.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
@@ -139,11 +121,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v9-per-instance-blocked-draw-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(9, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, loaded.Data.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawBlocked);
         Assert.Equal(1, loaded.Data.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawn);
         Assert.Equal(0, loaded.Data.Aggregates["CARD.POMMEL_STRIKE#1"].TotalStarsGenerated);
@@ -155,11 +134,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v9-per-instance-forge-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(9, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(9m, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
         Assert.Equal(5m, loaded.Data.Events[0].ForgeGained);
     }
@@ -170,11 +146,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v10-per-instance-forge-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(10, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(9m, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
         Assert.Equal(0, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TimesCardsDrawBlocked);
         Assert.Equal(4m, loaded.Data.Events[2].ForgeGained);
@@ -186,9 +159,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v11-per-instance-no-draw-blocked-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(11, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         var effect = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(2, effect.TotalTriggeredCardsDrawBlocked);
@@ -201,9 +172,7 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v12-per-instance-draw-attempt-gap-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(12, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         var blocker = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
@@ -217,11 +186,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v13-per-instance-blocked-draw-reasons-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(13, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         var blocker = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
         var reason = loaded.Data.Aggregates["CARD.BATTLE_TRANCE#2"].BlockedDrawReasons["effect:POWER.NO_DRAW"];
@@ -235,11 +201,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v14-per-instance-make-it-so-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(14, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(9m, loaded.Data.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
         Assert.Equal(2, loaded.Data.Aggregates["CARD.MAKE_IT_SO#1"].TimesSummonedToHand);
         Assert.Equal(4m, loaded.Data.Events[2].ForgeGained);
@@ -251,11 +214,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v15-bag-of-marbles-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(15, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         var relicAgg = loaded.Data.RelicAggregates["RELIC.BAG_OF_MARBLES"];
         Assert.Equal(5, relicAgg.EnemiesAffected);
         Assert.Equal(5, relicAgg.VulnerableApplied);
@@ -267,11 +227,8 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v16-red-mask-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(16, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         var relicAgg = loaded.Data.RelicAggregates["RELIC.RED_MASK"];
         Assert.Equal(3, relicAgg.EnemiesAffected);
         Assert.Equal(3, relicAgg.WeakApplied);
@@ -283,36 +240,23 @@ public class SchemaLoadingTests
         var loaded = RunStorage.LoadHistorical(FixturePath("v17-orichalcum-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(17, loaded!.SourceSchemaVersion);
-        Assert.True(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
-        Assert.Contains("resumable", loaded.CompatibilityNote!, StringComparison.OrdinalIgnoreCase);
         var relicAgg = loaded.Data.RelicAggregates["RELIC.ORICHALCUM"];
         Assert.Equal(12, relicAgg.AdditionalBlockGained);
     }
 
     [Fact]
-    public void HistoricalLoad_AcceptsCurrentV18Fixture()
+    public void HistoricalLoad_AcceptsV18Fixture()
     {
         var loaded = RunStorage.LoadHistorical(FixturePath("v18-pocketwatch-run.json"));
 
         Assert.NotNull(loaded);
-        Assert.Equal(RunData.CurrentSchemaVersion, loaded!.SourceSchemaVersion);
-        Assert.False(loaded.IsLegacy);
-        Assert.True(loaded.SupportsResume);
+        Assert.True(loaded!.SupportsResume);
         Assert.True(loaded.HasPerInstanceIdentity);
         Assert.Null(loaded.CompatibilityNote);
         Assert.Equal(12, loaded.Data.RelicAggregates["RELIC.ORICHALCUM"].AdditionalBlockGained);
         Assert.Equal(6, loaded.Data.RelicAggregates["RELIC.POCKETWATCH"].AdditionalCardsDrawn);
-    }
-
-    [Fact]
-    public void HistoricalLoad_RejectsUnknownSchemaFixture()
-    {
-        var loaded = RunStorage.LoadHistorical(FixturePath("v999-unknown-run.json"));
-
-        Assert.Null(loaded);
     }
 
     [Fact]
@@ -329,8 +273,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v2-per-instance-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(2, resumed!.SchemaVersion);
-        Assert.Contains("CARD.ENERGY_SURGE#1", resumed.Aggregates.Keys);
+        Assert.Contains("CARD.ENERGY_SURGE#1", resumed!.Aggregates.Keys);
     }
 
     [Fact]
@@ -339,8 +282,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v3-per-instance-effects-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(3, resumed!.SchemaVersion);
-        var effect = resumed.Aggregates["CARD.NECROBINDER_POWER#1"].AppliedEffects["POWER.NECROBINDER_TRIGGER"];
+        var effect = resumed!.Aggregates["CARD.NECROBINDER_POWER#1"].AppliedEffects["POWER.NECROBINDER_TRIGGER"];
         Assert.Equal(3m, effect.TotalAmountApplied);
     }
 
@@ -350,8 +292,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v4-per-instance-effects-exhaust-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(4, resumed!.SchemaVersion);
-        Assert.Equal(1, resumed.Aggregates["CARD.NECROBINDER_POWER#1"].TimesExhausted);
+        Assert.Equal(1, resumed!.Aggregates["CARD.NECROBINDER_POWER#1"].TimesExhausted);
     }
 
     [Fact]
@@ -360,8 +301,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v5-per-instance-block-ledger-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(5, resumed!.SchemaVersion);
-        Assert.Equal(6, resumed.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
+        Assert.Equal(6, resumed!.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
         Assert.Equal(4, resumed.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockWasted);
     }
 
@@ -371,8 +311,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v6-per-instance-artifact-block-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(6, resumed!.SchemaVersion);
-        Assert.Equal(6, resumed.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
+        Assert.Equal(6, resumed!.Aggregates["CARD.DEFEND_KIN#1"].TotalBlockEffective);
         var effect = resumed.Aggregates["CARD.BASH_KIN#1"].AppliedEffects["POWER.WEAK"];
         Assert.Equal(1, effect.TimesBlockedByArtifact);
         Assert.Equal(2m, effect.TotalAmountBlockedByArtifact);
@@ -384,8 +323,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v7-per-instance-poison-damage-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(7, resumed!.SchemaVersion);
-        var effect = resumed.Aggregates["CARD.DEADLY_POISON#1"].AppliedEffects["POWER.POISON"];
+        var effect = resumed!.Aggregates["CARD.DEADLY_POISON#1"].AppliedEffects["POWER.POISON"];
         Assert.Equal(9m, effect.TotalTriggeredEffectiveDamage);
         Assert.Equal(3m, effect.TotalTriggeredOverkill);
     }
@@ -396,8 +334,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v8-per-instance-regent-stars-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(8, resumed!.SchemaVersion);
-        Assert.Equal(2, resumed.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
+        Assert.Equal(2, resumed!.Aggregates["CARD.VENERATE#1"].TotalStarsGenerated);
         Assert.Equal(2, resumed.Aggregates["CARD.STARDUST#1"].TotalStarsSpent);
         Assert.Equal(1, resumed.Aggregates["CARD.VENERATE#1"].TimesDrawn);
     }
@@ -408,8 +345,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v9-per-instance-blocked-draw-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(9, resumed!.SchemaVersion);
-        Assert.Equal(2, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawBlocked);
+        Assert.Equal(2, resumed!.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawBlocked);
         Assert.Equal(1, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawn);
         Assert.Equal(0, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TotalStarsSpent);
     }
@@ -420,8 +356,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v9-per-instance-forge-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(9, resumed!.SchemaVersion);
-        Assert.Equal(9m, resumed.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(9m, resumed!.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
         Assert.Equal(0, resumed.Aggregates["CARD.REFINE_BLADE#1"].TimesCardsDrawBlocked);
     }
 
@@ -431,8 +366,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v10-per-instance-forge-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(10, resumed!.SchemaVersion);
-        Assert.Equal(9m, resumed.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(9m, resumed!.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
         Assert.Equal(0, resumed.Aggregates["CARD.REFINE_BLADE#1"].TimesCardsDrawBlocked);
     }
 
@@ -442,8 +376,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v11-per-instance-no-draw-blocked-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(11, resumed!.SchemaVersion);
-        var effect = resumed.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
+        var effect = resumed!.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(2, effect.TotalTriggeredCardsDrawBlocked);
         Assert.Equal(2, resumed.Aggregates["CARD.POMMEL_STRIKE#1"].TimesCardsDrawBlocked);
     }
@@ -454,8 +387,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v12-per-instance-draw-attempt-gap-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(12, resumed!.SchemaVersion);
-        var blocker = resumed.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
+        var blocker = resumed!.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
         Assert.Equal(3, resumed.Aggregates["CARD.BATTLE_TRANCE#2"].TimesCardsDrawAttempted);
         Assert.Equal(0, resumed.Aggregates["CARD.BATTLE_TRANCE#2"].TimesCardsDrawn);
@@ -467,8 +399,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v13-per-instance-blocked-draw-reasons-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(13, resumed!.SchemaVersion);
-        var blocker = resumed.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
+        var blocker = resumed!.Aggregates["CARD.BATTLE_TRANCE#1"].AppliedEffects["POWER.NO_DRAW"];
         Assert.Equal(3, blocker.TotalTriggeredCardsDrawBlocked);
         var reason = resumed.Aggregates["CARD.BATTLE_TRANCE#2"].BlockedDrawReasons["effect:POWER.NO_DRAW"];
         Assert.Equal("No Draw", reason.DisplayName);
@@ -481,8 +412,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v14-per-instance-make-it-so-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(14, resumed!.SchemaVersion);
-        Assert.Equal(9m, resumed.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
+        Assert.Equal(9m, resumed!.Aggregates["CARD.REFINE_BLADE#1"].TotalForgeGenerated);
         Assert.Equal(2, resumed.Aggregates["CARD.MAKE_IT_SO#1"].TimesSummonedToHand);
         Assert.Equal(3, resumed.Aggregates["CARD.MAKE_IT_SO#1"].TimesDrawn);
     }
@@ -493,8 +423,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v15-bag-of-marbles-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(15, resumed!.SchemaVersion);
-        var relicAgg = resumed.RelicAggregates["RELIC.BAG_OF_MARBLES"];
+        var relicAgg = resumed!.RelicAggregates["RELIC.BAG_OF_MARBLES"];
         Assert.Equal(5, relicAgg.EnemiesAffected);
         Assert.Equal(5, relicAgg.VulnerableApplied);
     }
@@ -505,8 +434,7 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v16-red-mask-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(16, resumed!.SchemaVersion);
-        var relicAgg = resumed.RelicAggregates["RELIC.RED_MASK"];
+        var relicAgg = resumed!.RelicAggregates["RELIC.RED_MASK"];
         Assert.Equal(3, relicAgg.EnemiesAffected);
         Assert.Equal(3, relicAgg.WeakApplied);
     }
@@ -517,27 +445,17 @@ public class SchemaLoadingTests
         var resumed = RunStorage.LoadResumable(FixturePath("v17-orichalcum-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(17, resumed!.SchemaVersion);
-        var relicAgg = resumed.RelicAggregates["RELIC.ORICHALCUM"];
+        var relicAgg = resumed!.RelicAggregates["RELIC.ORICHALCUM"];
         Assert.Equal(12, relicAgg.AdditionalBlockGained);
     }
 
     [Fact]
-    public void ResumableLoad_AcceptsCurrentV18Fixture()
+    public void ResumableLoad_AcceptsV18Fixture()
     {
         var resumed = RunStorage.LoadResumable(FixturePath("v18-pocketwatch-run.json"));
 
         Assert.NotNull(resumed);
-        Assert.Equal(RunData.CurrentSchemaVersion, resumed!.SchemaVersion);
-        Assert.Equal(12, resumed.RelicAggregates["RELIC.ORICHALCUM"].AdditionalBlockGained);
+        Assert.Equal(12, resumed!.RelicAggregates["RELIC.ORICHALCUM"].AdditionalBlockGained);
         Assert.Equal(6, resumed.RelicAggregates["RELIC.POCKETWATCH"].AdditionalCardsDrawn);
-    }
-
-    [Fact]
-    public void ResumableLoad_RejectsUnknownSchemaFixture()
-    {
-        var resumed = RunStorage.LoadResumable(FixturePath("v999-unknown-run.json"));
-
-        Assert.Null(resumed);
     }
 }

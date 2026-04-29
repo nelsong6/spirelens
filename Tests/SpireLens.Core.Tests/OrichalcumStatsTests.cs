@@ -84,11 +84,10 @@ public class OrichalcumStatsTests
     }
 
     [Fact]
-    public void RunData_V16WithoutAdditionalBlockGained_DeserializesWithZeroDefault()
+    public void RunData_OlderShapeWithoutAdditionalBlockGained_DeserializesWithZeroDefault()
     {
         const string json = """
             {
-              "schema_version": 16,
               "run_id": "test",
               "started_at": "2026-01-01T00:00:00Z",
               "updated_at": "2026-01-01T00:00:00Z",
@@ -113,13 +112,5 @@ public class OrichalcumStatsTests
         Assert.True(run!.RelicAggregates.ContainsKey(OrichalcumRelicId));
         var agg = run.RelicAggregates[OrichalcumRelicId];
         Assert.Equal(0, agg.AdditionalBlockGained);
-    }
-
-    [Fact]
-    public void RunData_SchemaVersion_IsCurrentVersion()
-    {
-        var run = new RunData();
-        Assert.Equal(RunData.CurrentSchemaVersion, run.SchemaVersion);
-        Assert.Equal(18, RunData.CurrentSchemaVersion);
     }
 }

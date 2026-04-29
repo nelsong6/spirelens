@@ -6,7 +6,7 @@ Primary local entry points after reading this:
 
 - `Core/RunTracker.cs`: attribution state machine, pending combat buffer, persistence boundary, card identity, block/effect/poison ledgers.
 - `Core/Patches/*.cs`: trusted hook surfaces and the timing assumptions behind them.
-- `Core/RunData.cs`: persisted schema and what each aggregate field means.
+- `Core/RunData.cs`: persisted shape and what each aggregate field means.
 - `docs/architecture.md`: SpireLens topology and product-level data flow.
 
 ## The Two Worlds
@@ -16,7 +16,7 @@ SpireLens always has to keep two worlds distinct:
 1. The game's live runtime: Godot nodes, CombatManager, RunManager, CardModel objects, piles, hooks, combat history, powers, relics, and async model callbacks.
 2. SpireLens' run record: committed `RunData`, pending combat aggregates/events, tooltip projections, and JSON persistence.
 
-The live runtime is mutable and object-reference heavy. The persisted run record must be stable across hot reloads, combat transitions, and future schema additions. Most bugs come from accidentally treating one world as if it had the guarantees of the other.
+The live runtime is mutable and object-reference heavy. The persisted run record must be stable across hot reloads, combat transitions, and future shape additions. Most bugs come from accidentally treating one world as if it had the guarantees of the other.
 
 A good rule: observe the game as late as needed to know what really happened, but record it in SpireLens as early as needed to preserve the source context before the game discards it.
 
@@ -331,9 +331,9 @@ When modifying tooltip rows:
 - Prefer game icon assets for recognizable concepts like block/draw/energy/stars/effects.
 - Avoid creating instance numbers from hover-only preview/template cards.
 
-## Persistence And Schema
+## Persistence And Shape
 
-`RunData` is the serialized shape. Schema changes must be additive when possible and must update fixtures/tests.
+`RunData` is the serialized shape. Changes must be additive so that older run files keep loading.
 
 Current persistence facts:
 
@@ -341,16 +341,14 @@ Current persistence facts:
 - File name is SpireLens run id, not the game's run-history file name.
 - `GameStartTime` stores the game's run identifier (`RunManager._startTime`) so SpireLens can correlate with game run history and resume active runs after hot reload.
 - `RunStorage.SaveAsync` serializes on the caller thread while `RunTracker` holds its lock, then writes on a background task.
-- v1 pooled files are historical-only because they cannot rebuild per-instance live state.
-- v2+ per-instance schemas are intended to remain resumable when later fields are additive.
+- The on-disk shape is detected structurally, not by an explicit version number. The historic pooled shape (aggregates keyed by card definition id) is history-only because it cannot rebuild per-instance live state. Everything else is the current per-instance shape and is resumable across hot reload.
+- Per-instance shape is identified by presence of `instance_numbers_by_def` or `def_counters` at the top level of the JSON file. Files predating per-instance identity lack both fields entirely.
 
 For new persisted fields:
 
-- bump `RunData.CurrentSchemaVersion`,
-- document the version in `RunData.cs`,
-- ensure old files deserialize with safe defaults,
-- update fixtures under `Fixtures/RunSchema`,
-- update `SchemaLoadingTests`,
+- keep them additive so old files deserialize with safe defaults,
+- add a fixture under `Fixtures/RunSchema` capturing the new shape,
+- update `SchemaLoadingTests` to assert the new shape loads and any new fields land where expected,
 - update tooltip/tests if user-facing.
 
 ## Choosing A Hook
@@ -393,7 +391,7 @@ When a new stat does not work, first determine which of these failed:
 - The source card is a combat clone and was not canonicalized.
 - The event occurred outside `_pendingCombat`.
 - The data is pending but tooltip reads only committed data.
-- The data was recorded but schema/default/merge omitted it.
+- The data was recorded but shape/default/merge omitted it.
 - The stat is correct but compact tooltip intentionally hides it.
 
 `CoreMain.Initialize()` logs Harmony-patched methods for diagnostics. Use that list to confirm a hook exists before chasing tracker logic.

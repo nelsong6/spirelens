@@ -20,7 +20,6 @@ public static class RunStorage
 {
     private sealed class RunFileHeader
     {
-        public int SchemaVersion { get; set; }
         public long? GameStartTime { get; set; }
         public string RunId { get; set; } = "";
     }
@@ -63,95 +62,83 @@ public static class RunStorage
         return JsonSerializer.Deserialize<RunFileHeader>(json, Options);
     }
 
-    private static RunData? DeserializeRunData(string path)
+    /// <summary>
+    /// Detects whether a stored run file uses the current per-instance shape.
+    /// Per-instance files always carry <c>instance_numbers_by_def</c> or
+    /// <c>def_counters</c> at the top level (the runtime serializes both, even
+    /// when empty); the historic pooled shape predates both fields and lacks
+    /// them entirely.
+    /// </summary>
+    private static bool HasPerInstanceShape(string json)
     {
-        var json = File.ReadAllText(path);
-        var data = JsonSerializer.Deserialize<RunData>(json, Options);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) return false;
+        return root.TryGetProperty("instance_numbers_by_def", out _)
+            || root.TryGetProperty("def_counters", out _);
+    }
+
+    private static LoadedRunFile? LoadKnownSchemaFile(string path)
+    {
+        string json;
+        try
+        {
+            json = File.ReadAllText(path);
+        }
+        catch (Exception e)
+        {
+            CoreMain.LogDebug($"LoadKnownSchemaFile: cannot read {Path.GetFileName(path)}: {e.Message}");
+            return null;
+        }
+
+        bool perInstance;
+        try
+        {
+            perInstance = HasPerInstanceShape(json);
+        }
+        catch (JsonException e)
+        {
+            CoreMain.LogDebug($"LoadKnownSchemaFile: malformed JSON in {Path.GetFileName(path)}: {e.Message}");
+            return null;
+        }
+
+        RunData? data;
+        try
+        {
+            data = JsonSerializer.Deserialize<RunData>(json, Options);
+        }
+        catch (JsonException e)
+        {
+            CoreMain.LogDebug($"LoadKnownSchemaFile: deserialization failed for {Path.GetFileName(path)}: {e.Message}");
+            return null;
+        }
         if (data == null)
         {
-            CoreMain.LogDebug($"DeserializeRunData: deserialization returned null for {Path.GetFileName(path)}");
-            return null;
-        }
-        return data;
-    }
-
-    private static LoadedRunFile? LoadKnownSchemaFile(string path, RunFileHeader? header)
-    {
-        header ??= ReadHeader(path);
-        if (header == null)
-        {
-            CoreMain.LogDebug($"LoadKnownSchemaFile: unreadable header in {Path.GetFileName(path)}");
+            CoreMain.LogDebug($"LoadKnownSchemaFile: deserialization returned null for {Path.GetFileName(path)}");
             return null;
         }
 
-        switch (header.SchemaVersion)
+        return new LoadedRunFile
         {
-            case 1:
-            {
-                var data = DeserializeRunData(path);
-                if (data == null) return null;
-                return new LoadedRunFile
-                {
-                    SourcePath = path,
-                    SourceSchemaVersion = 1,
-                    SupportsResume = false,
-                    HasPerInstanceIdentity = false,
-                    CompatibilityNote =
-                        "Schema v1 stores pooled per-definition aggregates only. " +
-                        "It is readable as historical data, but it cannot rebuild current per-instance live state.",
-                    Data = data,
-                };
-            }
-
-            case 2:
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7:
-            case 8:
-            case 9:
-            case 10:
-            case 11:
-            case 12:
-            case 13:
-            case 14:
-            case 15:
-            case 16:
-            case 17:
-            case RunData.CurrentSchemaVersion:
-            {
-                var data = DeserializeRunData(path);
-                if (data == null) return null;
-                return new LoadedRunFile
-                {
-                    SourcePath = path,
-                    SourceSchemaVersion = header.SchemaVersion,
-                    SupportsResume = true,
-                    HasPerInstanceIdentity = true,
-                    CompatibilityNote = header.SchemaVersion == RunData.CurrentSchemaVersion
-                        ? null
-                        : $"Schema v{header.SchemaVersion} remains resumable under v{RunData.CurrentSchemaVersion} because newer fields are additive.",
-                    Data = data,
-                };
-            }
-
-            default:
-                CoreMain.Logger.Warn(
-                    $"LoadKnownSchemaFile: {Path.GetFileName(path)} uses unsupported schema v{header.SchemaVersion}. " +
-                    $"Current known schema is v{RunData.CurrentSchemaVersion}.");
-                return null;
-        }
+            SourcePath = path,
+            SupportsResume = perInstance,
+            HasPerInstanceIdentity = perInstance,
+            CompatibilityNote = perInstance
+                ? null
+                : "File stores pooled per-definition aggregates only. " +
+                  "Readable as historical data, but cannot rebuild current per-instance live state.",
+            Data = data,
+        };
     }
 
-    private static RunData? LoadForResume(string path, RunFileHeader? header)
+    private static RunData? LoadForResume(string path)
     {
-        var loaded = LoadKnownSchemaFile(path, header);
+        var loaded = LoadKnownSchemaFile(path);
         if (loaded == null) return null;
         if (loaded.SupportsResume) return loaded.Data;
 
         CoreMain.Logger.Warn(
-            $"LoadForResume: {Path.GetFileName(path)} is schema v{loaded.SourceSchemaVersion} and is history-only. " +
+            $"LoadForResume: {Path.GetFileName(path)} uses the historic pooled shape and is history-only. " +
             $"{loaded.CompatibilityNote}");
         return null;
     }
@@ -159,8 +146,8 @@ public static class RunStorage
     /// <summary>
     /// Load a stored run file for historical viewing / analysis.
     ///
-    /// Unlike hot-reload resume, this accepts legacy pooled files. Callers must
-    /// inspect <see cref="LoadedRunFile.HasPerInstanceIdentity"/> before
+    /// Unlike hot-reload resume, this accepts the historic pooled shape. Callers
+    /// must inspect <see cref="LoadedRunFile.HasPerInstanceIdentity"/> before
     /// assuming that aggregate keys look like "CARD#N" or that removed-card
     /// snapshots / resume metadata exist.
     /// </summary>
@@ -168,7 +155,7 @@ public static class RunStorage
     {
         try
         {
-            return LoadKnownSchemaFile(path, header: null);
+            return LoadKnownSchemaFile(path);
         }
         catch (Exception e)
         {
@@ -188,7 +175,7 @@ public static class RunStorage
     {
         try
         {
-            return LoadForResume(path, header: null);
+            return LoadForResume(path);
         }
         catch (Exception e)
         {
@@ -226,7 +213,7 @@ public static class RunStorage
                     var header = ReadHeader(path);
                     if (header?.GameStartTime != gameStartTime) continue;
 
-                    var data = LoadForResume(path, header);
+                    var data = LoadForResume(path);
                     if (data != null) return data;
                     foundUnsupportedMatch = true;
                 }
@@ -245,8 +232,7 @@ public static class RunStorage
 
     /// <summary>
     /// Historical counterpart to <see cref="FindByGameStartTime"/>. Returns a
-    /// loaded run file even when the source schema is legacy pooled v1, as long
-    /// as the file is still a known schema.
+    /// loaded run file even when the source uses the historic pooled shape.
     /// </summary>
     public static LoadedRunFile? FindHistoricalByGameStartTime(long gameStartTime)
     {
@@ -263,7 +249,7 @@ public static class RunStorage
                 {
                     var header = ReadHeader(path);
                     if (header?.GameStartTime != gameStartTime) continue;
-                    return LoadKnownSchemaFile(path, header);
+                    return LoadKnownSchemaFile(path);
                 }
                 catch (Exception e)
                 {

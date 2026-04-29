@@ -63,11 +63,10 @@ public class PocketwatchStatsTests
     }
 
     [Fact]
-    public void RunData_V17WithoutAdditionalCardsDrawn_DeserializesWithZeroDefault()
+    public void RunData_OlderShapeWithoutAdditionalCardsDrawn_DeserializesWithZeroDefault()
     {
         const string json = """
             {
-              "schema_version": 17,
               "run_id": "test",
               "started_at": "2026-01-01T00:00:00Z",
               "updated_at": "2026-01-01T00:00:00Z",
@@ -91,11 +90,5 @@ public class PocketwatchStatsTests
         Assert.NotNull(run);
         Assert.True(run!.RelicAggregates.ContainsKey(PocketwatchRelicId));
         Assert.Equal(0, run.RelicAggregates[PocketwatchRelicId].AdditionalCardsDrawn);
-    }
-
-    [Fact]
-    public void RunData_SchemaVersion_IsBumpedTo18()
-    {
-        Assert.Equal(18, RunData.CurrentSchemaVersion);
     }
 }

@@ -11,7 +11,6 @@ public static class SpireLensApiRegistry
     public static ISpireLensApi Api { get; } = new ReflectionBackedSpireLensApi();
 
     public static bool IsCoreLoaded => Api.IsCoreLoaded;
-    public static int CurrentSchemaVersion => Api.CurrentSchemaVersion;
     public static string GetRuntimeOptionsJson() => Api.GetRuntimeOptionsJson();
     public static string? GetCurrentRunJson() => Api.GetCurrentRunJson();
     public static string? TryGetCardAggregateJson(object? cardModel) => Api.TryGetCardAggregateJson(cardModel);
@@ -21,17 +20,6 @@ public static class SpireLensApiRegistry
         private static readonly JsonSerializerOptions JsonOptions = new();
 
         public bool IsCoreLoaded => ResolveLatestCoreType("SpireLens.Core.RunTracker") != null;
-
-        public int CurrentSchemaVersion
-        {
-            get
-            {
-                var field = ResolveLatestCoreType("SpireLens.Core.RunData")
-                    ?.GetField("CurrentSchemaVersion", BindingFlags.Public | BindingFlags.Static);
-                var value = field?.GetValue(null);
-                return value is int schemaVersion ? schemaVersion : 0;
-            }
-        }
 
         public string GetRuntimeOptionsJson()
         {
