@@ -5,70 +5,17 @@ namespace SpireLens.Core;
 
 /// <summary>
 /// Serialized shape of one run's stats. Written to disk as JSON.
-/// Schema changes MUST bump <see cref="SchemaVersion"/> and add migration.
-/// See https://github.com/nelsong6/spirelens/issues/4
+///
+/// The on-disk shape evolves additively: new persisted fields default safely
+/// on missing-field deserialization, so older files continue to load without
+/// an explicit version number. The historic pooled shape (aggregates keyed by
+/// card definition id rather than per-instance id, written before
+/// <see cref="InstanceNumbersByDef"/> and <see cref="DefCounters"/> existed)
+/// is detected structurally by <see cref="RunStorage"/>; everything else is
+/// the current per-instance shape.
 /// </summary>
 public class RunData
 {
-    public const int CurrentSchemaVersion = 18;
-
-    // v1: aggregates keyed by card definition id (pooled across instances)
-    // v2: aggregates keyed by per-instance id ("CARD.STRIKE_SILENT#1") —
-    //     each physical card in the deck gets its own entry. Pooled view
-    //     tracked as feature request in issue #11.
-    // v3: per-card aggregates can now include effect-application summaries
-    //     keyed by power/effect id. Older v2 files remain resumable because
-    //     the new nested field is additive; missing data simply deserializes
-    //     as an empty dictionary.
-    // v4: add "this card was exhausted" count. Also additive; older v3 files
-    //     remain resumable with the new field defaulting to 0.
-    // v5: add block absorption / waste aggregates. Also additive; older v4
-    //     files remain resumable with the new fields defaulting to 0.
-    // v6: add per-effect Artifact-blocked debuff counters. Also additive;
-    //     older v5 files remain resumable with the new fields defaulting to 0.
-    // v7: add per-effect downstream damage / overkill counters so effect-
-    //     oriented tooltips (starting with Poison) can report observed
-    //     outcomes instead of only application totals. Also additive; older
-    //     v6 files remain resumable with the new fields defaulting to 0.
-    // v8: add Regent star-resource spend / gain tracking alongside the
-    //     existing energy fields. Also additive; older v7 files remain
-    //     resumable with the new fields defaulting to 0.
-    // v9: add per-card blocked-draw attribution counts. Also additive;
-    //     older v8 files remain resumable with the new field defaulting to 0.
-    // v10: add per-card forge granted tracking so forge cards can report
-    //      the actual forge added during their resolution. Also additive;
-    //      older v9 files remain resumable with the new field defaulting
-    //      to 0.
-    // v11: add per-effect downstream blocked-draw counts so powers like
-    //      No Draw can report how many cards they actually prevented from
-    //      being drawn. Also additive; older v10 files remain resumable with
-    //      the new field defaulting to 0.
-    // v12: add per-card attempted draw counts so draw cards can show what
-    //      they tried to draw versus what actually landed. Also additive;
-    //      older v11 files remain resumable with the new field defaulting
-    //      to 0.
-    // v13: add per-card blocked-draw reason categories so draw cards can
-    //      say why their missing draws were prevented (No Draw, hand full,
-    //      other). Also additive; older v12 files remain resumable with the
-    //      new field defaulting to empty.
-    // v14: add per-card "times summoned to hand" tracking for cards whose
-    //      own runtime behavior can recur them to hand (starting with
-    //      Make It So). Also additive; older v13 files remain resumable
-    //      with the new field defaulting to 0.
-    // v15: add per-relic stat aggregates (starting with Bag of Marbles —
-    //      enemies affected and Vulnerable stacks applied at combat start).
-    //      Also additive; older v14 files remain resumable with the new
-    //      field defaulting to empty.
-    // v16: add WeakApplied to RelicAggregate for Red Mask combat-start Weak
-    //      application. Also additive; older v15 files remain resumable with
-    //      the new field defaulting to 0.
-    // v17: add AdditionalBlockGained to RelicAggregate for Orichalcum end-of-turn
-    //      block contribution. Also additive; older v16 files remain resumable with
-    //      the new field defaulting to 0.
-    // v18: add AdditionalCardsDrawn to RelicAggregate for Pocketwatch turn-
-    //      start draw bonus tracking. Also additive; older v17 files remain
-    //      resumable with the new field defaulting to 0.
-    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string RunId { get; set; } = "";
     public string StartedAt { get; set; } = "";  // ISO-8601 UTC
     public string UpdatedAt { get; set; } = "";
@@ -116,6 +63,11 @@ public class RunData
     /// (def_id, rank-among-same-def), look up the number, repopulate
     /// <c>RunTracker._instanceNumbers</c>. Removal-safe because rank is
     /// relative to the CURRENT deck composition.
+    ///
+    /// Presence of this field (or <see cref="DefCounters"/>) at the top
+    /// level of an on-disk JSON file is also the structural marker that
+    /// the file uses the per-instance shape. Files predating per-instance
+    /// identity lack both fields entirely.
     /// </summary>
     public Dictionary<string, List<int>> InstanceNumbersByDef { get; set; } = new();
 
