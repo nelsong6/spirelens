@@ -299,6 +299,10 @@ public class RelicAggregate
     // Total block gained from this relic across all combats.
     // Used by Orichalcum (gains block at end of turn when player has no block).
     public int AdditionalBlockGained { get; set; }
+
+    // Total Vigor gained from this relic across all combats.
+    // Used by Akabeko (gains 8 Vigor at combat start).
+    public int VigorGained { get; set; }
 }
 
 /// <summary>
