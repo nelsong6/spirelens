@@ -734,6 +734,22 @@ jobs:
             $status = [string]$json.status
             $abortReason = [string]$json.abort_reason
           }
+          # When the verification phase never wrote its own result (status=skipped),
+          # the actual blocker is usually a scenario_setup abort from the
+          # "Prepare STS2 scenario save" step. Surface that abort_reason here so
+          # the terminal pass-gate names the real cause instead of a blank reason.
+          if ($status -eq "skipped" -and [string]::IsNullOrWhiteSpace($abortReason)) {
+            $setupPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-scenario-setup.json"
+            if (Test-Path -LiteralPath $setupPath) {
+              $setup = Get-Content -LiteralPath $setupPath -Raw | ConvertFrom-Json
+              if ([string]$setup.status -eq 'abort') {
+                $setupReason = [string]$setup.abort_reason
+                if (-not [string]::IsNullOrWhiteSpace($setupReason)) {
+                  $abortReason = "scenario_setup:$setupReason"
+                }
+              }
+            }
+          }
           "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8NoBOM -Append
           "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8NoBOM -Append
 

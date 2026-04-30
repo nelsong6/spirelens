@@ -207,6 +207,27 @@ function Format-Usd {
     param([double]$Value)
     return ('$' + $Value.ToString('0.0000', [System.Globalization.CultureInfo]::InvariantCulture))
 }
+
+function Get-ExitCodeText {
+    # Reads phase_exit agent events written by run-issue-agent-phases.ps1
+    # (Write-AgentEvent 'phase_exit' ... @{ phase = $phaseName; exit_code = $exitCode })
+    # and renders a "test_plan=0, implementation=0, verification=1" summary.
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return '_None_' }
+    $exits = [ordered]@{}
+    Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $record = $_ | ConvertFrom-Json -ErrorAction Stop
+            if ($record.kind -ne 'phase_exit') { return }
+            $phase = [string](Get-NestedPropertyValue -Object $record -Path @('data', 'phase'))
+            $code = Get-NestedPropertyValue -Object $record -Path @('data', 'exit_code')
+            if (-not [string]::IsNullOrWhiteSpace($phase) -and $null -ne $code) { $exits[$phase] = [int]$code }
+        } catch {
+        }
+    }
+    if ($exits.Count -eq 0) { return '_None_' }
+    return (($exits.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', ')
+}
 function Read-JsonOrNull {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $null }
