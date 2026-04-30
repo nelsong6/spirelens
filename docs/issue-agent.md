@@ -240,6 +240,18 @@ Allowed verification abort reasons:
 
 Each phase Markdown is appended to the job summary as soon as the phase finishes. The final summary step posts a compact rollup with phase statuses, per-phase costs, grand total cost, artifact links, screenshot counts, and any PR link created by the wrapper and written back into the result JSON.
 
+## Verification Write-Up Requirements
+
+`issue-agent-verification.md` must include a `## Test Process` section that walks the reviewer through what was actually executed, in plain English, *step by step*. This is required even when the result is "pass" and the steps look obvious — its purpose is to let a human reviewer compare what they see in the produced PR/screenshot against what the test was designed to demonstrate. Without it, a reviewer who notices an unexpected number on a tooltip cannot tell whether it's a real bug or expected accumulator behavior.
+
+For every step in the validation plan that actually ran, the write-up must include:
+
+- **What was done** — one sentence describing the action in plain language ("Loaded the scenario save, then advanced to the Fuzzy Wurm Crawler combat node").
+- **What it was supposed to prove** — what observation that step was meant to produce, including expected numeric values where the test scenario implies one ("Should fire Akabeko's start-of-combat trigger exactly once and grant 8 Vigor — `VIGOR_POWER` status amount=8 and the SpireLens `vigor gained` accumulator at 8").
+- **What was actually observed** — the concrete value or state read back from the game, copied verbatim from the relevant `get_game_state` field or screenshot OCR. If the observed value differs from the expected, the verification phase must abort, not pass quietly.
+
+The plain-English write-up is in addition to (not a replacement for) the structured `evidence_results` array and the `Live MCP Validation` / `Screenshot Evidence` tables. Reviewers reading from the issue comment or the job summary should be able to read just the `## Test Process` section and reproduce the test in their head. If a number on a screenshot is unexpected, that section is the first thing they'll consult to decide whether the test scenario could legitimately have produced it.
+
 ## Relic Stat Prompting
 
 Relic-stat implementation issues should keep the same issue-agent workflow as card-stat issues, but their prompts should include an explicit reference-code boundary.
