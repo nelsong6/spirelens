@@ -947,6 +947,7 @@ public static class RunTracker
                 runRelicAgg.WeakApplied += pendingRelicAgg.WeakApplied;
                 runRelicAgg.AdditionalCardsDrawn += pendingRelicAgg.AdditionalCardsDrawn;
                 runRelicAgg.AdditionalBlockGained += pendingRelicAgg.AdditionalBlockGained;
+                runRelicAgg.VigorGained += pendingRelicAgg.VigorGained;
             }
 
             // Refresh run-level metadata from the current game state (floor may have advanced).
@@ -1277,6 +1278,7 @@ public static class RunTracker
     private const string RedMaskRelicId = "RELIC.RED_MASK";
     private const string PocketwatchRelicId = "RELIC.POCKETWATCH";
     private const string OrichalcumRelicId = "RELIC.ORICHALCUM";
+    private const string AkabekoRelicId = "RELIC.AKABEKO";
 
     /// <summary>
     /// Record a Bag of Marbles combat-start Vulnerable application.
@@ -1423,6 +1425,33 @@ public static class RunTracker
     }
 
     /// <summary>
+    /// Record Vigor gained by the Akabeko relic at combat start.
+    /// Called from <see cref="Patches.AkabekoBeforeSideTurnStartPatch"/>.
+    /// </summary>
+    public static void RecordAkabekoVigorGained(int amount)
+    {
+        if (amount <= 0) return;
+
+        lock (_lock)
+        {
+            try
+            {
+                _pendingCombat ??= new PendingCombat();
+                if (!_pendingCombat.RelicAggregates.TryGetValue(AkabekoRelicId, out var agg))
+                {
+                    agg = new RelicAggregate();
+                    _pendingCombat.RelicAggregates[AkabekoRelicId] = agg;
+                }
+                agg.VigorGained += amount;
+            }
+            catch (Exception e)
+            {
+                CoreMain.LogDebug($"RecordAkabekoVigorGained failed: {e.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Return the committed relic aggregate for a relic id, merged with any
     /// pending combat data. Used by the relic tooltip to show current-run stats.
     /// </summary>
@@ -1441,6 +1470,7 @@ public static class RunTracker
                     WeakApplied = committed.WeakApplied,
                     AdditionalCardsDrawn = committed.AdditionalCardsDrawn,
                     AdditionalBlockGained = committed.AdditionalBlockGained,
+                    VigorGained = committed.VigorGained,
                 };
             }
 
@@ -1452,6 +1482,7 @@ public static class RunTracker
                 result.WeakApplied += pending.WeakApplied;
                 result.AdditionalCardsDrawn += pending.AdditionalCardsDrawn;
                 result.AdditionalBlockGained += pending.AdditionalBlockGained;
+                result.VigorGained += pending.VigorGained;
             }
 
             return result;
