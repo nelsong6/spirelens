@@ -21,6 +21,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0  # uninitialized vars + method-syntax misuse; kept off v3 because optional JSON access patterns (e.g. $result.usage.input_tokens) would throw
 
 function Join-UrlPath {
     param([string[]]$Segments)

@@ -14,6 +14,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0  # uninitialized vars + method-syntax misuse; kept off v3 because optional JSON access patterns (e.g. $result.usage.input_tokens) would throw
 $DefaultPhaseTimeoutSeconds = 360
 $DefaultPhaseBudgetUsd = '15.00'
 
@@ -321,8 +322,14 @@ function Read-JsonFile {
 }
 
 function Get-PropertyValue {
+    # PS7 note: PSObject.Properties on [ordered]@{}/[hashtable] does not expose entries
+    # the way it did in PS5. Branch on IDictionary so this helper works for both shapes.
     param([object]$Object, [string]$Name)
     if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Name)) { return $Object[$Name] }
+        return $null
+    }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) { return $null }
     return $property.Value
@@ -331,6 +338,10 @@ function Get-PropertyValue {
 function Set-PropertyValue {
     param([object]$Object, [string]$Name, [object]$Value)
     if ($null -eq $Object) { return }
+    if ($Object -is [System.Collections.IDictionary]) {
+        $Object[$Name] = $Value
+        return
+    }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) {
         $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
@@ -370,9 +381,9 @@ function Write-SyntheticRollup {
         should_close_issue = $false
         evidence_summary = @($Notes)
     }
-    if ($rollup.layers.PSObject.Properties[$AbortLayer]) {
-        $rollup.layers.$AbortLayer.status = 'abort'
-        $rollup.layers.$AbortLayer.abort_reason = $AbortReason
+    if ($rollup.layers.Contains($AbortLayer)) {
+        $rollup.layers[$AbortLayer].status = 'abort'
+        $rollup.layers[$AbortLayer].abort_reason = $AbortReason
     }
     $rollup | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $rollupPath -Encoding UTF8
 }

@@ -12,7 +12,8 @@ param(
     [string]$RefName
 )
 
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0  # uninitialized vars + method-syntax misuse; kept off v3 because optional JSON access patterns (e.g. $result.usage.input_tokens) would throw
 
 function Copy-IfExists {
     param([string]$LiteralPath, [string]$Destination)
@@ -148,11 +149,20 @@ function Get-ClaudeToolCallSummary {
 }
 
 function Format-FailureCategories {
+    # PS7 note: callers pass [ordered]@{} (see New-ToolMetricBucket); iterating
+    # via PSObject.Properties yields the dict's reflection properties in PS7,
+    # not its entries. Use GetEnumerator for IDictionary, fall back for objects.
     param([object]$Categories)
     if ($null -eq $Categories) { return '' }
     $items = @()
-    foreach ($property in $Categories.PSObject.Properties) {
-        if ($null -ne $property.Value -and [int]$property.Value -gt 0) { $items += "$($property.Name): $($property.Value)" }
+    if ($Categories -is [System.Collections.IDictionary]) {
+        foreach ($entry in $Categories.GetEnumerator()) {
+            if ($null -ne $entry.Value -and [int]$entry.Value -gt 0) { $items += "$($entry.Key): $($entry.Value)" }
+        }
+    } else {
+        foreach ($property in $Categories.PSObject.Properties) {
+            if ($null -ne $property.Value -and [int]$property.Value -gt 0) { $items += "$($property.Name): $($property.Value)" }
+        }
     }
     if ($items.Count -eq 0) { return '' }
     return ($items -join ', ')
@@ -204,8 +214,14 @@ function Read-JsonOrNull {
 }
 
 function Get-PropertyValue {
+    # See run-issue-agent-phases.ps1 Get-PropertyValue: PS7 PSObject.Properties
+    # on dictionaries does not expose entries. Branch on IDictionary.
     param([object]$Object, [string]$Name)
     if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Name)) { return $Object[$Name] }
+        return $null
+    }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) { return $null }
     return $property.Value
