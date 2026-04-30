@@ -458,4 +458,27 @@ public class SchemaLoadingTests
         Assert.Equal(12, resumed!.RelicAggregates["RELIC.ORICHALCUM"].AdditionalBlockGained);
         Assert.Equal(6, resumed.RelicAggregates["RELIC.POCKETWATCH"].AdditionalCardsDrawn);
     }
+
+    [Fact]
+    public void HistoricalLoad_AcceptsV19Fixture()
+    {
+        var loaded = RunStorage.LoadHistorical(FixturePath("v19-akabeko-run.json"));
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded!.SupportsResume);
+        Assert.True(loaded.HasPerInstanceIdentity);
+        Assert.Null(loaded.CompatibilityNote);
+        var relicAgg = loaded.Data.RelicAggregates["RELIC.AKABEKO"];
+        Assert.Equal(24, relicAgg.VigorGained);
+    }
+
+    [Fact]
+    public void ResumableLoad_AcceptsV19Fixture()
+    {
+        var resumed = RunStorage.LoadResumable(FixturePath("v19-akabeko-run.json"));
+
+        Assert.NotNull(resumed);
+        var relicAgg = resumed!.RelicAggregates["RELIC.AKABEKO"];
+        Assert.Equal(24, relicAgg.VigorGained);
+    }
 }
