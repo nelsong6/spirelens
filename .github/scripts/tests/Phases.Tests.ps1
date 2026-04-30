@@ -18,24 +18,42 @@ BeforeAll {
     . ([scriptblock]::Create($source))
 }
 
-Describe 'ConvertTo-Array (function-return-unwrap fix)' {
-    It 'wraps null as an empty array preserved through the function return' {
-        # Note: piping the result to Should -BeOfType unrolls arrays. Test the
-        # type with -is instead so the assertion runs against the array itself.
-        $r = ConvertTo-Array -Value $null
-        ($r -is [array]) | Should -BeTrue
-        $r.Count         | Should -Be 0
+Describe 'ConvertTo-Array' {
+    # PS's function-return-unwrap means callers MUST use one of two safe patterns:
+    #   (a) assign + wrap:    $x = @(ConvertTo-Array $y)    then $x.Count is safe
+    #   (b) pipe:             ConvertTo-Array $y | Where-Object { ... }  iterates per element
+    # An earlier `return ,@(...)` variant was correct for (a) but broke (b) — the
+    # comma-preserved outer array landed as a single $_ in pipeline filters.
+    It 'with @() wrap returns a real array for null/scalar/array inputs' {
+        $a = @(ConvertTo-Array -Value $null)
+        ($a -is [array]) | Should -BeTrue
+        $a.Count         | Should -Be 0
+
+        $b = @(ConvertTo-Array -Value 'lonely')
+        ($b -is [array]) | Should -BeTrue
+        $b.Count         | Should -Be 1
+        $b[0]            | Should -Be 'lonely'
+
+        $c = @(ConvertTo-Array -Value @(1, 2, 3))
+        ($c -is [array]) | Should -BeTrue
+        $c.Count         | Should -Be 3
     }
-    It 'preserves a single scalar as a 1-elem array (no unwrap to scalar)' {
-        $r = ConvertTo-Array -Value 'lonely'
-        ($r -is [array]) | Should -BeTrue
-        $r.Count         | Should -Be 1
-        $r[0]            | Should -Be 'lonely'
+    It 'when piped through Where-Object, iterates per element (pipe-form regression guard)' {
+        $entries = @(
+            [pscustomobject]@{ field = 'deck'; input = 'BASH'  },
+            [pscustomobject]@{ field = 'deck'; input = 'ANGER' }
+        )
+        $matches = ConvertTo-Array $entries | Where-Object { $_.input -eq 'BASH' }
+        @($matches).Count | Should -Be 1
+        @($matches)[0].input | Should -Be 'BASH'
     }
-    It 'preserves a many-elem input array' {
-        $r = ConvertTo-Array -Value @(1, 2, 3)
-        ($r -is [array]) | Should -BeTrue
-        $r.Count         | Should -Be 3
+    It 'when piped from null input, emits no items' {
+        $matches = ConvertTo-Array $null | Where-Object { $true }
+        @($matches).Count | Should -Be 0
+    }
+    It 'when piped from a single scalar, iterates one element' {
+        $matches = ConvertTo-Array 'BASH' | Where-Object { $_ -eq 'BASH' }
+        @($matches).Count | Should -Be 1
     }
 }
 

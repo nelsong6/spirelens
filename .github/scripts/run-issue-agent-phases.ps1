@@ -555,16 +555,19 @@ function Write-ClaudeOutputLines {
     }
 }
 function ConvertTo-Array {
-    # PS function returns unroll collections — `return @()` lands as $null in
-    # the caller, single-item arrays land as a scalar. The comma operator
-    # wraps the result in a 1-elem outer array that gets unrolled to leave
-    # the inner array intact. Without this, `(ConvertTo-Array $x).Count`
-    # throws under StrictMode whenever the result is empty or single-item.
+    # Returns the input as a plain array. An earlier `return ,@(...)` variant
+    # preserved array shape on assignment but broke the pipe form:
+    #     ConvertTo-Array $x | Where-Object { ... }
+    # would deliver the whole inner array as a single $_ instead of iterating
+    # each element, silently corrupting Assert-Entries and the verification
+    # evidence guards. Empirically verified in pwsh 7.4. The shape-preservation
+    # responsibility now sits at .Count call sites: wrap with @(...) at the
+    # caller, e.g. `if (@(ConvertTo-Array $x).Count -eq 0) { ... }`.
     param([object]$Value)
 
-    if ($null -eq $Value) { return ,@() }
-    if ($Value -is [System.Array]) { return ,@($Value) }
-    return ,@($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) { return @($Value) }
+    return @($Value)
 }
 
 function Get-TextBlob {
@@ -645,7 +648,9 @@ function Apply-VerificationEvidenceGuard {
         return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'artifact_contract_missing' -GuardNote 'Verification cannot pass because test planning did not declare required_evidence. The verifier needs an explicit evidence contract before it can pass.'
     }
 
-    $evidenceResults = ConvertTo-Array (Get-PropertyValue -Object $Result -Name 'evidence_results')
+    # Wrap with @(...) at the call site so the assignment preserves array shape
+    # through PS's empty-/single-item return unwrap (otherwise .Count throws).
+    $evidenceResults = @(ConvertTo-Array (Get-PropertyValue -Object $Result -Name 'evidence_results'))
     if ($evidenceResults.Count -eq 0) {
         return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'artifact_contract_missing' -GuardNote 'Verification cannot pass because it did not write evidence_results for the test-plan evidence contract.'
     }
@@ -693,7 +698,7 @@ function Apply-VerificationEvidenceGuard {
 
         $kind = [string](Get-PropertyValue -Object $required -Name 'kind')
         if ($kind -eq 'screenshot') {
-            $artifactPaths = ConvertTo-Array (Get-PropertyValue -Object $evidenceResult -Name 'artifact_paths')
+            $artifactPaths = @(ConvertTo-Array (Get-PropertyValue -Object $evidenceResult -Name 'artifact_paths'))
             $targetVisible = Get-PropertyValue -Object $evidenceResult -Name 'target_visible'
             if ($artifactPaths.Count -eq 0) {
                 return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'screenshot_missing' -GuardNote "Verification cannot pass because screenshot evidence '$id' has no artifact_paths."
