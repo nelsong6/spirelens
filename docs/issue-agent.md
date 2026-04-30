@@ -252,6 +252,16 @@ For every step in the validation plan that actually ran, the write-up must inclu
 
 The plain-English write-up is in addition to (not a replacement for) the structured `evidence_results` array and the `Live MCP Validation` / `Screenshot Evidence` tables. Reviewers reading from the issue comment or the job summary should be able to read just the `## Test Process` section and reproduce the test in their head. If a number on a screenshot is unexpected, that section is the first thing they'll consult to decide whether the test scenario could legitimately have produced it.
 
+## Expected-Value Contract on Required Evidence
+
+For every screenshot `required_evidence` item with `text_visible_required: true`, the test plan must also write a literal `expected_text` field naming the exact substring that should appear in `observed_text`. The verification wrapper does a case-insensitive substring check between the two and aborts with `claimed_result_not_observed` on mismatch.
+
+The expected value is computed from the test scenario, not from generic descriptions of the relic/card behavior. For an Akabeko relic-stat scenario whose validation plan triggers exactly one combat-start, `expected_text` is `"vigor gained: 8"` (8 per combat × 1 combat). If the validation plan triggers three combats, `expected_text` is `"vigor gained: 24"`. The number has to be derived from the scenario, not parroted from the relic description.
+
+Loose phrasings — "non-zero", "at minimum N", "≥ N", "8 or cumulative" — are forbidden. They let a buggy implementation that fires the trigger 11× per combat ship a green pass with `vigor gained: 88`. The verification phase must copy the literal characters from the screenshot into `observed_text` (not what the contract *should* show — what the pixels actually show); if it cannot read the value confidently, it aborts with `target_evidence_missing`.
+
+If the test plan can't pin a specific expected value because the implementation behavior is genuinely ambiguous, abort with `validation_plan_impossible` rather than ship a loose contract.
+
 ## Relic Stat Prompting
 
 Relic-stat implementation issues should keep the same issue-agent workflow as card-stat issues, but their prompts should include an explicit reference-code boundary.
