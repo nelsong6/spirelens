@@ -555,11 +555,16 @@ function Write-ClaudeOutputLines {
     }
 }
 function ConvertTo-Array {
+    # PS function returns unroll collections — `return @()` lands as $null in
+    # the caller, single-item arrays land as a scalar. The comma operator
+    # wraps the result in a 1-elem outer array that gets unrolled to leave
+    # the inner array intact. Without this, `(ConvertTo-Array $x).Count`
+    # throws under StrictMode whenever the result is empty or single-item.
     param([object]$Value)
 
-    if ($null -eq $Value) { return @() }
-    if ($Value -is [System.Array]) { return @($Value) }
-    return @($Value)
+    if ($null -eq $Value) { return ,@() }
+    if ($Value -is [System.Array]) { return ,@($Value) }
+    return ,@($Value)
 }
 
 function Get-TextBlob {

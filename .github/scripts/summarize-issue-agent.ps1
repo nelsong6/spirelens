@@ -55,13 +55,16 @@ function Publish-ScreenshotImages {
 
     $published = New-Object System.Collections.Generic.List[string]
     $previewPath = $env:ISSUE_AGENT_SCREENSHOT_PREVIEWS_PATH
-    if ([string]::IsNullOrWhiteSpace($previewPath) -or -not (Test-Path -LiteralPath $previewPath)) { return $published }
+    if ([string]::IsNullOrWhiteSpace($previewPath) -or -not (Test-Path -LiteralPath $previewPath)) { return ,$published }
 
     Get-Content -LiteralPath $previewPath -ErrorAction SilentlyContinue |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object { $published.Add([string]$_) | Out-Null }
 
-    return $published
+    # Comma operator preserves the List through PS function-return unrolling so
+    # callers can safely access .Count under StrictMode (otherwise an empty
+    # list returns as $null and a 1-item list returns as a scalar string).
+    return ,$published
 }
 function Get-ToolFailureCategory {
     param([string]$Text)
