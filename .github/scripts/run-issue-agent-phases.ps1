@@ -633,7 +633,9 @@ function Apply-VerificationEvidenceGuard {
     }
 
     $testPlan = Read-JsonFile -Path $testPlanPath
-    $requiredEvidence = ConvertTo-Array (Get-PropertyValue -Object $testPlan -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false }
+    # Wrap pipeline output in @(...) so .Count is safe under StrictMode when
+    # Where-Object filters down to zero items (would otherwise return $null).
+    $requiredEvidence = @(ConvertTo-Array (Get-PropertyValue -Object $testPlan -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false })
     if ($requiredEvidence.Count -eq 0) {
         return Set-VerificationGuardAbort -Result $Result -JsonPath $JsonPath -MarkdownPath $MarkdownPath -AbortReason 'artifact_contract_missing' -GuardNote 'Verification cannot pass because test planning did not declare required_evidence. The verifier needs an explicit evidence contract before it can pass.'
     }
@@ -754,7 +756,7 @@ function Assert-ScenarioIdValidationEntries {
             [string]$Prefix
         )
 
-        if ($Expected.Count -eq 0) { return }
+        if (@($Expected).Count -eq 0) { return }
         $entries = ConvertTo-Array (Get-PropertyValue -Object $Validation -Name $Kind) |
             Where-Object { [string](Get-PropertyValue -Object $_ -Name 'field') -eq $Field }
         foreach ($value in $Expected) {
@@ -811,7 +813,7 @@ function Test-ScenarioSetupHasEntries {
         $value = Get-PropertyValue -Object $Setup -Name $field
         $arrayLike = ($value -is [array]) -or (($value -is [System.Collections.IEnumerable]) -and ($value -isnot [string]))
         if ($arrayLike) {
-            if ((ConvertTo-Array $value | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+            if (@(ConvertTo-Array $value | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
                 return $true
             }
         } elseif (-not [string]::IsNullOrWhiteSpace([string]$value)) {
@@ -870,7 +872,7 @@ function Assert-PhaseContract {
             }
         }
 
-        $requiredEvidence = ConvertTo-Array (Get-PropertyValue -Object $Result -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false }
+        $requiredEvidence = @(ConvertTo-Array (Get-PropertyValue -Object $Result -Name 'required_evidence') | Where-Object { (Get-PropertyValue -Object $_ -Name 'required') -ne $false })
         if ($requiredEvidence.Count -eq 0) {
             throw "Test planning phase pass result must include non-empty required_evidence."
         }
