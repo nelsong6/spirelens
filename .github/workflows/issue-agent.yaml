@@ -35,6 +35,31 @@ on:
         description: Originating GitHub action (informational).
         required: false
         type: string
+      # ── Verify-loop / phases-v1 inputs (glimmung#69) ──
+      # Glimmung dictates the implementation branch via run_id; the
+      # others are reserved for future verify-loop / recycle dispatches
+      # (currently unused since pr.enabled=False and verify=False on
+      # the spirelens/issue-agent workflow registration).
+      run_id:
+        description: Glimmung Run ULID (used for branch=glimmung/<run_id>).
+        required: false
+        type: string
+      attempt_index:
+        description: 0-based attempt index. 0 = initial; >0 = recycle.
+        required: false
+        type: string
+      prior_verification_artifact_url:
+        description: Reserved for verify-loop recycle (unused on this workflow).
+        required: false
+        type: string
+      feedback:
+        description: Reserved for PR-feedback recycle (unused on this workflow).
+        required: false
+        type: string
+      pr_number:
+        description: Existing PR number on a recycle dispatch.
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -474,6 +499,7 @@ jobs:
         timeout-minutes: 6
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GLIMMUNG_RUN_ID: ${{ inputs.run_id }}
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
@@ -489,7 +515,14 @@ jobs:
           }
 
           $implementationPath = Join-Path $env:RUNNER_TEMP "sts2-artifacts\issue-agent-implementation.json"
-          $branch = "issue-$($env:ISSUE_NUMBER)-agent-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
+          # Branch is glimmung-dictated under glimmung#69: glimmung/<run_id>.
+          # Same branch reused across verify-loop retries and PR-feedback
+          # recycle dispatches. Glimmung opens the PR after the verification
+          # phase ADVANCEs (when pr.enabled=true on the workflow registration).
+          if ([string]::IsNullOrWhiteSpace($env:GLIMMUNG_RUN_ID)) {
+            throw "missing inputs.run_id (required under glimmung#69)"
+          }
+          $branch = "glimmung/$($env:GLIMMUNG_RUN_ID)"
           $defaultBranch = if ([string]::IsNullOrWhiteSpace($env:DEFAULT_BRANCH)) { "main" } else { $env:DEFAULT_BRANCH }
           $publishRoot = Join-Path $env:RUNNER_TEMP "issue-agent-publish-$branch"
           $patchPath = Join-Path $env:RUNNER_TEMP "issue-agent-implementation-$branch.patch"
@@ -753,13 +786,14 @@ jobs:
           "phase_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8NoBOM -Append
           "abort_reason=$abortReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8NoBOM -Append
 
-      - name: Create pull request
-        id: create_pr
+      - name: Commit verification adjustments to branch
+        # Pre-#69, this commit happened inside `Create pull request` along
+        # with the gh-pr-create call. Since glimmung opens the PR (when
+        # pr.enabled=true), we still need to push any verification-phase
+        # adjustments to the implementation branch so the eventual PR diff
+        # includes them. The PR-create itself is gone.
         if: steps.verification_result.outputs.phase_status == 'pass'
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_SLUG: ${{ github.repository }}
+        timeout-minutes: 3
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:ISSUE_AGENT_REPO_ROOT
@@ -770,26 +804,10 @@ jobs:
             }
           }
 
-          $artifactDir = Join-Path $env:RUNNER_TEMP "sts2-artifacts"
-          $implementationPath = Join-Path $artifactDir "issue-agent-implementation.json"
-          $resultPath = Join-Path $artifactDir "issue-agent-result.json"
-          $implementation = $null
-          if (Test-Path -LiteralPath $implementationPath) {
-            $implementation = Get-Content -LiteralPath $implementationPath -Raw | ConvertFrom-Json
-          }
-
           $branch = "${{ needs.implementation.outputs.branch_name }}"
           if ([string]::IsNullOrWhiteSpace($branch)) {
-            throw "Implementation branch output was empty; cannot open a PR."
+            throw "Implementation branch output was empty; verification has nothing to push to."
           }
-          $title = if ($implementation -and $implementation.pr_title) { [string]$implementation.pr_title } else { "Issue #$($env:ISSUE_NUMBER) agent changes" }
-          $body = if ($implementation -and $implementation.pr_body) { [string]$implementation.pr_body } else { "Automated issue-agent changes for #$($env:ISSUE_NUMBER). Verification passed before this PR was opened by the workflow wrapper." }
-          $closingPattern = "(?im)\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#$([regex]::Escape($env:ISSUE_NUMBER))\b"
-          if ($body -notmatch $closingPattern) {
-            $body = $body.TrimEnd() + "`n`nCloses #$($env:ISSUE_NUMBER)`n"
-          }
-          $bodyPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-body.md"
-          $body | Set-Content -LiteralPath $bodyPath -Encoding utf8NoBOM
 
           $blockedChanges = @(Invoke-Git status --short -- .github/workflows .mcp.json | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
           if ($blockedChanges.Count -gt 0) {
@@ -803,37 +821,8 @@ jobs:
             Invoke-Git add --all -- . ':(exclude).github/workflows/**' ':(exclude).mcp.json'
             Invoke-Git commit -m "Issue #$($env:ISSUE_NUMBER) verification adjustments"
             Invoke-Git push origin "HEAD:refs/heads/$branch"
-          }
-
-          # Build the PR via REST so JSON serialization escapes any quotes,
-          # backticks, or other shell-hostile characters in $title or $body.
-          # gh pr create has --body-file but no --title-file, so the title
-          # would otherwise round-trip through native arg parsing.
-          $payload = [ordered]@{
-            title = $title
-            body  = $body
-            head  = $branch
-            base  = "main"
-          } | ConvertTo-Json -Compress -Depth 5
-          $payloadPath = Join-Path $env:RUNNER_TEMP "issue-agent-pr-payload.json"
-          $payload | Set-Content -LiteralPath $payloadPath -Encoding utf8NoBOM -NoNewline
-
-          $prJson = gh api --method POST "repos/$($env:REPO_SLUG)/pulls" --input $payloadPath
-          if ($LASTEXITCODE -ne 0) { throw "gh api repos/$($env:REPO_SLUG)/pulls failed with exit code $LASTEXITCODE." }
-          $prData = $prJson | ConvertFrom-Json
-          $prUrl = [string]$prData.html_url
-          $prNumber = [string]$prData.number
-          "pr_url=$prUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8NoBOM -Append
-          "pr_number=$prNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8NoBOM -Append
-
-          foreach ($jsonPath in @($implementationPath, $resultPath)) {
-            if (-not (Test-Path -LiteralPath $jsonPath)) { continue }
-            $json = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
-            if ($null -eq $json.PSObject.Properties['opened_pr']) { $json | Add-Member -NotePropertyName opened_pr -NotePropertyValue $null }
-            if ($null -eq $json.PSObject.Properties['opened_pr_url']) { $json | Add-Member -NotePropertyName opened_pr_url -NotePropertyValue $null }
-            $json.opened_pr = $prNumber
-            $json.opened_pr_url = $prUrl
-            $json | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $jsonPath -Encoding utf8NoBOM
+          } else {
+            Write-Host "No verification adjustments to push."
           }
 
       - name: Azure login for screenshot publishing
